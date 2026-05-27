@@ -1,0 +1,25 @@
+# Build outputs
+bin/
+obj/
+*.user
+.vs/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+!packages/repositories.config
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# Database files (local data — never commit)
+*.db
+*.db-shm
+*.db-wal
+
+# macOS
+.DS_Store
