@@ -1,3 +1,5 @@
+using ktsu.Containers;
+
 namespace MeltdownMonitor.Core.Beats;
 
 public class RrArtifactFilter
@@ -7,7 +9,7 @@ public class RrArtifactFilter
 	private const double MaxDeviationFraction = 0.25;
 	private const int MedianWindowSize = 5;
 
-	private readonly Queue<double> _recentClean = new();
+	private RingBuffer<double> _recentClean = new(MedianWindowSize);
 
 	/// <summary>
 	/// Returns true if the RR interval should be rejected as an artifact.
@@ -22,23 +24,19 @@ public class RrArtifactFilter
 
 		if (_recentClean.Count >= 2)
 		{
-			double median = ComputeMedian([.. _recentClean]);
+			double median = ComputeMedian(_recentClean.ToArray());
 			if (Math.Abs(rrMs - median) / median > MaxDeviationFraction)
 			{
 				return true;
 			}
 		}
 
-		_recentClean.Enqueue(rrMs);
-		if (_recentClean.Count > MedianWindowSize)
-		{
-			_recentClean.Dequeue();
-		}
+		_recentClean.PushBack(rrMs);
 
 		return false;
 	}
 
-	public void Reset() => _recentClean.Clear();
+	public void Reset() => _recentClean = new(MedianWindowSize);
 
 	private static double ComputeMedian(double[] values)
 	{
