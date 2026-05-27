@@ -19,4 +19,18 @@ public record DetectionThresholds
 
 	/// <summary>Minimum time between alerts.</summary>
 	public TimeSpan CooldownDuration { get; init; } = TimeSpan.FromMinutes(10);
+
+	// ── LF/HF corroboration (disabled by default — calibrate from logged data first) ──
+
+	/// <summary>
+	/// When true, Warning entry also requires LF/HF to be elevated above its baseline.
+	/// Reduces false positives. Enable only after verifying your personal LF/HF baseline.
+	/// </summary>
+	public bool UseLfHfCorroboration { get; init; } = false;
+
+	/// <summary>
+	/// LF/HF must rise at least this fraction above its baseline for the corroboration
+	/// condition to be satisfied. Default 50% (e.g. baseline 1.5 → current ≥ 2.25).
+	/// </summary>
+	public double LfHfWarningRiseFraction { get; init; } = 0.50;
 }

@@ -7,22 +7,34 @@ using Windows.Devices.Bluetooth.GenericAttributeProfile;
 namespace MeltdownMonitor.Ble.Windows;
 
 /// <summary>
-/// Connects to a Polar H10 (or any GATT Heart Rate Service device) via WinRT BLE.
+/// Connects to a Polar HR sensor via WinRT BLE and streams beats.
+/// Supports the H10 chest strap and the Verity Sense optical armband;
+/// set <see cref="PolarDeviceType.Auto"/> to connect to whichever is found first.
 /// Reconnects automatically with exponential backoff on disconnect.
 /// </summary>
-public sealed class PolarH10Source : IBeatSource, IDisposable
+public sealed class PolarHrSource : IBeatSource, IDisposable
 {
 	private static readonly Guid HeartRateServiceUuid = new("0000180d-0000-1000-8000-00805f9b34fb");
 	private static readonly Guid HrMeasurementCharUuid = new("00002a37-0000-1000-8000-00805f9b34fb");
 
-	private readonly string? _deviceNameFilter;
+	/// <summary>
+	/// BLE advertisement name prefixes for each known device type.
+	/// Matching is case-insensitive substring search within the local name.
+	/// </summary>
+	private static readonly IReadOnlyDictionary<PolarDeviceType, string> DeviceNamePrefixes =
+		new Dictionary<PolarDeviceType, string>
+		{
+			[PolarDeviceType.H10] = "Polar H10",
+			[PolarDeviceType.VeritySense] = "Polar Sense",
+		};
+
+	private readonly PolarDeviceType _deviceType;
 	private readonly RrArtifactFilter _artifactFilter = new();
 
 	private BluetoothLEDevice? _device;
 	private bool _disposed;
 
 	private static readonly TimeSpan[] RetryDelays =
-
 	[
 		TimeSpan.FromSeconds(1),
 		TimeSpan.FromSeconds(2),
@@ -31,13 +43,9 @@ public sealed class PolarH10Source : IBeatSource, IDisposable
 		TimeSpan.FromSeconds(30),
 	];
 
-	/// <param name="deviceNameFilter">
-	/// Optional substring match against the device name. If null, connects to
-	/// the first device advertising the Heart Rate Service.
-	/// </param>
-	public PolarH10Source(string? deviceNameFilter = null)
+	public PolarHrSource(PolarDeviceType deviceType = PolarDeviceType.Auto)
 	{
-		_deviceNameFilter = deviceNameFilter;
+		_deviceType = deviceType;
 	}
 
 	public async IAsyncEnumerable<Beat> GetBeatsAsync(
@@ -59,7 +67,6 @@ public sealed class PolarH10Source : IBeatSource, IDisposable
 				yield return beat;
 			}
 
-			// Device disconnected — wait before retry
 			var delay = RetryDelays[Math.Min(retryIndex, RetryDelays.Length - 1)];
 			retryIndex++;
 			await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
@@ -71,15 +78,18 @@ public sealed class PolarH10Source : IBeatSource, IDisposable
 		var tcs = new TaskCompletionSource<ulong>();
 		using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
+		// Resolve the name prefix for the selected device type (null = accept any HRS device)
+		DeviceNamePrefixes.TryGetValue(_deviceType, out string? namePrefix);
+
 		var watcher = new BluetoothLEAdvertisementWatcher();
 		watcher.AdvertisementFilter.Advertisement.ServiceUuids.Add(HeartRateServiceUuid);
 
 		watcher.Received += (_, args) =>
 		{
-			if (_deviceNameFilter is not null)
+			if (namePrefix is not null)
 			{
-				string name = args.Advertisement.LocalName ?? string.Empty;
-				if (!name.Contains(_deviceNameFilter, StringComparison.OrdinalIgnoreCase))
+				string localName = args.Advertisement.LocalName ?? string.Empty;
+				if (!localName.Contains(namePrefix, StringComparison.OrdinalIgnoreCase))
 				{
 					return;
 				}

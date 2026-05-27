@@ -48,6 +48,48 @@ public class MeltdownRepository : IDisposable
 			);
 			""";
 		cmd.ExecuteNonQuery();
+
+		// Migrate: add extended HRV columns to hrv_samples if this is an older database
+		MigrateHrvSamples();
+	}
+
+	private void MigrateHrvSamples()
+	{
+		var existing = GetColumnNames("hrv_samples");
+		var toAdd = new (string col, string type)[]
+		{
+			("lf_power_ms2",   "REAL"),
+			("hf_power_ms2",   "REAL"),
+			("lf_hf_ratio",    "REAL"),
+			("sd1",            "REAL"),
+			("sd2",            "REAL"),
+			("sd1_sd2_ratio",  "REAL"),
+			("sdnn",           "REAL"),
+		};
+
+		foreach (var (col, type) in toAdd)
+		{
+			if (!existing.Contains(col))
+			{
+				using var cmd = _connection.CreateCommand();
+				cmd.CommandText = $"ALTER TABLE hrv_samples ADD COLUMN {col} {type}";
+				cmd.ExecuteNonQuery();
+			}
+		}
+	}
+
+	private HashSet<string> GetColumnNames(string tableName)
+	{
+		using var cmd = _connection.CreateCommand();
+		cmd.CommandText = $"PRAGMA table_info({tableName})";
+		var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+		using var reader = cmd.ExecuteReader();
+		while (reader.Read())
+		{
+			names.Add(reader.GetString(1));
+		}
+
+		return names;
 	}
 
 	public void InsertBeat(Beat beat)
@@ -68,8 +110,12 @@ public class MeltdownRepository : IDisposable
 	{
 		using var cmd = _connection.CreateCommand();
 		cmd.CommandText = """
-			INSERT OR IGNORE INTO hrv_samples (ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state)
-			VALUES ($ts, $rmssd, $pnn50, $mean_hr, $baseline_rmssd, $baseline_hr, $state)
+			INSERT OR IGNORE INTO hrv_samples (
+				ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state,
+				lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn)
+			VALUES (
+				$ts, $rmssd, $pnn50, $mean_hr, $baseline_rmssd, $baseline_hr, $state,
+				$lf, $hf, $lf_hf, $sd1, $sd2, $sd1_sd2, $sdnn)
 			""";
 		cmd.Parameters.AddWithValue("$ts", sample.Timestamp.ToUnixTimeMilliseconds());
 		cmd.Parameters.AddWithValue("$rmssd", sample.Rmssd);
@@ -78,6 +124,16 @@ public class MeltdownRepository : IDisposable
 		cmd.Parameters.AddWithValue("$baseline_rmssd", sample.BaselineRmssd);
 		cmd.Parameters.AddWithValue("$baseline_hr", sample.BaselineHr);
 		cmd.Parameters.AddWithValue("$state", sample.State.ToString());
+
+		ExtendedHrvMetrics? ext = sample.Extended;
+		cmd.Parameters.AddWithValue("$lf",     ext is not null ? ext.LfPowerMs2  : DBNull.Value);
+		cmd.Parameters.AddWithValue("$hf",     ext is not null ? ext.HfPowerMs2  : DBNull.Value);
+		cmd.Parameters.AddWithValue("$lf_hf",  ext is not null ? ext.LfHfRatio   : DBNull.Value);
+		cmd.Parameters.AddWithValue("$sd1",    ext is not null ? ext.SD1          : DBNull.Value);
+		cmd.Parameters.AddWithValue("$sd2",    ext is not null ? ext.SD2          : DBNull.Value);
+		cmd.Parameters.AddWithValue("$sd1_sd2",ext is not null ? ext.SD1SD2Ratio  : DBNull.Value);
+		cmd.Parameters.AddWithValue("$sdnn",   ext is not null ? ext.Sdnn         : DBNull.Value);
+
 		cmd.ExecuteNonQuery();
 	}
 
@@ -112,7 +168,8 @@ public class MeltdownRepository : IDisposable
 	{
 		using var cmd = _connection.CreateCommand();
 		cmd.CommandText = """
-			SELECT ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state
+			SELECT ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state,
+			       lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn
 			FROM hrv_samples
 			WHERE ts >= $from AND ts <= $to
 			ORDER BY ts
@@ -126,13 +183,30 @@ public class MeltdownRepository : IDisposable
 		{
 			var ts = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0));
 			var state = Enum.Parse<DetectorState>(reader.GetString(6));
+
+			ExtendedHrvMetrics? ext = null;
+			if (!reader.IsDBNull(7))
+			{
+				ext = new ExtendedHrvMetrics(
+					reader.GetDouble(7),
+					reader.GetDouble(8),
+					reader.GetDouble(9),
+					reader.GetDouble(10),
+					reader.GetDouble(11),
+					reader.GetDouble(12),
+					reader.GetDouble(13));
+			}
+
 			results.Add(new HrvSample(ts,
 				reader.GetDouble(1),
 				reader.GetDouble(2),
 				reader.GetDouble(3),
 				reader.GetDouble(4),
 				reader.GetDouble(5),
-				state));
+				state)
+			{
+				Extended = ext,
+			});
 		}
 
 		return results;

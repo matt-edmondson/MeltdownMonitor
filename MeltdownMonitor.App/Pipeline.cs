@@ -49,7 +49,7 @@ public sealed class Pipeline : IDisposable
 
 	private async Task RunAsync(CancellationToken cancellationToken)
 	{
-		var source = new PolarH10Source(_settings.DeviceNameFilter);
+		var source = new PolarHrSource(_settings.DeviceType);
 
 		await foreach (var beat in source.GetBeatsAsync(cancellationToken))
 		{
@@ -60,7 +60,7 @@ public sealed class Pipeline : IDisposable
 
 			_repository.InsertBeat(beat);
 
-			var sample = _hrv.AddBeat(beat, _baseline.BaselineRmssd, _baseline.BaselineHr, _detector.State);
+			var sample = _hrv.AddBeat(beat, _baseline.BaselineRmssd, _baseline.BaselineHr, _detector.State, _baseline.BaselineLfHfRatio);
 			if (sample is null)
 			{
 				continue;

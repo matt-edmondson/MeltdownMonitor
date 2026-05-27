@@ -7,16 +7,23 @@ public class BaselineHrvTracker
 {
 	// α ≈ 0.005 per sample at 5s cadence ≈ 15-minute effective window
 	private const double Alpha = 0.005;
+	// Slower alpha for LF/HF since extended metrics arrive every 30s
+	private const double AlphaExtended = 0.03;
 	private const double WarmUpMinutes = 10.0;
 
 	private double _baselineRmssd;
 	private double _baselineHr;
-	private int _sampleCount;
+	private double _baselineLfHfRatio;
 	private DateTimeOffset _firstSampleTime = DateTimeOffset.MinValue;
 	private bool _isWarm;
 
 	public double BaselineRmssd => _baselineRmssd;
 	public double BaselineHr => _baselineHr;
+
+	/// <summary>
+	/// Baseline LF/HF ratio (EWMA). Zero until the first extended sample arrives.
+	/// </summary>
+	public double BaselineLfHfRatio => _baselineLfHfRatio;
 	public bool IsWarm => _isWarm;
 
 	public void Update(HrvSample sample)
@@ -40,7 +47,19 @@ public class BaselineHrvTracker
 			_baselineHr = ((1.0 - Alpha) * _baselineHr) + (Alpha * sample.MeanHr);
 		}
 
-		_sampleCount++;
+		// Update LF/HF baseline when extended metrics are present
+		if (sample.Extended is { LfHfRatio: > 0 } extended)
+		{
+			if (_baselineLfHfRatio == 0)
+			{
+				_baselineLfHfRatio = extended.LfHfRatio;
+			}
+			else
+			{
+				_baselineLfHfRatio = ((1.0 - AlphaExtended) * _baselineLfHfRatio)
+									+ (AlphaExtended * extended.LfHfRatio);
+			}
+		}
 
 		if (!_isWarm && (sample.Timestamp - _firstSampleTime).TotalMinutes >= WarmUpMinutes)
 		{
@@ -52,7 +71,7 @@ public class BaselineHrvTracker
 	{
 		_baselineRmssd = 0;
 		_baselineHr = 0;
-		_sampleCount = 0;
+		_baselineLfHfRatio = 0;
 		_firstSampleTime = DateTimeOffset.MinValue;
 		_isWarm = false;
 	}
