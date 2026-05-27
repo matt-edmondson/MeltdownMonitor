@@ -33,6 +33,7 @@ void ToggleStatusWindow()
 	else
 	{
 		statusWindow.Close();
+		statusWindow.Dispose();
 		statusWindow = null;
 	}
 }

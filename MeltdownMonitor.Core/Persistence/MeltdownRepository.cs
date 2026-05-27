@@ -212,6 +212,60 @@ public class MeltdownRepository : IDisposable
 		return results;
 	}
 
+	/// <summary>
+	/// Opens a short-lived read-only connection to query HRV samples.
+	/// Safe to call from any thread independently of the main write connection.
+	/// </summary>
+	public static IReadOnlyList<HrvSample> ReadHistory(string databasePath, DateTimeOffset from, DateTimeOffset to)
+	{
+		using var conn = new SqliteConnection($"Data Source={databasePath};Mode=ReadOnly");
+		conn.Open();
+		using var cmd = conn.CreateCommand();
+		cmd.CommandText = """
+			SELECT ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state,
+			       lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn
+			FROM hrv_samples
+			WHERE ts >= $from AND ts <= $to
+			ORDER BY ts
+			""";
+		cmd.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+		cmd.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+
+		var results = new List<HrvSample>();
+		using var reader = cmd.ExecuteReader();
+		while (reader.Read())
+		{
+			var ts = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0));
+			var state = Enum.Parse<DetectorState>(reader.GetString(6));
+
+			ExtendedHrvMetrics? ext = null;
+			if (!reader.IsDBNull(7))
+			{
+				ext = new ExtendedHrvMetrics(
+					reader.GetDouble(7),
+					reader.GetDouble(8),
+					reader.GetDouble(9),
+					reader.GetDouble(10),
+					reader.GetDouble(11),
+					reader.GetDouble(12),
+					reader.GetDouble(13));
+			}
+
+			results.Add(new HrvSample(ts,
+				reader.GetDouble(1),
+				reader.GetDouble(2),
+				reader.GetDouble(3),
+				reader.GetDouble(4),
+				reader.GetDouble(5),
+				state)
+			{
+				Extended = ext,
+			});
+		}
+
+		return results;
+	}
+
 	public void Dispose()
 	{
 		_connection.Dispose();
