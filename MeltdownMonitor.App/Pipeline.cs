@@ -49,7 +49,7 @@ public sealed class Pipeline : IDisposable
 
 	private async Task RunAsync(CancellationToken cancellationToken)
 	{
-		var source = new PolarH10Source(_settings.DeviceNameFilter);
+		var source = new PolarHrSource(_settings.DeviceType);
 
 		await foreach (var beat in source.GetBeatsAsync(cancellationToken))
 		{

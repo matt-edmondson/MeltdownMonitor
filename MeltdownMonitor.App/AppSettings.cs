@@ -1,4 +1,5 @@
 using ktsu.AppDataStorage;
+using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 
 namespace MeltdownMonitor.App;
@@ -11,7 +12,10 @@ public class AppSettings : AppData<AppSettings>
 	public string AlertSuggestion { get; set; } =
 		"Step away. Five minutes. Find something quiet.";
 
-	public string? DeviceNameFilter { get; set; }
+	/// <summary>
+	/// Which Polar sensor to connect to. Auto connects to whichever HRS device is found first.
+	/// </summary>
+	public PolarDeviceType DeviceType { get; set; } = PolarDeviceType.Auto;
 
 	public bool EnableChime { get; set; } = true;
 	public string? ChimeWavPath { get; set; }
