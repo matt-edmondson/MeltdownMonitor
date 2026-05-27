@@ -78,7 +78,7 @@ jobs:
 
       - name: Cache SonarQube Cloud packages
         if: ${{ env.SONAR_TOKEN != '' }}
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
@@ -89,7 +89,7 @@ jobs:
       - name: Cache SonarQube Cloud scanner
         if: ${{ env.SONAR_TOKEN != '' }}
         id: cache-sonar-scanner
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
