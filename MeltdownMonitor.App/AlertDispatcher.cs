@@ -1,5 +1,5 @@
 using System.Media;
-using Microsoft.Toolkit.Uwp.Notifications;
+using CommunityToolkit.WinUI.Notifications;
 using MeltdownMonitor.Core.Detection;
 
 namespace MeltdownMonitor.App;

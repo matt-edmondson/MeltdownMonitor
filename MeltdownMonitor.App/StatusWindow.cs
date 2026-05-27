@@ -1,4 +1,4 @@
-using ImGuiNET;
+using Hexa.NET.ImGui;
 using ktsu.ImGuiApp;
 using ktsu.IntervalAction;
 using MeltdownMonitor.Core.Detection;
@@ -12,7 +12,7 @@ namespace MeltdownMonitor.App;
 /// Optional status window that shows a live RMSSD vs. baseline sparkline
 /// and the current detector state. Toggled from the tray menu.
 /// </summary>
-public class StatusWindow : ImGuiApp, IDisposable
+public sealed class StatusWindow : IDisposable
 {
 	private const int SparklineMaxPoints = 720; // 1 hour at 5s cadence
 
@@ -23,13 +23,9 @@ public class StatusWindow : ImGuiApp, IDisposable
 	private readonly MeltdownRepository _repository;
 	private readonly AppSettings _settings;
 	private readonly IntervalAction _historyRefreshAction;
+	private Thread? _uiThread;
 
 	public StatusWindow(Pipeline pipeline, MeltdownRepository repository, AppSettings settings)
-		: base(nameof(StatusWindow), new ImGuiAppWindowConfig
-		{
-			Title = "Meltdown Monitor — Status",
-			InitialSize = new Vector2(800, 400),
-		})
 	{
 		_pipeline = pipeline;
 		_repository = repository;
@@ -45,6 +41,42 @@ public class StatusWindow : ImGuiApp, IDisposable
 			ActionInterval = TimeSpan.FromMinutes(5),
 			PollingInterval = TimeSpan.FromSeconds(10),
 		});
+	}
+
+	public void Run()
+	{
+		_uiThread = new Thread(() =>
+		{
+			ImGuiApp.Start(new ImGuiAppConfig
+			{
+				Title = "Meltdown Monitor — Status",
+				InitialWindowState = new ImGuiAppWindowState
+				{
+					Size = new Vector2(800, 400),
+				},
+				OnUpdate = OnUpdate,
+			});
+		})
+		{
+			IsBackground = true,
+			Name = "MeltdownMonitor-StatusWindow",
+		};
+		_uiThread.Start();
+	}
+
+	public void Close()
+	{
+		try
+		{
+			ImGuiApp.Stop();
+		}
+		catch
+		{
+			// Stop may throw if the window was never fully started.
+		}
+
+		_uiThread?.Join(TimeSpan.FromSeconds(2));
+		_uiThread = null;
 	}
 
 	private void OnSampleUpdated(HrvSample sample)
@@ -90,7 +122,7 @@ public class StatusWindow : ImGuiApp, IDisposable
 		}
 	}
 
-	protected override void OnUpdate()
+	private void OnUpdate(float deltaSeconds)
 	{
 		var latest = _pipeline.LatestSample;
 
@@ -146,7 +178,7 @@ public class StatusWindow : ImGuiApp, IDisposable
 	public void Dispose()
 	{
 		_pipeline.SampleUpdated -= OnSampleUpdated;
-		_historyRefreshAction.Dispose();
-		GC.SuppressFinalize(this);
+		_historyRefreshAction.Stop();
+		Close();
 	}
 }

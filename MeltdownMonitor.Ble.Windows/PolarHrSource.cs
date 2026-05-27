@@ -147,7 +147,7 @@ public sealed class PolarHrSource : IBeatSource, IDisposable
 
 		void OnValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
 		{
-			var reader = Windows.Storage.Streams.DataReader.FromBuffer(args.CharacteristicValue);
+			var reader = global::Windows.Storage.Streams.DataReader.FromBuffer(args.CharacteristicValue);
 			var bytes = new byte[args.CharacteristicValue.Length];
 			reader.ReadBytes(bytes);
 

@@ -6,12 +6,12 @@ using MeltdownMonitor.Core.Persistence;
 [assembly: System.Runtime.Versioning.SupportedOSPlatform("windows10.0.19041.0")]
 
 // Prevent multiple instances — exactly one tray icon per user.
-if (!SingleAppInstance.IsFirstInstance())
+if (!SingleAppInstance.ShouldLaunch())
 {
 	return;
 }
 
-var settings = AppData.LoadOrCreate<AppSettings>();
+var settings = AppSettings.LoadOrCreate();
 
 Directory.CreateDirectory(Path.GetDirectoryName(settings.DatabasePath)!);
 using var repository = new MeltdownRepository(settings.DatabasePath);
