@@ -143,8 +143,25 @@ public class DysregulationDetector
 		double rmssdDrop = (sample.BaselineRmssd - sample.Rmssd) / sample.BaselineRmssd;
 		double hrRise = (sample.MeanHr - sample.BaselineHr) / sample.BaselineHr;
 
-		return rmssdDrop >= _thresholds.RmssdWarningDropFraction &&
-			   hrRise >= _thresholds.HrWarningRiseFraction;
+		bool coreConditionMet = rmssdDrop >= _thresholds.RmssdWarningDropFraction &&
+								hrRise >= _thresholds.HrWarningRiseFraction;
+
+		if (!coreConditionMet)
+		{
+			return false;
+		}
+
+		// Optional LF/HF corroboration — only checked when enabled, baseline is ready,
+		// and extended metrics are present in this sample.
+		if (_thresholds.UseLfHfCorroboration
+			&& sample.BaselineLfHfRatio > 0
+			&& sample.Extended is { LfHfRatio: > 0 } extended)
+		{
+			double lfHfRise = (extended.LfHfRatio - sample.BaselineLfHfRatio) / sample.BaselineLfHfRatio;
+			return lfHfRise >= _thresholds.LfHfWarningRiseFraction;
+		}
+
+		return true;
 	}
 
 	private bool IsSevereDropping(HrvSample sample)
