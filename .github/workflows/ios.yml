@@ -77,19 +77,21 @@ jobs:
         with:
           dotnet-version: "10.0.2xx"
 
-      # The .NET 10 iOS workload pins to a specific Xcode (currently
-      # 26.5). The runner image must ship that version or newer; older
-      # macos-14 images with Xcode 15.x are not viable.
-      - name: Select latest Xcode
+      # The .NET 10 iOS workload requires an EXACT Xcode version match,
+      # not minimum. The 10.0.2xx SDK band ships iOS workload 26.0, which
+      # needs Xcode 26.0. Pick the highest 26.0.x Xcode on the runner.
+      - name: Select matching Xcode (26.0)
         run: |
           set -e
-          LATEST=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
-          if [ -z "$LATEST" ]; then
-            echo "::error::No Xcode_*.app found in /Applications on this runner."
+          CANDIDATES=$(ls -d /Applications/Xcode_26.0*.app 2>/dev/null | sort -V)
+          if [ -z "$CANDIDATES" ]; then
+            echo "::error title=Xcode 26.0 not on runner::The 10.0.2xx iOS workload requires Xcode 26.0. Available Xcodes on this runner:"
+            ls -d /Applications/Xcode_*.app 2>/dev/null || echo "  (none)"
             exit 1
           fi
-          sudo xcode-select -s "$LATEST/Contents/Developer"
-          echo "Using $(xcodebuild -version | head -n 1) from $LATEST"
+          XCODE=$(echo "$CANDIDATES" | tail -n 1)
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          echo "Using $(xcodebuild -version | head -n 1) from $XCODE"
 
       # Design doc §14: "fail the build matrix loudly if [the iOS workload
       # is] absent". A silent skip would let the rest of the workflow look
