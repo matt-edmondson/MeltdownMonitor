@@ -144,7 +144,10 @@ jobs:
           dotnet build MeltdownMonitor.iOS/MeltdownMonitor.iOS.csproj \
             -c Release \
             -p:RuntimeIdentifier=iossimulator-arm64 \
-            -p:BuildIpa=false
+            -p:BuildIpa=false \
+            -p:EnableCodeSigning=false \
+            -p:CodesignKey= \
+            -p:CodesignProvision=
           APP_PATH=$(find MeltdownMonitor.iOS/bin/Release -type d -name '*.app' | head -n 1)
           if [ -z "$APP_PATH" ]; then
             echo "::error::Simulator .app not produced under MeltdownMonitor.iOS/bin/Release"
@@ -174,8 +177,9 @@ jobs:
             -c Release \
             -p:RuntimeIdentifier=ios-arm64 \
             -p:BuildIpa=false \
-            -p:CodesignKey="" \
-            -p:CodesignProvision=""
+            -p:EnableCodeSigning=false \
+            -p:CodesignKey= \
+            -p:CodesignProvision=
 
   testflight:
     name: Archive & upload to TestFlight
