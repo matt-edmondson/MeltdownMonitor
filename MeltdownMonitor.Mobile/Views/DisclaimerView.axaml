@@ -1,0 +1,46 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:MeltdownMonitor.Mobile.ViewModels"
+             x:Class="MeltdownMonitor.Mobile.Views.DisclaimerView"
+             x:DataType="vm:DisclaimerViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="18">
+
+            <TextBlock Text="{Binding Title}"
+                       FontSize="24"
+                       FontWeight="SemiBold"
+                       Margin="0,16,0,0" />
+
+            <TextBlock Text="{Binding BodyText}"
+                       TextWrapping="Wrap"
+                       FontSize="15"
+                       LineHeight="22" />
+
+            <Border CornerRadius="10"
+                    Background="#101418"
+                    Padding="14">
+                <TextBlock Text="{Binding PrivacyText}"
+                           TextWrapping="Wrap"
+                           FontSize="13"
+                           Foreground="#B8BDC6"
+                           LineHeight="20" />
+            </Border>
+
+            <Button Content="{Binding AcceptLabel}"
+                    Command="{Binding AcceptCommand}"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    Padding="16,12"
+                    FontSize="16"
+                    Margin="0,12,0,0" />
+
+            <TextBlock Text="MeltdownMonitor is informational only. Not a medical device."
+                       Foreground="#8A8F98"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       HorizontalAlignment="Center"
+                       Margin="0,4,0,0" />
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
