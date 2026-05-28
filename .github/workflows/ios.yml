@@ -67,10 +67,15 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+      # Pin to the 10.0.2xx feature band: its bundled iOS workload (26.3)
+      # matches the Xcode 26.3 currently on `macos-latest`. The 10.0.3xx
+      # band ships iOS workload 26.5, which the runner image doesn't yet
+      # have an Xcode for. Bump this band when the runner picks up
+      # Xcode 26.5 or newer.
+      - name: Setup .NET ${{ env.DOTNET_VERSION }} (10.0.2xx band)
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}.x
+          dotnet-version: "10.0.2xx"
 
       # The .NET 10 iOS workload pins to a specific Xcode (currently
       # 26.5). The runner image must ship that version or newer; older
@@ -180,10 +185,15 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Setup .NET ${{ env.DOTNET_VERSION }}
+      # Pin to the 10.0.2xx feature band: its bundled iOS workload (26.3)
+      # matches the Xcode 26.3 currently on `macos-latest`. The 10.0.3xx
+      # band ships iOS workload 26.5, which the runner image doesn't yet
+      # have an Xcode for. Bump this band when the runner picks up
+      # Xcode 26.5 or newer.
+      - name: Setup .NET ${{ env.DOTNET_VERSION }} (10.0.2xx band)
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}.x
+          dotnet-version: "10.0.2xx"
 
       - name: Select latest Xcode
         run: |
