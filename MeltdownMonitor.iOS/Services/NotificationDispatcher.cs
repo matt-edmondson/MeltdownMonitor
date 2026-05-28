@@ -64,7 +64,7 @@ public sealed class NotificationDispatcher : INotificationDispatcher
 			Subtitle = $"RMSSD {payload.RmssdAtTrigger:F1} ms (baseline {payload.BaselineAtTrigger:F1} ms)",
 			CategoryIdentifier = AlertCategoryId,
 			Sound = UNNotificationSound.Default,
-			InterruptionLevel = UNNotificationInterruptionLevel.TimeSensitive,
+			InterruptionLevel = UNNotificationInterruptionLevel.TimeSensitive2,
 		};
 
 		// Immediate delivery — no trigger.

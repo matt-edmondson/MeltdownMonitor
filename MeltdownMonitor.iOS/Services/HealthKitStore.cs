@@ -25,7 +25,7 @@ public sealed class HealthKitStore : IHealthStore
 		}
 
 		var readTypes = new NSSet<HKObjectType>(_heartRateType);
-		var writeTypes = new NSSet<HKSampleType>(_heartRateType, HKWorkoutType.Create());
+		var writeTypes = new NSSet<HKSampleType>(_heartRateType, HKObjectType.GetWorkoutType());
 
 		var tcs = new TaskCompletionSource<bool>();
 		_store.RequestAuthorizationToShare(writeTypes, readTypes, (success, error) =>
