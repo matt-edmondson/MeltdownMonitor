@@ -3,6 +3,7 @@ using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 using MeltdownMonitor.Core.Persistence;
+using MeltdownMonitor.Mobile.Services;
 
 namespace MeltdownMonitor.Mobile;
 
@@ -45,6 +46,56 @@ public sealed class Pipeline : IDisposable
 	{
 		_cts = new CancellationTokenSource();
 		_runTask = RunAsync(_cts.Token);
+	}
+
+	/// <summary>
+	/// Seeds <see cref="BaselineHrvTracker"/> from a HealthKit history pull
+	/// (design doc §8) so the user lands in <c>Watching</c> rather than
+	/// <c>Idle</c> on first launch. HealthKit HR samples are sparse and lack
+	/// beat-to-beat RR detail, so RMSSD is approximated from the
+	/// inter-sample variation that <see cref="ShortWindowHrvCalculator"/>
+	/// already knows how to compute — close enough to break the cold start;
+	/// the live EWMA refines it within minutes once real beats arrive.
+	/// Safe to call when <paramref name="healthStore"/> is null (no-op) or
+	/// HealthKit returns nothing (auth not granted, no Apple Watch, etc.).
+	/// Must run before <see cref="Start"/>.
+	/// </summary>
+	public async Task WarmStartAsync(
+		IHealthStore? healthStore,
+		TimeSpan? lookback = null,
+		CancellationToken cancellationToken = default)
+	{
+		if (healthStore is null)
+		{
+			return;
+		}
+
+		var window = lookback ?? TimeSpan.FromHours(24);
+		var warmCalculator = new ShortWindowHrvCalculator();
+
+		await foreach (var hr in healthStore.ReadRecentHeartRateAsync(window).WithCancellation(cancellationToken).ConfigureAwait(false))
+		{
+			if (hr.HeartRateBpm <= 0)
+			{
+				continue;
+			}
+
+			int bpm = (int)Math.Round(hr.HeartRateBpm);
+			double rrMs = 60_000.0 / hr.HeartRateBpm;
+			var beat = new Beat(hr.Timestamp, rrMs, bpm, IsArtifact: false);
+
+			var sample = warmCalculator.AddBeat(
+				beat,
+				_baseline.BaselineRmssd,
+				_baseline.BaselineHr,
+				DetectorState.Idle,
+				_baseline.BaselineLfHfRatio);
+
+			if (sample is not null)
+			{
+				_baseline.Update(sample);
+			}
+		}
 	}
 
 	public async Task StopAsync()
