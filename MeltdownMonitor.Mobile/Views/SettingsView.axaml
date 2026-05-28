@@ -1,0 +1,8 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="MeltdownMonitor.Mobile.Views.SettingsView">
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+        <TextBlock Text="Settings" FontSize="24" HorizontalAlignment="Center" />
+        <TextBlock Text="Device, thresholds, permissions." HorizontalAlignment="Center" />
+    </StackPanel>
+</UserControl>

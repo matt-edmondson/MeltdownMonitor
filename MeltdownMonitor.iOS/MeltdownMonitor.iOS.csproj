@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-ios</TargetFramework>
+    <SupportedOSPlatformVersion>17.0</SupportedOSPlatformVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>MeltdownMonitor.iOS</RootNamespace>
+    <ApplicationId>com.thethreethousands.meltdownmonitor</ApplicationId>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <ApplicationVersion>1</ApplicationVersion>
+    <CodesignEntitlements>Entitlements.plist</CodesignEntitlements>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.2.1" />
+    <PackageReference Include="Avalonia.iOS" Version="11.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MeltdownMonitor.Core\MeltdownMonitor.Core.csproj" />
+    <ProjectReference Include="..\MeltdownMonitor.Mobile\MeltdownMonitor.Mobile.csproj" />
+    <ProjectReference Include="..\MeltdownMonitor.Ble.Apple\MeltdownMonitor.Ble.Apple.csproj" />
+  </ItemGroup>
+
+</Project>

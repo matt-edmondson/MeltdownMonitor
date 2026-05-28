@@ -1,0 +1,8 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="MeltdownMonitor.Mobile.Views.HistoryView">
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
+        <TextBlock Text="History" FontSize="24" HorizontalAlignment="Center" />
+        <TextBlock Text="Daily timeline goes here." HorizontalAlignment="Center" />
+    </StackPanel>
+</UserControl>

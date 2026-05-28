@@ -1,4 +1,3 @@
-﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
@@ -10,6 +9,12 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeltdownMonitor.Tests", "MeltdownMonitor.Tests\MeltdownMonitor.Tests.csproj", "{8DC51890-5DA0-4FC8-BE04-4DAB3BDB091A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeltdownMonitor.Core", "MeltdownMonitor.Core\MeltdownMonitor.Core.csproj", "{354F6EAF-94FD-4135-B895-9B47CFB51DA5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeltdownMonitor.Mobile", "MeltdownMonitor.Mobile\MeltdownMonitor.Mobile.csproj", "{AA53E333-ED5A-4DE7-9FF9-C41C768FBA5C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeltdownMonitor.Ble.Apple", "MeltdownMonitor.Ble.Apple\MeltdownMonitor.Ble.Apple.csproj", "{173B53D2-79F2-4324-8001-FF4560F9D933}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeltdownMonitor.iOS", "MeltdownMonitor.iOS\MeltdownMonitor.iOS.csproj", "{CD63251A-9DFD-453D-A9DC-70B851597783}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -36,5 +41,13 @@ Global
 		{354F6EAF-94FD-4135-B895-9B47CFB51DA5}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{354F6EAF-94FD-4135-B895-9B47CFB51DA5}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{354F6EAF-94FD-4135-B895-9B47CFB51DA5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AA53E333-ED5A-4DE7-9FF9-C41C768FBA5C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AA53E333-ED5A-4DE7-9FF9-C41C768FBA5C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AA53E333-ED5A-4DE7-9FF9-C41C768FBA5C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AA53E333-ED5A-4DE7-9FF9-C41C768FBA5C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{173B53D2-79F2-4324-8001-FF4560F9D933}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{173B53D2-79F2-4324-8001-FF4560F9D933}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CD63251A-9DFD-453D-A9DC-70B851597783}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CD63251A-9DFD-453D-A9DC-70B851597783}.Release|Any CPU.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 EndGlobal
