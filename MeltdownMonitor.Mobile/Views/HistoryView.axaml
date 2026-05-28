@@ -1,8 +1,60 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="MeltdownMonitor.Mobile.Views.HistoryView">
-    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
-        <TextBlock Text="History" FontSize="24" HorizontalAlignment="Center" />
-        <TextBlock Text="Daily timeline goes here." HorizontalAlignment="Center" />
-    </StackPanel>
+             xmlns:vm="clr-namespace:MeltdownMonitor.Mobile.ViewModels"
+             x:Class="MeltdownMonitor.Mobile.Views.HistoryView"
+             x:DataType="vm:HistoryViewModel">
+    <Grid RowDefinitions="Auto,*" Margin="20">
+        <DockPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="Last 24 hours"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       VerticalAlignment="Center" />
+            <Button DockPanel.Dock="Right"
+                    Content="Refresh"
+                    Command="{Binding LoadCommand}"
+                    HorizontalAlignment="Right" />
+        </DockPanel>
+
+        <Panel Grid.Row="1">
+            <TextBlock Text="No state transitions yet — keep monitoring."
+                       Foreground="#8A8F98"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsEmpty}" />
+
+            <TextBlock Text="{Binding Error}"
+                       Foreground="#E04A3F"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       TextWrapping="Wrap" />
+
+            <ListBox ItemsSource="{Binding Events}">
+                <ListBox.ItemTemplate>
+                    <DataTemplate DataType="vm:HistoryEvent">
+                        <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,4">
+                            <Border Grid.Column="0"
+                                    Width="10" Height="40"
+                                    CornerRadius="2"
+                                    Margin="0,0,12,0"
+                                    Background="{Binding StateBrush}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding StateLabel}" FontWeight="SemiBold" />
+                                <TextBlock Text="{Binding Detail}" Foreground="#8A8F98" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center">
+                                <TextBlock Text="{Binding TimeLabel}"
+                                           HorizontalAlignment="Right" />
+                                <TextBlock Text="{Binding DateLabel}"
+                                           Foreground="#8A8F98"
+                                           FontSize="11"
+                                           HorizontalAlignment="Right" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Panel>
+    </Grid>
 </UserControl>

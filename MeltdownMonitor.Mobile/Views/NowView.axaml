@@ -1,8 +1,66 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="MeltdownMonitor.Mobile.Views.NowView">
-    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
-        <TextBlock Text="Now" FontSize="24" HorizontalAlignment="Center" />
-        <TextBlock Text="Live chart goes here." HorizontalAlignment="Center" />
-    </StackPanel>
+             xmlns:vm="clr-namespace:MeltdownMonitor.Mobile.ViewModels"
+             xmlns:ctl="clr-namespace:MeltdownMonitor.Mobile.Controls"
+             x:Class="MeltdownMonitor.Mobile.Views.NowView"
+             x:DataType="vm:NowViewModel">
+    <Grid RowDefinitions="*,Auto,Auto,Auto" Margin="20">
+
+        <Border Grid.Row="0"
+                CornerRadius="12"
+                Background="#101418"
+                Padding="12">
+            <Grid RowDefinitions="*,Auto">
+                <ctl:Sparkline Grid.Row="0"
+                               Values="{Binding RmssdHistory}"
+                               BaselineValues="{Binding BaselineHistory}"
+                               LineThickness="2.5" />
+                <TextBlock Grid.Row="1"
+                           Text="RMSSD vs baseline"
+                           Foreground="#8A8F98"
+                           FontSize="12"
+                           Margin="0,8,0,0"
+                           HorizontalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1"
+                Margin="0,20,0,0"
+                CornerRadius="20"
+                Padding="16,10"
+                HorizontalAlignment="Center"
+                Background="{Binding StateBrush}">
+            <TextBlock Text="{Binding StateLabel}"
+                       Foreground="White"
+                       FontSize="18"
+                       FontWeight="SemiBold" />
+        </Border>
+
+        <StackPanel Grid.Row="2"
+                    Margin="0,16,0,0"
+                    Orientation="Vertical"
+                    HorizontalAlignment="Center"
+                    Spacing="4">
+            <TextBlock Text="{Binding HeartRateText}"
+                       FontSize="36"
+                       FontWeight="Light"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding RmssdText}" HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding BaselineText}"
+                       Foreground="#8A8F98"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding TimeSinceStateChange}"
+                       Foreground="#8A8F98"
+                       FontSize="12"
+                       HorizontalAlignment="Center" />
+        </StackPanel>
+
+        <Button Grid.Row="3"
+                Margin="0,20,0,0"
+                HorizontalAlignment="Stretch"
+                HorizontalContentAlignment="Center"
+                Padding="16,12"
+                Content="{Binding ConnectionLabel}"
+                Command="{Binding ToggleConnectionCommand}" />
+    </Grid>
 </UserControl>
