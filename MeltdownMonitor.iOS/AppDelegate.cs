@@ -2,7 +2,6 @@ using Avalonia;
 using Avalonia.iOS;
 using Foundation;
 using MeltdownMonitor.iOS.Services;
-using UIKit;
 
 namespace MeltdownMonitor.iOS;
 
@@ -17,17 +16,12 @@ public partial class AppDelegate : AvaloniaAppDelegate<MeltdownMonitor.Mobile.Ap
 		MeltdownMonitor.Mobile.App.RootViewModelFactory =
 			IosCompositionRoot.BuildRootViewModel;
 
-		return base.CustomizeAppBuilder(builder);
-	}
-
-	public override bool FinishedLaunching(UIApplication application, NSDictionary launchOptions)
-	{
-		bool result = base.FinishedLaunching(application, launchOptions);
-
 		// Activate the playback audio session so the optional alert chime
-		// survives the screen lock. See design doc §4.6.
+		// survives the screen lock. See design doc §4.6. Avalonia 12 made
+		// FinishedLaunching non-virtual, so this is the surviving extension
+		// point that still runs once per cold start.
 		AudioSessionConfigurator.Configure();
 
-		return result;
+		return base.CustomizeAppBuilder(builder);
 	}
 }
