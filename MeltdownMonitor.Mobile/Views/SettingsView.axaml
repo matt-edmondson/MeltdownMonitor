@@ -1,8 +1,76 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             x:Class="MeltdownMonitor.Mobile.Views.SettingsView">
-    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="8">
-        <TextBlock Text="Settings" FontSize="24" HorizontalAlignment="Center" />
-        <TextBlock Text="Device, thresholds, permissions." HorizontalAlignment="Center" />
-    </StackPanel>
+             xmlns:vm="clr-namespace:MeltdownMonitor.Mobile.ViewModels"
+             x:Class="MeltdownMonitor.Mobile.Views.SettingsView"
+             x:DataType="vm:SettingsViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="20" Spacing="20">
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="Device" FontWeight="SemiBold" />
+                <ComboBox ItemsSource="{Binding DeviceTypes}"
+                          SelectedItem="{Binding DeviceType, Mode=TwoWay}"
+                          HorizontalAlignment="Stretch" />
+                <TextBlock Text="Auto connects to the first heart-rate device found."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="Alerts" FontWeight="SemiBold" />
+                <CheckBox Content="Sound chime when alerting"
+                          IsChecked="{Binding EnableChime, Mode=TwoWay}" />
+                <CheckBox Content="Show notifications"
+                          IsChecked="{Binding EnableNotifications, Mode=TwoWay}" />
+                <Button Content="Request notification permission"
+                        Command="{Binding RequestNotificationsCommand}" />
+                <TextBlock Text="Suggestion shown in alerts:" FontSize="12" Foreground="#8A8F98" />
+                <TextBox Text="{Binding AlertSuggestion, Mode=TwoWay}"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="Sensitivity" FontWeight="SemiBold" />
+                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="RMSSD drop to warn" />
+                    <TextBlock Grid.Row="0" Grid.Column="1"
+                               Text="{Binding RmssdWarningDropPercent, StringFormat='{}{0:F0}%'}" />
+                </Grid>
+                <Slider Minimum="10" Maximum="70"
+                        Value="{Binding RmssdWarningDropPercent, Mode=TwoWay}" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="HR rise to warn" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding HrWarningRisePercent, StringFormat='{}{0:F0}%'}" />
+                </Grid>
+                <Slider Minimum="5" Maximum="50"
+                        Value="{Binding HrWarningRisePercent, Mode=TwoWay}" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="Pause" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding PausedUntilLabel}" Foreground="#8A8F98" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Pause 1 hour" Command="{Binding PauseOneHourCommand}" />
+                    <Button Content="Resume" Command="{Binding ResumeCommand}" />
+                </StackPanel>
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="HealthKit" FontWeight="SemiBold" />
+                <TextBlock Text="Optional — warms the baseline from past 24 h of HR."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+                <Button Content="Request HealthKit access"
+                        Command="{Binding RequestHealthKitCommand}" />
+            </StackPanel>
+
+            <TextBlock Text="MeltdownMonitor is informational only. Not a medical device."
+                       Foreground="#8A8F98"
+                       FontSize="11"
+                       TextWrapping="Wrap"
+                       Margin="0,8,0,0" />
+
+        </StackPanel>
+    </ScrollViewer>
 </UserControl>

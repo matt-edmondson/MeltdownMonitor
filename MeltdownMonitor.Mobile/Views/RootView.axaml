@@ -1,0 +1,18 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:MeltdownMonitor.Mobile.ViewModels"
+             xmlns:views="clr-namespace:MeltdownMonitor.Mobile.Views"
+             x:Class="MeltdownMonitor.Mobile.Views.RootView"
+             x:DataType="vm:RootViewModel">
+    <TabControl TabStripPlacement="Bottom">
+        <TabItem Header="Now">
+            <views:NowView DataContext="{Binding Now}" />
+        </TabItem>
+        <TabItem Header="History">
+            <views:HistoryView DataContext="{Binding History}" />
+        </TabItem>
+        <TabItem Header="Settings">
+            <views:SettingsView DataContext="{Binding Settings}" />
+        </TabItem>
+    </TabControl>
+</UserControl>
