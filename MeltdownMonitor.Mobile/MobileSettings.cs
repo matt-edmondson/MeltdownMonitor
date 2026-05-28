@@ -31,4 +31,12 @@ public sealed class MobileSettings
 	/// by the platform head — on iOS that means <c>NSUserDefaults</c>.
 	/// </summary>
 	public bool IsDisclaimerAccepted { get; set; }
+
+	/// <summary>
+	/// Opt-in: write each dysregulation episode (alert window) back to
+	/// HealthKit as a "Mind &amp; Body" workout so the user's records survive
+	/// app reinstall. Default off because Apple's wellness rules (design doc
+	/// §11) prefer explicit consent for write-back beyond pure HR samples.
+	/// </summary>
+	public bool WriteEpisodesToHealthKit { get; set; }
 }

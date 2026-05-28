@@ -14,7 +14,7 @@ namespace MeltdownMonitor.Mobile.ViewModels;
 /// can compose it with the real <c>PolarHrSource</c> and any other host can
 /// stub it with a synthetic source for screenshots.
 /// </summary>
-public sealed class NowViewModel : ViewModelBase
+public sealed class NowViewModel : ViewModelBase, IDisposable
 {
 	private const int SparklineMaxPoints = 360; // ~60 s at 6 Hz update cadence
 
@@ -23,6 +23,7 @@ public sealed class NowViewModel : ViewModelBase
 
 	private readonly Func<Task>? _onConnect;
 	private readonly Func<Task>? _onDisconnect;
+	private Pipeline? _pipeline;
 
 	private DetectorState _state = DetectorState.Idle;
 	private bool _isPaused;
@@ -34,11 +35,37 @@ public sealed class NowViewModel : ViewModelBase
 
 	public NowViewModel(
 		Func<Task>? onConnect = null,
-		Func<Task>? onDisconnect = null)
+		Func<Task>? onDisconnect = null,
+		Pipeline? pipeline = null)
 	{
 		_onConnect = onConnect;
 		_onDisconnect = onDisconnect;
 		ToggleConnectionCommand = new RelayCommand(ToggleConnection);
+
+		if (pipeline is not null)
+		{
+			AttachPipeline(pipeline);
+		}
+	}
+
+	/// <summary>
+	/// Late-bind a pipeline to this VM. The iOS head builds the VM tree
+	/// during <c>OnFrameworkInitializationCompleted</c> so the disclaimer
+	/// screen can render immediately, then attaches the pipeline once
+	/// HealthKit warm-start completes — this method is the join point.
+	/// Safe to call once per VM lifetime; calling again is a no-op.
+	/// </summary>
+	public void AttachPipeline(Pipeline pipeline)
+	{
+		if (_pipeline is not null)
+		{
+			return;
+		}
+
+		_pipeline = pipeline;
+		_pipeline.SampleUpdated += OnSampleUpdated;
+		_pipeline.StateChanged += OnPipelineStateChanged;
+		State = _pipeline.CurrentState;
 	}
 
 	public IReadOnlyList<double> RmssdHistory => _rmssdHistory;
@@ -168,6 +195,13 @@ public sealed class NowViewModel : ViewModelBase
 			BaselineRmssd = sample.BaselineRmssd;
 			State = sample.State;
 
+			// First sample arriving from the pipeline is our signal that BLE
+			// is producing beats — flip the button text to "Disconnect".
+			if (_connection != ConnectionState.Connected)
+			{
+				Connection = ConnectionState.Connected;
+			}
+
 			_rmssdHistory.Add(sample.Rmssd);
 			_baselineHistory.Add(sample.BaselineRmssd);
 			TrimHistory();
@@ -175,6 +209,20 @@ public sealed class NowViewModel : ViewModelBase
 			Raise(nameof(RmssdHistory));
 			Raise(nameof(BaselineHistory));
 		}
+
+		if (Dispatcher.UIThread.CheckAccess())
+		{
+			Apply();
+		}
+		else
+		{
+			Dispatcher.UIThread.Post(Apply);
+		}
+	}
+
+	private void OnPipelineStateChanged(DetectorState state)
+	{
+		void Apply() => State = state;
 
 		if (Dispatcher.UIThread.CheckAccess())
 		{
@@ -222,6 +270,15 @@ public sealed class NowViewModel : ViewModelBase
 
 				Connection = ConnectionState.Disconnected;
 				break;
+		}
+	}
+
+	public void Dispose()
+	{
+		if (_pipeline is not null)
+		{
+			_pipeline.SampleUpdated -= OnSampleUpdated;
+			_pipeline.StateChanged -= OnPipelineStateChanged;
 		}
 	}
 }

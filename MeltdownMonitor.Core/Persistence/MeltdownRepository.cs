@@ -5,15 +5,57 @@ using MeltdownMonitor.Core.Hrv;
 
 namespace MeltdownMonitor.Core.Persistence;
 
+/// <summary>
+/// Per-platform tuning that the repository can't infer on its own. Defaults
+/// match desktop behaviour; iOS callers pass <see cref="MobileSafeDefaults"/>
+/// to dodge the WAL-vs-encryption interaction documented in design doc §4.7.
+/// </summary>
+public sealed record MeltdownRepositoryOptions(
+	bool UseTruncateJournal = false,
+	bool UseFullFsync = false)
+{
+	public static MeltdownRepositoryOptions DesktopDefaults { get; } = new();
+
+	public static MeltdownRepositoryOptions MobileSafeDefaults { get; } = new(
+		UseTruncateJournal: true,
+		UseFullFsync: true);
+}
+
 public class MeltdownRepository : IDisposable
 {
 	private readonly SqliteConnection _connection;
 
 	public MeltdownRepository(string databasePath)
+		: this(databasePath, MeltdownRepositoryOptions.DesktopDefaults)
+	{
+	}
+
+	public MeltdownRepository(string databasePath, MeltdownRepositoryOptions options)
 	{
 		_connection = new SqliteConnection($"Data Source={databasePath}");
 		_connection.Open();
+		ApplyPragmas(options);
 		EnsureSchema();
+	}
+
+	private void ApplyPragmas(MeltdownRepositoryOptions options)
+	{
+		// iOS sandbox + data-protection interacts badly with the default WAL
+		// journal once the device is locked (design doc §4.7). Switching to
+		// TRUNCATE keeps writes single-file and survives lock screens.
+		if (options.UseTruncateJournal)
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = "PRAGMA journal_mode=TRUNCATE";
+			cmd.ExecuteNonQuery();
+		}
+
+		if (options.UseFullFsync)
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = "PRAGMA fullfsync=ON";
+			cmd.ExecuteNonQuery();
+		}
 	}
 
 	private void EnsureSchema()

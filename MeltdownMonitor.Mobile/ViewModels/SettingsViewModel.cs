@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using MeltdownMonitor.Core.Beats;
+using MeltdownMonitor.Mobile.Services;
 
 namespace MeltdownMonitor.Mobile.ViewModels;
 
@@ -12,15 +13,18 @@ namespace MeltdownMonitor.Mobile.ViewModels;
 public sealed class SettingsViewModel : ViewModelBase
 {
 	private readonly MobileSettings _settings;
+	private readonly IMobileSettingsStore? _store;
 	private readonly Func<Task<bool>>? _requestNotifications;
 	private readonly Func<Task<bool>>? _requestHealthKit;
 
 	public SettingsViewModel(
 		MobileSettings settings,
 		Func<Task<bool>>? requestNotifications = null,
-		Func<Task<bool>>? requestHealthKit = null)
+		Func<Task<bool>>? requestHealthKit = null,
+		IMobileSettingsStore? store = null)
 	{
 		_settings = settings;
+		_store = store;
 		_requestNotifications = requestNotifications;
 		_requestHealthKit = requestHealthKit;
 
@@ -42,6 +46,7 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.DeviceType = value;
 				Raise();
+				Persist();
 			}
 		}
 	}
@@ -55,6 +60,7 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.EnableChime = value;
 				Raise();
+				Persist();
 			}
 		}
 	}
@@ -68,6 +74,21 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.EnableNotifications = value;
 				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public bool WriteEpisodesToHealthKit
+	{
+		get => _settings.WriteEpisodesToHealthKit;
+		set
+		{
+			if (_settings.WriteEpisodesToHealthKit != value)
+			{
+				_settings.WriteEpisodesToHealthKit = value;
+				Raise();
+				Persist();
 			}
 		}
 	}
@@ -81,6 +102,7 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.AlertSuggestion = value;
 				Raise();
+				Persist();
 			}
 		}
 	}
@@ -95,6 +117,7 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.Thresholds = _settings.Thresholds with { RmssdWarningDropFraction = frac };
 				Raise();
+				Persist();
 			}
 		}
 	}
@@ -109,6 +132,7 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.Thresholds = _settings.Thresholds with { HrWarningRiseFraction = frac };
 				Raise();
+				Persist();
 			}
 		}
 	}
@@ -128,6 +152,7 @@ public sealed class SettingsViewModel : ViewModelBase
 		_settings.PausedUntil = DateTimeOffset.UtcNow.AddHours(1);
 		Raise(nameof(PausedUntilLabel));
 		(ResumeCommand as RelayCommand)?.RaiseCanExecuteChanged();
+		Persist();
 	}
 
 	private void Resume()
@@ -135,7 +160,10 @@ public sealed class SettingsViewModel : ViewModelBase
 		_settings.PausedUntil = null;
 		Raise(nameof(PausedUntilLabel));
 		(ResumeCommand as RelayCommand)?.RaiseCanExecuteChanged();
+		Persist();
 	}
+
+	private void Persist() => _store?.SaveSettings(_settings);
 
 	private async Task RequestNotificationsAsync()
 	{

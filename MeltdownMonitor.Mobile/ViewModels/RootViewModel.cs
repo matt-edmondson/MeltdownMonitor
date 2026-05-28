@@ -12,16 +12,19 @@ public sealed class RootViewModel : ViewModelBase
 {
 	private readonly MobileSettings _settings;
 	private readonly IMobileSettingsStore? _store;
+	private readonly Action? _onDisclaimerAccepted;
 
 	public RootViewModel(
 		MobileSettings settings,
 		NowViewModel now,
 		HistoryViewModel history,
 		SettingsViewModel settings_tab,
-		IMobileSettingsStore? store = null)
+		IMobileSettingsStore? store = null,
+		Action? onDisclaimerAccepted = null)
 	{
 		_settings = settings;
 		_store = store;
+		_onDisclaimerAccepted = onDisclaimerAccepted;
 		Now = now;
 		History = history;
 		Settings = settings_tab;
@@ -63,5 +66,6 @@ public sealed class RootViewModel : ViewModelBase
 		_store?.SaveDisclaimerAccepted(true);
 		Raise(nameof(IsDisclaimerAccepted));
 		Raise(nameof(IsDisclaimerPending));
+		_onDisclaimerAccepted?.Invoke();
 	}
 }
