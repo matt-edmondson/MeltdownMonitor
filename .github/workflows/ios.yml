@@ -94,10 +94,14 @@ jobs:
       # Design doc §14: "fail the build matrix loudly if [the iOS workload
       # is] absent". A silent skip would let the rest of the workflow look
       # green while shipping nothing.
+      # `--skip-manifest-update` keeps the iOS manifest bundled with the
+      # selected SDK band rather than pulling the latest from NuGet —
+      # otherwise even a 10.0.2xx SDK still installs the 26.5 iOS workload
+      # (and requires Xcode 26.5).
       - name: Install iOS workload (fail loudly if unavailable)
         run: |
           set -e
-          if ! dotnet workload install ios; then
+          if ! dotnet workload install ios --skip-manifest-update; then
             echo "::error title=iOS workload unavailable::dotnet workload install ios failed on $(sw_vers -productName) $(sw_vers -productVersion) with $(xcodebuild -version | head -n 1). Phase 7 (docs/ios-design.md §12) requires this workload — see §14 risk mitigation."
             exit 1
           fi
@@ -209,7 +213,7 @@ jobs:
       - name: Install iOS workload
         run: |
           set -e
-          if ! dotnet workload install ios; then
+          if ! dotnet workload install ios --skip-manifest-update; then
             echo "::error title=iOS workload unavailable::dotnet workload install ios failed on $(xcodebuild -version | head -n 1)."
             exit 1
           fi
