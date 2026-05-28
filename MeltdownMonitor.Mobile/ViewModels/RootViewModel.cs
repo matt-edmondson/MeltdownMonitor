@@ -1,25 +1,41 @@
+using MeltdownMonitor.Mobile.Services;
+
 namespace MeltdownMonitor.Mobile.ViewModels;
 
 /// <summary>
 /// Top-level VM. Owns the three tab view models so the iOS head (or any
 /// other Avalonia host) can construct a single composition root and hand
-/// it to <c>RootView</c>.
+/// it to <c>RootView</c>. Also gates the tabs behind the first-run
+/// disclaimer (design doc §4.4).
 /// </summary>
-public sealed class RootViewModel
+public sealed class RootViewModel : ViewModelBase
 {
+	private readonly MobileSettings _settings;
+	private readonly IMobileSettingsStore? _store;
+
 	public RootViewModel(
+		MobileSettings settings,
 		NowViewModel now,
 		HistoryViewModel history,
-		SettingsViewModel settings)
+		SettingsViewModel settings_tab,
+		IMobileSettingsStore? store = null)
 	{
+		_settings = settings;
+		_store = store;
 		Now = now;
 		History = history;
-		Settings = settings;
+		Settings = settings_tab;
+		Disclaimer = new DisclaimerViewModel(AcceptDisclaimer);
 	}
 
 	public NowViewModel Now { get; }
 	public HistoryViewModel History { get; }
 	public SettingsViewModel Settings { get; }
+	public DisclaimerViewModel Disclaimer { get; }
+
+	public bool IsDisclaimerAccepted => _settings.IsDisclaimerAccepted;
+
+	public bool IsDisclaimerPending => !_settings.IsDisclaimerAccepted;
 
 	/// <summary>
 	/// Stub composition for design-time and screenshots — no repository,
@@ -30,8 +46,22 @@ public sealed class RootViewModel
 	{
 		var settings = new MobileSettings();
 		return new RootViewModel(
+			settings,
 			new NowViewModel(),
 			new HistoryViewModel(),
 			new SettingsViewModel(settings));
+	}
+
+	private void AcceptDisclaimer()
+	{
+		if (_settings.IsDisclaimerAccepted)
+		{
+			return;
+		}
+
+		_settings.IsDisclaimerAccepted = true;
+		_store?.SaveDisclaimerAccepted(true);
+		Raise(nameof(IsDisclaimerAccepted));
+		Raise(nameof(IsDisclaimerPending));
 	}
 }

@@ -4,15 +4,22 @@
              xmlns:views="clr-namespace:MeltdownMonitor.Mobile.Views"
              x:Class="MeltdownMonitor.Mobile.Views.RootView"
              x:DataType="vm:RootViewModel">
-    <TabControl TabStripPlacement="Bottom">
-        <TabItem Header="Now">
-            <views:NowView DataContext="{Binding Now}" />
-        </TabItem>
-        <TabItem Header="History">
-            <views:HistoryView DataContext="{Binding History}" />
-        </TabItem>
-        <TabItem Header="Settings">
-            <views:SettingsView DataContext="{Binding Settings}" />
-        </TabItem>
-    </TabControl>
+    <Grid>
+        <Panel IsVisible="{Binding IsDisclaimerPending}">
+            <views:DisclaimerView DataContext="{Binding Disclaimer}" />
+        </Panel>
+
+        <TabControl TabStripPlacement="Bottom"
+                    IsVisible="{Binding IsDisclaimerAccepted}">
+            <TabItem Header="Now">
+                <views:NowView DataContext="{Binding Now}" />
+            </TabItem>
+            <TabItem Header="History">
+                <views:HistoryView DataContext="{Binding History}" />
+            </TabItem>
+            <TabItem Header="Settings">
+                <views:SettingsView DataContext="{Binding Settings}" />
+            </TabItem>
+        </TabControl>
+    </Grid>
 </UserControl>

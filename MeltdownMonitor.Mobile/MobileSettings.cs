@@ -24,4 +24,11 @@ public sealed class MobileSettings
 
 	public string AlertSuggestion { get; set; } =
 		"Step away. Five minutes. Find something quiet.";
+
+	/// <summary>
+	/// True once the user has acknowledged the first-run disclaimer. Gates the
+	/// rest of the app (and any HealthKit ask) per design doc §4.4. Persisted
+	/// by the platform head — on iOS that means <c>NSUserDefaults</c>.
+	/// </summary>
+	public bool IsDisclaimerAccepted { get; set; }
 }
