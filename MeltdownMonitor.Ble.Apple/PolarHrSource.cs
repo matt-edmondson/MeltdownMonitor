@@ -222,7 +222,7 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource
 			}
 		}
 
-		public override void DiscoveredCharacteristic(CBPeripheral peripheral, CBService service, NSError? error)
+		public override void DiscoveredCharacteristics(CBPeripheral peripheral, CBService service, NSError? error)
 		{
 			if (_owner is null || service.Characteristics is null)
 			{
