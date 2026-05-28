@@ -407,6 +407,160 @@ demoable state.
 - Baseline warm-start path in the pipeline that pulls the last 24 h of HR
   samples into `BaselineHrvTracker` before live BLE data starts arriving.
 
+### Phase 6 — wire-up + ship-readiness
+
+Phases 1–5 built the pieces but stopped short of composing them into a
+real app on device. `IosCompositionRoot.BuildRootViewModel` builds the
+view models with stub `NowViewModel`/`HistoryViewModel` constructors and
+`AttachAlertDispatcher` has no caller — so no `Pipeline` is constructed,
+no `PolarHrSource` is created, and no beats actually reach the UI. Phase
+6 closes that gap and handles the housekeeping that keeps the app alive
+on a real iPhone between launches and across background transitions.
+
+**6.1 Compose the live pipeline in the iOS head.**
+
+- Extend `IosCompositionRoot` with `BuildAndStartPipelineAsync()` that:
+  1. Opens `MeltdownRepository` against
+     `Library/Application Support/MeltdownMonitor/data.db` (design doc
+     §4.7), creating the directory if missing and setting
+     `NSFileProtectionCompleteUntilFirstUserAuthentication` on the file.
+  2. Configures SQLite with `journal_mode=TRUNCATE` and
+     `PRAGMA fullfsync=ON` (design doc §4.7) — push this into Core's
+     `MeltdownRepository` behind a connection-string option so the
+     desktop build is unaffected.
+  3. Constructs `PolarHrSource` (from `MeltdownMonitor.Ble.Apple`) with
+     the persisted peripheral identifier from `NSUserDefaults`.
+  4. Constructs `Pipeline(settings, repository, source)`,
+     `await`s `WarmStartAsync(HealthStore, lookback: 24h)` before
+     `Start()` (the existing contract — warm-start must precede start),
+     then calls `AttachAlertDispatcher`.
+  5. Hands the running pipeline to `NowViewModel` and `HistoryViewModel`
+     via constructor injection so `SampleUpdated`/`StateChanged` and the
+     repository feed the UI.
+- `AppDelegate.FinishedLaunching` kicks the async composition off on the
+  main loop **after** Avalonia init; the splash/disclaimer screen stays
+  up until the first sample arrives or a 2 s timeout, whichever first.
+
+**6.2 Background lifecycle.**
+
+- `AppDelegate.DidEnterBackground` — flush the repository, do **not**
+  stop the pipeline (the whole point of `bluetooth-central` mode is
+  staying connected).
+- `AppDelegate.WillEnterForeground` — re-read settings (user may have
+  toggled chime/pause from Settings app shortcut), nudge the view models
+  to refresh the current state pill from `Pipeline.CurrentState` since
+  Avalonia views may have torn down.
+- `AppDelegate.WillTerminate` — `await pipeline.StopAsync()` with a
+  bounded timeout (~1 s); iOS will SIGKILL after that anyway, but a
+  graceful flush of the repository write-ahead matters.
+- Wire `PolarHrSource`'s state-restoration entry point
+  (`BleStateRestoration`, already scaffolded in Phase 2) into
+  `CBCentralManagerOptionRestoreIdentifierKey` and confirm
+  `willRestoreState:` actually fires on a cold relaunch by the OS — this
+  is the **highest-risk item on the board** (design doc §14, row 1) and
+  needs a real-device test before declaring Phase 6 done.
+
+**6.3 Episode write-back to HealthKit.**
+
+- `HealthKitStore.WriteEpisodeAsync` exists but has no caller.
+  `MobileAlertDispatcher` already observes `Pipeline.AlertFired`; extend
+  it (or add a sibling `HealthKitEpisodeRecorder`) to assemble an
+  `EpisodeRecord` from the alert + a few seconds of trailing state and
+  call `WriteEpisodeAsync` opt-in based on
+  `MobileSettings.WriteEpisodesToHealthKit` (new flag, default off —
+  Apple's wellness rules, design doc §11).
+
+**6.4 Settings persistence round-trip.**
+
+- `NSUserDefaultsSettingsStore` currently only loads/saves the
+  disclaimer-accepted bit. Extend it to round-trip the full
+  `MobileSettings` (thresholds, chime on/off, pause-until, persisted
+  peripheral identifier, episode-write-back flag) on every settings
+  change. Use `JsonSerializer` on a settings DTO rather than a key per
+  field — fewer keys to migrate later.
+- On launch, hydrate settings from the store **before**
+  `BuildAndStartPipelineAsync` so the pipeline sees the user's
+  thresholds, not defaults.
+
+**6.5 DB export via share-sheet.**
+
+- Settings screen already lists "export DB" (design doc §6). Implement
+  via `UIActivityViewController` in an iOS-side
+  `IDatabaseExporter` impl, called from `SettingsViewModel`. Confirm the
+  DB is closed/flushed before sharing or hand out a copy.
+
+**6.6 Mobile test coverage.**
+
+- New `MeltdownMonitor.Mobile.Tests` project (resolving design doc §13
+  question 5):
+  - `NowViewModel` correctly updates current-state and last-sample on
+    `Pipeline.SampleUpdated`/`StateChanged`.
+  - `MobileAlertDispatcher` calls the chime only when settings say so
+    and only on `Warning→Alerting` transitions (not on `Alerting→`
+    repeats).
+  - `Pipeline.WarmStartAsync` is a no-op when `IHealthStore` is null,
+    seeds the baseline tracker when it isn't, and is idempotent (calling
+    it twice doesn't double-count).
+  - `NSUserDefaultsSettingsStore` round-trips a populated
+    `MobileSettings` byte-for-byte. (Runs on macOS CI only via the iOS
+    workload; covered behind a build constant on Windows.)
+- Keep the existing `MeltdownMonitor.Tests` as Core-only.
+
+**6.7 First-launch usage strings & privacy nutrition card.**
+
+- Replace the placeholder `Info.plist` usage strings with the final
+  user-facing copy (Bluetooth, HealthKit read, HealthKit write,
+  Notifications). Match the wellness/disclaimer tone from §4.4 / §11 —
+  no "detect", no medical claims. Draft the privacy-nutrition-label
+  answers in a new `docs/privacy-nutrition.md` so they're ready to paste
+  into App Store Connect when CI gets that far.
+
+**Exit criteria for Phase 6:**
+
+1. Cold-launching on a real iPhone with a paired H10 lands in
+   `Watching` within 5 s of the disclaimer being dismissed.
+2. Killing the app from the background and waiting 30 s, then triggering
+   a hand-grip drop in HR, fires a local notification.
+3. The exported DB opens cleanly in `sqlite3` on macOS after a
+   share-sheet handoff.
+4. `dotnet test` is green on macOS for both Core and Mobile suites.
+
+### Phase 7 — CI, signing, and TestFlight
+
+Resolves design doc §13 question 4 ("paid developer account?") and §14
+row 5 ("no Mac in CI").
+
+- New `.github/workflows/ios.yml` running on `macos-14` with the iOS
+  workload installed; builds `MeltdownMonitor.iOS.csproj` for Device
+  and Simulator, runs the Mobile tests, uploads the simulator `.app`
+  bundle as an artifact.
+- Fail the matrix loudly (not silently skip) if the iOS workload is
+  unavailable — design doc §14 risk mitigation.
+- Code signing via App Store Connect API key stored in repo secrets;
+  archive + `xcrun altool` upload to TestFlight on tags matching
+  `ios-v*`. Gate this whole job on a `secrets.IOS_SIGNING_AVAILABLE`
+  check so contributors without the key get a green green-up to "build
+  & test, skip upload".
+- Add the disclaimer copy, privacy-nutrition answers, and screenshot
+  bundle to a new `docs/store-submission/` folder so a future submission
+  doesn't have to re-derive them.
+
+### Phase 8 — Live Activity / Dynamic Island (v1.1)
+
+Promotes the §4.5 / §10 "out of scope for v1" item once the underlying
+app is shipping.
+
+- New `MeltdownMonitor.iOS.WidgetExtension` target (Xamarin.iOS
+  bindings + Swift interop — this is the one place where a small Swift
+  file is unavoidable, since `ActivityKit` doesn't have a managed
+  binding yet).
+- `Pipeline.StateChanged` posts an `ActivityKit` content update with
+  state colour, current HR, and the RMSSD-vs-baseline ratio.
+- Lock-screen presentation mirrors the in-app state pill; Dynamic Island
+  compact view is just the colour + ratio glyph.
+- Throttle updates to ≤ 1 Hz to stay inside Apple's budget for
+  background activity refreshes.
+
 ### Out of scope for v1 (logged for v1.1+)
 
 - Live Activity / Dynamic Island.
