@@ -79,7 +79,7 @@ public class HrMeasurementParserTests
 	[TestMethod]
 	public void Parse_PayloadTooShort_Throws()
 	{
-		Assert.ThrowsException<ArgumentOutOfRangeException>(() =>
+		Assert.Throws<ArgumentOutOfRangeException>(() =>
 			HrMeasurementParser.Parse([0x00]));
 	}
 }

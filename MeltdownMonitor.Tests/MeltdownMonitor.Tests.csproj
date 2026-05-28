@@ -18,6 +18,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MeltdownMonitor.Core\MeltdownMonitor.Core.csproj" />
+    <ProjectReference Include="..\MeltdownMonitor.Mobile\MeltdownMonitor.Mobile.csproj" />
   </ItemGroup>
 
 </Project>

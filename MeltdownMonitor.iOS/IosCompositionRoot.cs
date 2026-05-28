@@ -7,19 +7,20 @@ namespace MeltdownMonitor.iOS;
 
 /// <summary>
 /// Wires the platform-neutral Mobile view models to the iOS-specific
-/// services (notifications, audio chime, NSUserDefaults). Lives in the
-/// head project so the Mobile assembly never takes a CoreBluetooth /
-/// UserNotifications / AVFoundation dependency.
-///
-/// Phase 4 wires alerts, chime, the disclaimer flag, and permission asks.
-/// The live BLE <c>Pipeline</c> is composed here too so the alert
-/// dispatcher has something to listen to; the HealthKit warm-start
-/// (Phase 5) is still to come.
+/// services (notifications, audio chime, NSUserDefaults, HealthKit).
+/// Lives in the head project so the Mobile assembly never takes a
+/// CoreBluetooth / UserNotifications / AVFoundation / HealthKit
+/// dependency.
 /// </summary>
 public static class IosCompositionRoot
 {
 	private static MobileAlertDispatcher? _alertDispatcher;
 	private static NotificationDispatcher? _notifications;
+	private static HealthKitStore? _healthStore;
+
+	/// <summary>HealthKit facade kept alive for the app's lifetime so the
+	/// live pipeline can warm-start from it on every relaunch.</summary>
+	public static IHealthStore? HealthStore => _healthStore;
 
 	public static RootViewModel BuildRootViewModel()
 	{
@@ -28,12 +29,12 @@ public static class IosCompositionRoot
 		settings.IsDisclaimerAccepted = store.LoadDisclaimerAccepted();
 
 		_notifications = new NotificationDispatcher(settings);
-		var chime = new AudioChimePlayer();
+		_healthStore = new HealthKitStore();
 
 		var settingsTab = new SettingsViewModel(
 			settings,
 			requestNotifications: () => _notifications.RequestAuthorizationAsync(),
-			requestHealthKit: null);
+			requestHealthKit: () => _healthStore.RequestAuthorizationAsync());
 
 		return new RootViewModel(
 			settings,
@@ -44,9 +45,9 @@ public static class IosCompositionRoot
 	}
 
 	/// <summary>
-	/// Hook for when the live pipeline is composed (Phase 5) — keeps the
-	/// alert dispatcher alive for the app's lifetime. Safe to call before
-	/// or after <see cref="BuildRootViewModel"/>.
+	/// Hook for when the live pipeline is composed — keeps the alert
+	/// dispatcher alive for the app's lifetime. Safe to call before or
+	/// after <see cref="BuildRootViewModel"/>.
 	/// </summary>
 	public static void AttachAlertDispatcher(
 		Pipeline pipeline,
