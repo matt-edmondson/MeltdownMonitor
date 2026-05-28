@@ -84,14 +84,23 @@ jobs:
           fi
           dotnet workload list
 
-      - name: Restore
-        run: dotnet restore MeltdownMonitor.sln
+      # Restore only the iOS-relevant projects. The solution also contains
+      # `MeltdownMonitor.App` and `MeltdownMonitor.Ble.Windows`, both of
+      # which target `net10.0-windows*` and refuse to restore on macOS
+      # (NETSDK1100). EnableWindowsTargeting wouldn't help — they pull in
+      # Windows SDK refs that aren't present on the Mac runner.
+      - name: Restore (iOS projects only)
+        run: |
+          dotnet restore MeltdownMonitor.Core/MeltdownMonitor.Core.csproj
+          dotnet restore MeltdownMonitor.Mobile/MeltdownMonitor.Mobile.csproj
+          dotnet restore MeltdownMonitor.Ble.Apple/MeltdownMonitor.Ble.Apple.csproj
+          dotnet restore MeltdownMonitor.Tests/MeltdownMonitor.Tests.csproj
+          dotnet restore MeltdownMonitor.iOS/MeltdownMonitor.iOS.csproj
 
       - name: Test (Core + Mobile)
         run: |
           dotnet test MeltdownMonitor.Tests/MeltdownMonitor.Tests.csproj \
             -c Release \
-            --no-restore \
             --logger "trx;LogFileName=test-results.trx" \
             --results-directory ./TestResults
 
