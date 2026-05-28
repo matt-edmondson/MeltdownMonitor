@@ -63,6 +63,18 @@
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
                 <Button Content="Request HealthKit access"
                         Command="{Binding RequestHealthKitCommand}" />
+                <CheckBox Content="Log episodes to Apple Health"
+                          IsChecked="{Binding WriteEpisodesToHealthKit, Mode=TwoWay}" />
+                <TextBlock Text="Off by default. When enabled, each alert is saved as a Mind &amp; Body entry."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="Data" FontWeight="SemiBold" />
+                <Button Content="Export database…"
+                        Command="{Binding ExportDatabaseCommand}" />
+                <TextBlock Text="Shares a snapshot of your saved beats, HRV samples, and alerts."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
             </StackPanel>
 
             <TextBlock Text="MeltdownMonitor is informational only. Not a medical device."

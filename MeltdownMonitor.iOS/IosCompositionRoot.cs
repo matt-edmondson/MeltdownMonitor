@@ -52,11 +52,13 @@ public static class IosCompositionRoot
 		_chime = new AudioChimePlayer();
 		_databasePath = ResolveDatabasePath();
 
+		var exporter = new UIDatabaseExporter();
 		var settingsTab = new SettingsViewModel(
 			_settings,
 			requestNotifications: () => _notifications.RequestAuthorizationAsync(),
 			requestHealthKit: () => _healthStore.RequestAuthorizationAsync(),
-			store: _store);
+			store: _store,
+			exportDatabase: () => exporter.ExportAsync(_databasePath!));
 
 		_nowViewModel = new NowViewModel();
 

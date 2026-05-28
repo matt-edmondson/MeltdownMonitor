@@ -16,22 +16,28 @@ public sealed class SettingsViewModel : ViewModelBase
 	private readonly IMobileSettingsStore? _store;
 	private readonly Func<Task<bool>>? _requestNotifications;
 	private readonly Func<Task<bool>>? _requestHealthKit;
+	private readonly Func<Task>? _exportDatabase;
 
 	public SettingsViewModel(
 		MobileSettings settings,
 		Func<Task<bool>>? requestNotifications = null,
 		Func<Task<bool>>? requestHealthKit = null,
-		IMobileSettingsStore? store = null)
+		IMobileSettingsStore? store = null,
+		Func<Task>? exportDatabase = null)
 	{
 		_settings = settings;
 		_store = store;
 		_requestNotifications = requestNotifications;
 		_requestHealthKit = requestHealthKit;
+		_exportDatabase = exportDatabase;
 
 		PauseOneHourCommand = new RelayCommand(PauseOneHour);
 		ResumeCommand = new RelayCommand(Resume, () => _settings.PausedUntil is not null);
 		RequestNotificationsCommand = new RelayCommand(() => _ = RequestNotificationsAsync());
 		RequestHealthKitCommand = new RelayCommand(() => _ = RequestHealthKitAsync());
+		ExportDatabaseCommand = new RelayCommand(
+			() => _ = ExportDatabaseAsync(),
+			() => _exportDatabase is not null);
 	}
 
 	public IReadOnlyList<PolarDeviceType> DeviceTypes { get; } =
@@ -146,6 +152,7 @@ public sealed class SettingsViewModel : ViewModelBase
 	public ICommand ResumeCommand { get; }
 	public ICommand RequestNotificationsCommand { get; }
 	public ICommand RequestHealthKitCommand { get; }
+	public ICommand ExportDatabaseCommand { get; }
 
 	private void PauseOneHour()
 	{
@@ -176,5 +183,11 @@ public sealed class SettingsViewModel : ViewModelBase
 	{
 		if (_requestHealthKit is null) return;
 		_ = await _requestHealthKit().ConfigureAwait(true);
+	}
+
+	private async Task ExportDatabaseAsync()
+	{
+		if (_exportDatabase is null) return;
+		await _exportDatabase().ConfigureAwait(true);
 	}
 }

@@ -88,6 +88,33 @@ public class SettingsViewModelPersistenceTests
 		Assert.AreEqual(0, store.SaveCount);
 	}
 
+	[TestMethod]
+	public void ExportDatabaseCommand_IsDisabled_WhenNoExporterProvided()
+	{
+		var settings = new MobileSettings();
+		var vm = new SettingsViewModel(settings);
+
+		Assert.IsFalse(vm.ExportDatabaseCommand.CanExecute(null),
+			"Export command must stay disabled on hosts that didn't wire an exporter.");
+	}
+
+	[TestMethod]
+	public void ExportDatabaseCommand_InvokesExporter_WhenProvided()
+	{
+		var settings = new MobileSettings();
+		int calls = 0;
+		var vm = new SettingsViewModel(settings, exportDatabase: () =>
+		{
+			calls++;
+			return Task.CompletedTask;
+		});
+
+		Assert.IsTrue(vm.ExportDatabaseCommand.CanExecute(null));
+		vm.ExportDatabaseCommand.Execute(null);
+
+		Assert.AreEqual(1, calls);
+	}
+
 	private sealed class RecordingStore : IMobileSettingsStore
 	{
 		public int SaveCount { get; private set; }
