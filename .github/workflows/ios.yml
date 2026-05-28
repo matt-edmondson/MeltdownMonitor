@@ -58,7 +58,7 @@ jobs:
 
   build-test:
     name: Build & test (macOS)
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 30
     steps:
       - name: Checkout
@@ -72,6 +72,20 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}.x
 
+      # The .NET 10 iOS workload pins to a specific Xcode (currently
+      # 26.5). The runner image must ship that version or newer; older
+      # macos-14 images with Xcode 15.x are not viable.
+      - name: Select latest Xcode
+        run: |
+          set -e
+          LATEST=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$LATEST" ]; then
+            echo "::error::No Xcode_*.app found in /Applications on this runner."
+            exit 1
+          fi
+          sudo xcode-select -s "$LATEST/Contents/Developer"
+          echo "Using $(xcodebuild -version | head -n 1) from $LATEST"
+
       # Design doc §14: "fail the build matrix loudly if [the iOS workload
       # is] absent". A silent skip would let the rest of the workflow look
       # green while shipping nothing.
@@ -79,7 +93,7 @@ jobs:
         run: |
           set -e
           if ! dotnet workload install ios; then
-            echo "::error title=iOS workload unavailable::dotnet workload install ios failed on $(sw_vers -productName) $(sw_vers -productVersion). Phase 7 (docs/ios-design.md §12) requires this workload — see §14 risk mitigation."
+            echo "::error title=iOS workload unavailable::dotnet workload install ios failed on $(sw_vers -productName) $(sw_vers -productVersion) with $(xcodebuild -version | head -n 1). Phase 7 (docs/ios-design.md §12) requires this workload — see §14 risk mitigation."
             exit 1
           fi
           dotnet workload list
@@ -156,7 +170,7 @@ jobs:
     name: Archive & upload to TestFlight
     needs: [build-test, check-secrets]
     if: ${{ needs.check-secrets.outputs.signing_available == 'true' && startsWith(github.ref, 'refs/tags/ios-v') }}
-    runs-on: macos-14
+    runs-on: macos-latest
     timeout-minutes: 45
     environment: ios-release
     steps:
@@ -171,11 +185,22 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}.x
 
+      - name: Select latest Xcode
+        run: |
+          set -e
+          LATEST=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$LATEST" ]; then
+            echo "::error::No Xcode_*.app found in /Applications on this runner."
+            exit 1
+          fi
+          sudo xcode-select -s "$LATEST/Contents/Developer"
+          echo "Using $(xcodebuild -version | head -n 1) from $LATEST"
+
       - name: Install iOS workload
         run: |
           set -e
           if ! dotnet workload install ios; then
-            echo "::error title=iOS workload unavailable::dotnet workload install ios failed."
+            echo "::error title=iOS workload unavailable::dotnet workload install ios failed on $(xcodebuild -version | head -n 1)."
             exit 1
           fi
 
