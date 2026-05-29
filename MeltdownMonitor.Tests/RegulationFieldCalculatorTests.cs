@@ -70,5 +70,22 @@ public class RegulationFieldCalculatorTests
 		var r = RegulationFieldCalculator.Compute(Sample(50, 70, baselineRmssd: 0, baselineHr: 0), Thresholds, 1, true);
 		Assert.AreEqual(0.0, r.Index, 0.001);
 		Assert.AreEqual(0.0, r.Confidence, 0.001);
+		Assert.AreEqual(1.0, r.VariabilityQuality, 0.001);
+	}
+
+	[TestMethod]
+	public void WarmUpProgress_IsClamped()
+	{
+		var r = RegulationFieldCalculator.Compute(Sample(50, 70), Thresholds, warmUpProgress: 1.5, baselineWarm: false);
+		Assert.AreEqual(1.0, r.Confidence, 0.001);
+	}
+
+	[TestMethod]
+	public void NaNBaseline_ReturnsNeutralWithNoConfidence()
+	{
+		var r = RegulationFieldCalculator.Compute(
+			Sample(50, 70, baselineRmssd: double.NaN, baselineHr: 70), Thresholds, 1, true);
+		Assert.AreEqual(0.0, r.Index, 0.001);
+		Assert.AreEqual(0.0, r.Confidence, 0.001);
 	}
 }
