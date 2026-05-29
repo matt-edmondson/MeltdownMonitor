@@ -45,5 +45,8 @@
         <string>audio</string>
         <string>processing</string>
     </array>
+
+    <key>NSSupportsLiveActivities</key>
+    <true/>
 </dict>
 </plist>

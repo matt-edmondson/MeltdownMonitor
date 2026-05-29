@@ -19,6 +19,7 @@ public class MobileSettingsSerializerTests
 			EnableNotifications = false,
 			AlertSuggestion = "Breathe. You've got this.",
 			WriteEpisodesToHealthKit = true,
+			EnableLiveActivity = true,
 			PeripheralIdentifier = "11112222-3333-4444-5555-666677778888",
 			IsDisclaimerAccepted = true,
 			Thresholds = new DetectionThresholds
@@ -42,6 +43,7 @@ public class MobileSettingsSerializerTests
 		Assert.AreEqual(original.EnableNotifications, restored.EnableNotifications);
 		Assert.AreEqual(original.AlertSuggestion, restored.AlertSuggestion);
 		Assert.AreEqual(original.WriteEpisodesToHealthKit, restored.WriteEpisodesToHealthKit);
+		Assert.AreEqual(original.EnableLiveActivity, restored.EnableLiveActivity);
 		Assert.AreEqual(original.PeripheralIdentifier, restored.PeripheralIdentifier);
 		Assert.AreEqual(original.IsDisclaimerAccepted, restored.IsDisclaimerAccepted);
 		Assert.AreEqual(original.Thresholds, restored.Thresholds);

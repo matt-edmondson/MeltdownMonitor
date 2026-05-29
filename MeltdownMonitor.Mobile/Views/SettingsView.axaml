@@ -30,6 +30,14 @@
             </StackPanel>
 
             <StackPanel Spacing="6">
+                <TextBlock Text="Display" FontWeight="SemiBold" />
+                <CheckBox Content="Show Live Activity"
+                          IsChecked="{Binding EnableLiveActivity, Mode=TwoWay}" />
+                <TextBlock Text="Shows current state, heart rate, and balance on the Lock Screen and Dynamic Island."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
                 <TextBlock Text="Sensitivity" FontWeight="SemiBold" />
                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="RMSSD drop to warn" />

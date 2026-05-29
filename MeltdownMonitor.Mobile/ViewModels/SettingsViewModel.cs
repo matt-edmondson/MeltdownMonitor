@@ -90,6 +90,20 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	public bool EnableLiveActivity
+	{
+		get => _settings.EnableLiveActivity;
+		set
+		{
+			if (_settings.EnableLiveActivity != value)
+			{
+				_settings.EnableLiveActivity = value;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	public bool WriteEpisodesToHealthKit
 	{
 		get => _settings.WriteEpisodesToHealthKit;
