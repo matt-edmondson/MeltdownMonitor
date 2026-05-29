@@ -42,4 +42,19 @@ public class LemniscateGeometryTests
 		float maxLeft = -pts.Min(p => p.X);
 		Assert.AreEqual(maxRight, maxLeft, 0.5f);
 	}
+
+	[TestMethod]
+	public void Polyline_LobeHeight_GovernsPeakY()
+	{
+		var pts = LemniscateGeometry.Polyline(new Vector2(0, 0), halfWidth: 40f, lobeHeight: 15f, segments: 128);
+		float maxY = pts.Max(p => p.Y);
+		Assert.AreEqual(15f, maxY, 0.1f, "peak y should equal lobeHeight");
+	}
+
+	[TestMethod]
+	public void Polyline_NegativeSegments_Throws()
+	{
+		Assert.Throws<ArgumentOutOfRangeException>(
+			() => LemniscateGeometry.Polyline(new Vector2(0, 0), 40f, 20f, -1));
+	}
 }

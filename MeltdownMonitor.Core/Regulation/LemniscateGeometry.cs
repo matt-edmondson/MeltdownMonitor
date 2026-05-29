@@ -9,6 +9,10 @@ namespace MeltdownMonitor.Core.Regulation;
 /// </summary>
 public static class LemniscateGeometry
 {
+	// Peak |y| of the parametric lemniscate (1/(2√2)); used to normalise y so the
+	// lobe half-height equals lobeHeight exactly.
+	private const double YPeakNormalization = 0.35355339059327376;
+
 	/// <summary>
 	/// Marker position for a regulation index in [-1, 1]: the needle slides along
 	/// the major axis from the cool (left) tip through the centre to the warm
@@ -22,8 +26,10 @@ public static class LemniscateGeometry
 	/// points, centred at <paramref name="centre"/>. <paramref name="halfWidth"/> is the
 	/// distance from centre to a lobe tip; <paramref name="lobeHeight"/> the half-height.
 	/// </summary>
+	/// <param name="segments">Number of sample points; must be ≥ 0 (0 yields an empty list).</param>
 	public static IReadOnlyList<Vector2> Polyline(Vector2 centre, float halfWidth, float lobeHeight, int segments)
 	{
+		ArgumentOutOfRangeException.ThrowIfNegative(segments);
 		var points = new List<Vector2>(segments);
 		for (int i = 0; i < segments; i++)
 		{
@@ -32,10 +38,10 @@ public static class LemniscateGeometry
 			double x = Math.Cos(t) / denom;
 			double y = Math.Sin(t) * Math.Cos(t) / denom;
 			// y is scaled so the lobe half-height is lobeHeight; the parametric y peaks
-			// at ~0.354 (1/(2√2)), so divide by that to normalise to ±1 before scaling.
+			// at YPeakNormalization (1/(2√2)), so divide by that to normalise to ±1 before scaling.
 			points.Add(new Vector2(
 				centre.X + ((float)x * halfWidth),
-				centre.Y + ((float)(y / 0.35355339) * lobeHeight)));
+				centre.Y + ((float)(y / YPeakNormalization) * lobeHeight)));
 		}
 
 		return points;
