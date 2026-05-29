@@ -41,8 +41,11 @@ public class RegulationFieldRampTests
 		Assert.IsTrue(indices[3] >= 0.55, $"expected ~0.6 at Warning, got {indices[3]}");
 		Assert.AreEqual(1.0, indices[^1], 0.001);
 
-		// Recovery: returning toward baseline pulls the index back down (trail reverses).
+		// Recovery: returning toward baseline pulls the index back down close to the
+		// regulated centre — well below the Warning-threshold position (~0.6), not merely
+		// below the saturated peak.
 		double recovering = RegulationFieldCalculator.Compute(At(48, 71), Thresholds, 1, true).Index;
-		Assert.IsTrue(recovering < indices[^1], "recovery should move the marker back toward centre");
+		Assert.IsTrue(recovering < indices[3], $"recovery should drop below the Warning position: {recovering}");
+		Assert.IsTrue(recovering < 0.15, $"recovery should be near the regulated centre, got {recovering}");
 	}
 }
