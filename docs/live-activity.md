@@ -25,7 +25,7 @@ bridge, and the SwiftUI views.
  ILiveActivityController                    managed seam
    │
    ├─ (tests)  RecordingController          managed fake
-   └─ (iOS)    LiveActivityController  ──┐  managed — [DllImport("__Internal")]
+   └─ (iOS)    LiveActivityController  ──┐  managed — dlsym lazy binding
                                           │
    ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─│─ ─ native boundary ─ ─ ─ ─ ─ ─
                                           ▼
@@ -40,10 +40,13 @@ bridge, and the SwiftUI views.
   (`MobileSettings.EnableLiveActivity`), and the content derivation
   (`LiveActivityContent`, including the `#RRGGBB` colour from
   `StateColors.HexFor` so the palette has a single source of truth).
-- **`MeltdownMonitor.iOS/Services/LiveActivityController.cs`** P/Invokes the
-  Swift bridge. It is defensive: the first `EntryPointNotFoundException` /
-  `DllNotFoundException` (i.e. the native target isn't linked yet) disables it
-  permanently, so the app runs fine without the widget extension wired up.
+- **`MeltdownMonitor.iOS/Services/LiveActivityController.cs`** calls the Swift
+  bridge. The entry points are resolved **lazily at runtime with `dlsym`**, not
+  via a static `[DllImport("__Internal")]`: a static import would make the app
+  fail at *link* time while the bridge is absent (`ld: Undefined symbols …
+  _mm_live_activity_start`), whereas `dlsym` lets the binary link cleanly,
+  no-ops when the bridge isn't linked, and lights up automatically once the
+  Swift file is added to the app target.
 - **Swift** is confined to three small files (see below).
 
 ## Files
@@ -85,9 +88,9 @@ end:
    *Build Phases ▸ Embed App Extensions*.
 
 The `@_cdecl` symbols (`mm_live_activity_start` / `_update` / `_end`) are
-exported from the app binary, which is what `[DllImport("__Internal")]`
-resolves against — no extra linker flags are needed once the Swift file is in
-the app target.
+exported from the app binary, which is what the controller's `dlsym` lookup
+resolves against at runtime — no extra linker flags are needed once the Swift
+file is in the app target, and no rebuild of the managed code is required.
 
 ## Throttling & lifecycle
 

@@ -560,9 +560,10 @@ Done:
   RMSSD-vs-baseline ratio, **throttles sample updates to ≤ 1 Hz**, and lets
   **state transitions bypass the throttle**. Opt-in via
   `MobileSettings.EnableLiveActivity` (Settings ▸ Display).
-- `MeltdownMonitor.iOS/Services/LiveActivityController.cs` P/Invokes the
-  Swift bridge via `[DllImport("__Internal")]`, degrading to a no-op if the
-  native widget target isn't linked yet.
+- `MeltdownMonitor.iOS/Services/LiveActivityController.cs` calls the Swift
+  bridge, resolving the `@_cdecl` entry points lazily with `dlsym` (a static
+  `[DllImport("__Internal")]` would fail at link time while the bridge is
+  absent), degrading to a no-op if the native widget target isn't linked yet.
 - Composition root constructs the publisher and dismisses the activity on
   graceful terminate; `Info.plist` declares `NSSupportsLiveActivities`.
 - Native Swift (not compiled by the .NET build):

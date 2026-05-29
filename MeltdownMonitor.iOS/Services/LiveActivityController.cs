@@ -9,24 +9,52 @@ namespace MeltdownMonitor.iOS.Services;
 /// Phase 8). ActivityKit has no managed binding, so the actual
 /// <c>Activity&lt;…&gt;.request/update/end</c> calls live in a small Swift
 /// shim (<c>LiveActivity/LiveActivityBridge.swift</c>) that exports plain C
-/// entry points via <c>@_cdecl</c>; this class P/Invokes them.
+/// entry points via <c>@_cdecl</c>.
 ///
-/// The bridge is part of a native Xcode-managed target that the .NET build
-/// does not compile (see <c>docs/live-activity.md</c>). Until that target is
-/// linked into the app binary the <c>__Internal</c> symbols are absent, so
-/// every call is guarded: the first missing-symbol failure disables the
-/// controller permanently and the app keeps running without a Live Activity.
+/// Those entry points belong to a native Xcode-managed target that the .NET
+/// build does not compile (see <c>docs/live-activity.md</c>). A static
+/// <c>[DllImport("__Internal")]</c> would force the app to fail at *link* time
+/// while the bridge is absent, so instead the symbols are resolved lazily with
+/// <c>dlsym</c>: the binary always links, the controller no-ops when the bridge
+/// isn't present, and it lights up automatically once the Swift file is added
+/// to the app target.
 /// </summary>
 [SupportedOSPlatform("ios16.2")]
 public sealed class LiveActivityController : ILiveActivityController
 {
-	private bool _disabled;
+	// dlfcn.h: #define RTLD_DEFAULT ((void *) -2) — search every loaded image.
+	private static readonly IntPtr RtldDefault = new(-2);
+
+	[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+	private delegate void ContentFn(
+		[MarshalAs(UnmanagedType.LPUTF8Str)] string label,
+		[MarshalAs(UnmanagedType.LPUTF8Str)] string colorHex,
+		int heartRate,
+		double rmssdRatio,
+		[MarshalAs(UnmanagedType.I1)] bool isPaused);
+
+	[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+	private delegate void VoidFn();
+
+	private readonly ContentFn? _start;
+	private readonly ContentFn? _update;
+	private readonly VoidFn? _end;
+
+	public LiveActivityController()
+	{
+		_start = Resolve<ContentFn>("mm_live_activity_start");
+		_update = Resolve<ContentFn>("mm_live_activity_update");
+		_end = Resolve<VoidFn>("mm_live_activity_end");
+	}
+
+	/// <summary>True when the native ActivityKit bridge is linked into this build.</summary>
+	private bool BridgePresent => _start is not null && _update is not null && _end is not null;
 
 	public bool IsActive { get; private set; }
 
 	public Task StartAsync(LiveActivityContent content)
 	{
-		if (Guarded(() => NativeBridge.Start(
+		if (BridgePresent && Invoke(() => _start!(
 			content.StateLabel, content.ColorHex, content.HeartRate, content.RmssdRatio, content.IsPaused)))
 		{
 			IsActive = true;
@@ -42,7 +70,7 @@ public sealed class LiveActivityController : ILiveActivityController
 			return StartAsync(content);
 		}
 
-		Guarded(() => NativeBridge.Update(
+		Invoke(() => _update!(
 			content.StateLabel, content.ColorHex, content.HeartRate, content.RmssdRatio, content.IsPaused));
 		return Task.CompletedTask;
 	}
@@ -51,7 +79,7 @@ public sealed class LiveActivityController : ILiveActivityController
 	{
 		if (IsActive)
 		{
-			Guarded(NativeBridge.End);
+			Invoke(() => _end!());
 			IsActive = false;
 		}
 
@@ -59,55 +87,30 @@ public sealed class LiveActivityController : ILiveActivityController
 	}
 
 	/// <summary>
-	/// Runs a native call, swallowing the failure modes that mean the
-	/// ActivityKit bridge isn't present (symbol missing, library not linked)
-	/// and disabling further attempts. Returns true when the call ran.
+	/// Runs a native call, swallowing transient ActivityKit failures (e.g. the
+	/// user disabled Live Activities in Settings) so a missed update never
+	/// crashes the app or stalls the pipeline. Returns true when it ran.
 	/// </summary>
-	private bool Guarded(Action call)
+	private static bool Invoke(Action call)
 	{
-		if (_disabled)
-		{
-			return false;
-		}
-
 		try
 		{
 			call();
 			return true;
 		}
-		catch (Exception ex) when (ex is EntryPointNotFoundException or DllNotFoundException)
-		{
-			// Native widget target not wired into this build — degrade to no-op.
-			_disabled = true;
-			return false;
-		}
 		catch
 		{
-			// A transient ActivityKit failure (e.g. user disabled Live Activities
-			// in Settings) should not crash the app or keep retrying noisily.
 			return false;
 		}
 	}
 
-	private static class NativeBridge
+	private static TDelegate? Resolve<TDelegate>(string symbol)
+		where TDelegate : Delegate
 	{
-		[DllImport("__Internal", EntryPoint = "mm_live_activity_start")]
-		public static extern void Start(
-			[MarshalAs(UnmanagedType.LPUTF8Str)] string label,
-			[MarshalAs(UnmanagedType.LPUTF8Str)] string colorHex,
-			int heartRate,
-			double rmssdRatio,
-			[MarshalAs(UnmanagedType.I1)] bool isPaused);
-
-		[DllImport("__Internal", EntryPoint = "mm_live_activity_update")]
-		public static extern void Update(
-			[MarshalAs(UnmanagedType.LPUTF8Str)] string label,
-			[MarshalAs(UnmanagedType.LPUTF8Str)] string colorHex,
-			int heartRate,
-			double rmssdRatio,
-			[MarshalAs(UnmanagedType.I1)] bool isPaused);
-
-		[DllImport("__Internal", EntryPoint = "mm_live_activity_end")]
-		public static extern void End();
+		IntPtr ptr = dlsym(RtldDefault, symbol);
+		return ptr == IntPtr.Zero ? null : Marshal.GetDelegateForFunctionPointer<TDelegate>(ptr);
 	}
+
+	[DllImport("/usr/lib/libSystem.dylib", EntryPoint = "dlsym")]
+	private static extern IntPtr dlsym(IntPtr handle, [MarshalAs(UnmanagedType.LPStr)] string symbol);
 }
