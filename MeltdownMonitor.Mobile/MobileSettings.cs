@@ -26,6 +26,20 @@ public sealed class MobileSettings
 		"Step away. Five minutes. Find something quiet.";
 
 	/// <summary>
+	/// When true, dysregulation episodes are written back to HealthKit as
+	/// "Mind &amp; Body" wellness annotations (design doc §6.3). Default off —
+	/// Apple's wellness rules mean health write-back is strictly opt-in.
+	/// </summary>
+	public bool WriteEpisodesToHealthKit { get; set; }
+
+	/// <summary>
+	/// CoreBluetooth identifier of the last-connected sensor, persisted so the
+	/// app can reconnect without a fresh scan on relaunch (design doc §4.1 /
+	/// §6.4). Null until the first successful connection.
+	/// </summary>
+	public string? PeripheralIdentifier { get; set; }
+
+	/// <summary>
 	/// True once the user has acknowledged the first-run disclaimer. Gates the
 	/// rest of the app (and any HealthKit ask) per design doc §4.4. Persisted
 	/// by the platform head — on iOS that means <c>NSUserDefaults</c>.

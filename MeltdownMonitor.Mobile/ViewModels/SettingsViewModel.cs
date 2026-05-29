@@ -14,21 +14,36 @@ public sealed class SettingsViewModel : ViewModelBase
 	private readonly MobileSettings _settings;
 	private readonly Func<Task<bool>>? _requestNotifications;
 	private readonly Func<Task<bool>>? _requestHealthKit;
+	private readonly Func<Task>? _exportDatabase;
+	private readonly Action? _onChanged;
 
 	public SettingsViewModel(
 		MobileSettings settings,
 		Func<Task<bool>>? requestNotifications = null,
-		Func<Task<bool>>? requestHealthKit = null)
+		Func<Task<bool>>? requestHealthKit = null,
+		Func<Task>? exportDatabase = null,
+		Action? onChanged = null)
 	{
 		_settings = settings;
 		_requestNotifications = requestNotifications;
 		_requestHealthKit = requestHealthKit;
+		_exportDatabase = exportDatabase;
+		_onChanged = onChanged;
 
 		PauseOneHourCommand = new RelayCommand(PauseOneHour);
 		ResumeCommand = new RelayCommand(Resume, () => _settings.PausedUntil is not null);
 		RequestNotificationsCommand = new RelayCommand(() => _ = RequestNotificationsAsync());
 		RequestHealthKitCommand = new RelayCommand(() => _ = RequestHealthKitAsync());
+		ExportDatabaseCommand = new RelayCommand(
+			() => _ = ExportDatabaseAsync(),
+			() => _exportDatabase is not null);
 	}
+
+	/// <summary>
+	/// Invoked after any setting mutates so the platform head can persist the
+	/// full <see cref="MobileSettings"/> blob (design doc §6.4).
+	/// </summary>
+	private void Persist() => _onChanged?.Invoke();
 
 	public IReadOnlyList<PolarDeviceType> DeviceTypes { get; } =
 		Enum.GetValues<PolarDeviceType>();
@@ -42,6 +57,7 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.DeviceType = value;
 				Raise();
+				Persist();
 			}
 		}
 	}
@@ -55,6 +71,7 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.EnableChime = value;
 				Raise();
+				Persist();
 			}
 		}
 	}
@@ -68,6 +85,21 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.EnableNotifications = value;
 				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public bool WriteEpisodesToHealthKit
+	{
+		get => _settings.WriteEpisodesToHealthKit;
+		set
+		{
+			if (_settings.WriteEpisodesToHealthKit != value)
+			{
+				_settings.WriteEpisodesToHealthKit = value;
+				Raise();
+				Persist();
 			}
 		}
 	}
@@ -81,6 +113,7 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.AlertSuggestion = value;
 				Raise();
+				Persist();
 			}
 		}
 	}
@@ -95,6 +128,7 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.Thresholds = _settings.Thresholds with { RmssdWarningDropFraction = frac };
 				Raise();
+				Persist();
 			}
 		}
 	}
@@ -109,6 +143,7 @@ public sealed class SettingsViewModel : ViewModelBase
 			{
 				_settings.Thresholds = _settings.Thresholds with { HrWarningRiseFraction = frac };
 				Raise();
+				Persist();
 			}
 		}
 	}
@@ -122,12 +157,14 @@ public sealed class SettingsViewModel : ViewModelBase
 	public ICommand ResumeCommand { get; }
 	public ICommand RequestNotificationsCommand { get; }
 	public ICommand RequestHealthKitCommand { get; }
+	public ICommand ExportDatabaseCommand { get; }
 
 	private void PauseOneHour()
 	{
 		_settings.PausedUntil = DateTimeOffset.UtcNow.AddHours(1);
 		Raise(nameof(PausedUntilLabel));
 		(ResumeCommand as RelayCommand)?.RaiseCanExecuteChanged();
+		Persist();
 	}
 
 	private void Resume()
@@ -135,6 +172,17 @@ public sealed class SettingsViewModel : ViewModelBase
 		_settings.PausedUntil = null;
 		Raise(nameof(PausedUntilLabel));
 		(ResumeCommand as RelayCommand)?.RaiseCanExecuteChanged();
+		Persist();
+	}
+
+	private async Task ExportDatabaseAsync()
+	{
+		if (_exportDatabase is null)
+		{
+			return;
+		}
+
+		await _exportDatabase().ConfigureAwait(true);
 	}
 
 	private async Task RequestNotificationsAsync()

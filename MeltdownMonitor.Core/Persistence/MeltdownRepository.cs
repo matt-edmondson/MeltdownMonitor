@@ -10,10 +10,61 @@ public class MeltdownRepository : IDisposable
 	private readonly SqliteConnection _connection;
 
 	public MeltdownRepository(string databasePath)
+		: this(databasePath, MeltdownRepositoryOptions.Default)
+	{
+	}
+
+	/// <summary>
+	/// Opens the repository with platform-specific tuning. The iOS head passes
+	/// <see cref="MeltdownRepositoryOptions.IosSandbox"/> so the database plays
+	/// nicely with the data-protection encryption that kicks in when the device
+	/// is locked (design doc §4.7): WAL is disabled in favour of TRUNCATE and
+	/// <c>fullfsync</c> is enabled so background BLE callbacks can still commit.
+	/// Desktop callers use the parameterless constructor and are unaffected.
+	/// </summary>
+	public MeltdownRepository(string databasePath, MeltdownRepositoryOptions options)
 	{
 		_connection = new SqliteConnection($"Data Source={databasePath}");
 		_connection.Open();
+		ApplyPragmas(options);
 		EnsureSchema();
+		JournalMode = QueryJournalMode();
+	}
+
+	/// <summary>
+	/// The journal mode SQLite settled on for this connection — useful for
+	/// confirming the iOS sandbox profile actually took (design doc §4.7) and
+	/// for diagnostics. Rollback-journal modes are per-connection, so this
+	/// reflects the live connection rather than anything stored on disk.
+	/// </summary>
+	public string JournalMode { get; }
+
+	private string QueryJournalMode()
+	{
+		using var cmd = _connection.CreateCommand();
+		cmd.CommandText = "PRAGMA journal_mode;";
+		return ((string)cmd.ExecuteScalar()!).ToLowerInvariant();
+	}
+
+	private void ApplyPragmas(MeltdownRepositoryOptions options)
+	{
+		if (options.JournalMode is null && !options.FullFsync)
+		{
+			return;
+		}
+
+		using var cmd = _connection.CreateCommand();
+		if (options.JournalMode is not null)
+		{
+			cmd.CommandText = $"PRAGMA journal_mode={options.JournalMode};";
+			cmd.ExecuteNonQuery();
+		}
+
+		if (options.FullFsync)
+		{
+			cmd.CommandText = "PRAGMA fullfsync=ON;";
+			cmd.ExecuteNonQuery();
+		}
 	}
 
 	private void EnsureSchema()
