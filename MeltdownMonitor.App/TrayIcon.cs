@@ -13,57 +13,67 @@ public sealed class TrayIcon : IDisposable
 	private readonly Pipeline _pipeline;
 	private readonly MeltdownRepository _repository;
 	private readonly AppSettings _settings;
-	private readonly Action _showStatusWindow;
+	private readonly Action _toggleStatusWindow;
 	private readonly Action _quit;
+	private readonly Dictionary<DetectorState, Icon> _stateIcons;
 
-	private static readonly Dictionary<DetectorState, Color> StateColors = new()
+	// Regulation Lemniscate tray glyphs (Catppuccin Macchiato), embedded per detector state.
+	// Logical names match the EmbeddedResource entries in MeltdownMonitor.App.csproj.
+	private static readonly IReadOnlyDictionary<DetectorState, string> StateIconResources = new Dictionary<DetectorState, string>
 	{
-		[DetectorState.Idle] = Color.Gray,
-		[DetectorState.Watching] = Color.Green,
-		[DetectorState.Warning] = Color.Orange,
-		[DetectorState.Alerting] = Color.Red,
-		[DetectorState.Cooldown] = Color.DodgerBlue,
+		[DetectorState.Idle] = "MeltdownMonitor.App.Tray.Idle.ico",
+		[DetectorState.Watching] = "MeltdownMonitor.App.Tray.Watching.ico",
+		[DetectorState.Warning] = "MeltdownMonitor.App.Tray.Warning.ico",
+		[DetectorState.Alerting] = "MeltdownMonitor.App.Tray.Alerting.ico",
+		[DetectorState.Cooldown] = "MeltdownMonitor.App.Tray.Cooldown.ico",
 	};
 
 	public TrayIcon(
 		Pipeline pipeline,
 		MeltdownRepository repository,
 		AppSettings settings,
-		Action showStatusWindow,
+		Action toggleStatusWindow,
 		Action quit)
 	{
 		_pipeline = pipeline;
 		_repository = repository;
 		_settings = settings;
-		_showStatusWindow = showStatusWindow;
+		_toggleStatusWindow = toggleStatusWindow;
 		_quit = quit;
+
+		_stateIcons = StateIconResources.ToDictionary(
+			static entry => entry.Key,
+			static entry => LoadIcon(entry.Value));
 
 		_notifyIcon = new NotifyIcon
 		{
 			Visible = true,
 			Text = "Meltdown Monitor",
-			Icon = BuildIcon(Color.Gray),
+			Icon = IconFor(DetectorState.Idle),
 			ContextMenuStrip = BuildContextMenu(),
 		};
 
-		_notifyIcon.DoubleClick += (_, _) => _showStatusWindow();
+		_notifyIcon.DoubleClick += (_, _) => _toggleStatusWindow();
 		_pipeline.SampleUpdated += s => UpdateIcon(s.State);
 	}
 
 	private void UpdateIcon(DetectorState state)
 	{
-		var color = StateColors.GetValueOrDefault(state, Color.Gray);
-		_notifyIcon.Icon?.Dispose();
-		_notifyIcon.Icon = BuildIcon(color);
+		// Icons are cached for the tray's lifetime, so assign without disposing.
+		_notifyIcon.Icon = IconFor(state);
 		_notifyIcon.Text = $"Meltdown Monitor — {state}";
 	}
 
-	private static Icon BuildIcon(Color color)
+	private Icon IconFor(DetectorState state) =>
+		_stateIcons.TryGetValue(state, out var icon) ? icon : _stateIcons[DetectorState.Idle];
+
+	private static Icon LoadIcon(string resourceName)
 	{
-		var bmp = new Bitmap(16, 16);
-		using var g = Graphics.FromImage(bmp);
-		g.Clear(color);
-		return Icon.FromHandle(bmp.GetHicon());
+		var assembly = typeof(TrayIcon).Assembly;
+		using var stream = assembly.GetManifestResourceStream(resourceName)
+			?? throw new InvalidOperationException($"Embedded tray icon '{resourceName}' was not found.");
+		// Pick the embedded size that matches the current DPI's small-icon size.
+		return new Icon(stream, SystemInformation.SmallIconSize);
 	}
 
 	private ContextMenuStrip BuildContextMenu()
@@ -77,7 +87,7 @@ public sealed class TrayIcon : IDisposable
 		menu.Items.Add(new ToolStripSeparator());
 		menu.Items.Add("Log how I'm feeling...", null, OnLogFeeling);
 		menu.Items.Add("Pause for 1 hour", null, OnPause);
-		menu.Items.Add("Show status window", null, (_, _) => _showStatusWindow());
+		menu.Items.Add("Show/hide status window", null, (_, _) => _toggleStatusWindow());
 		menu.Items.Add("Open log folder", null, OnOpenLogFolder);
 		menu.Items.Add(new ToolStripSeparator());
 		menu.Items.Add("Quit", null, (_, _) => _quit());
@@ -112,5 +122,9 @@ public sealed class TrayIcon : IDisposable
 	public void Dispose()
 	{
 		_notifyIcon.Dispose();
+		foreach (var icon in _stateIcons.Values)
+		{
+			icon.Dispose();
+		}
 	}
 }

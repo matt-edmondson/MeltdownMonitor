@@ -18,9 +18,18 @@ namespace MeltdownMonitor.App;
 /// </summary>
 public sealed class StatusWindow : IDisposable
 {
-	private const int PoincareScatterPoints = 256;
-	private const int PlotHeight = 170;
-	private const int InitialSparklineCapacity = 1024;
+	private const int PoincareScatterPoints = 512;
+	private const int PlotHeight = 256;
+	private const int InitialSparklineCapacity = 2048;
+
+	// Cap how wide a plot may stretch relative to its height so charts never
+	// become unreadable ribbons on wide windows; the Poincaré scatter is kept square.
+	private const float MaxPlotAspect = 4.0f;
+	private const float PoincareMaxSide = 512f;
+
+	// Target cell width for the Overview metric grid; the grid fits as many columns
+	// as the window width allows.
+	private const float OverviewChartWidth = 700f;
 
 	private readonly object _historyLock = new();
 	private readonly Pipeline _pipeline;
@@ -28,7 +37,6 @@ public sealed class StatusWindow : IDisposable
 	private readonly AppSettings _settings;
 	private readonly IntervalAction _historyRefreshAction;
 	private readonly ImGuiWidgets.TabPanel _tabs;
-	private readonly Action? _onClosed;
 	private Thread? _uiThread;
 	private int _appliedCapacity = InitialSparklineCapacity;
 	private int _subscriptionsReleased;
@@ -47,7 +55,7 @@ public sealed class StatusWindow : IDisposable
 	private readonly RingBuffer<float> _sd1 = new(InitialSparklineCapacity);
 	private readonly RingBuffer<float> _sd2 = new(InitialSparklineCapacity);
 	private readonly RingBuffer<float> _sd1Sd2 = new(InitialSparklineCapacity);
-	private readonly RingBuffer<double> _recentRr = new(PoincareScatterPoints);
+	private readonly RingBuffer<double> _recentRr = new(InitialSparklineCapacity);
 
 	private RingBuffer<float>[] AllSparklines => [
 		_rmssd, _baselineRmssd, _pnn50, _sdnn,
@@ -56,17 +64,11 @@ public sealed class StatusWindow : IDisposable
 		_sd1, _sd2, _sd1Sd2,
 	];
 
-	/// <param name="onClosed">
-	/// Invoked once when the render loop exits — whether the user closed the window
-	/// directly or <see cref="Close"/> was called. Lets the owner drop its reference
-	/// so the window can be reopened.
-	/// </param>
-	public StatusWindow(Pipeline pipeline, MeltdownRepository repository, AppSettings settings, Action? onClosed = null)
+	public StatusWindow(Pipeline pipeline, MeltdownRepository repository, AppSettings settings)
 	{
 		_pipeline = pipeline;
 		_repository = repository;
 		_settings = settings;
-		_onClosed = onClosed;
 
 		_pipeline.SampleUpdated += OnSampleUpdated;
 		_pipeline.BeatReceived += OnBeatReceived;
@@ -90,6 +92,12 @@ public sealed class StatusWindow : IDisposable
 		});
 	}
 
+	/// <summary>
+	/// Starts the render loop on a background thread. The window is created hidden and
+	/// stays alive for the application lifetime; use <see cref="ToggleVisibility"/> to
+	/// show or hide it. Closing the window from its title bar hides it rather than
+	/// ending the loop, so it can always be shown again.
+	/// </summary>
 	public void Run()
 	{
 		_uiThread = new Thread(() =>
@@ -103,6 +111,8 @@ public sealed class StatusWindow : IDisposable
 					{
 						Size = new Vector2(960, 640),
 					},
+					StartHidden = true,
+					HideOnClose = true,
 					OnRender = SafeRender,
 				});
 			}
@@ -112,11 +122,9 @@ public sealed class StatusWindow : IDisposable
 			}
 			finally
 			{
-				// ImGuiApp.Start blocks until the window closes (by the user's close
-				// button or by Close()). Either way, detach from the pipeline and let
-				// the owner clear its reference so the window can be reopened.
+				// Start blocks until the loop ends (only at application shutdown, since
+				// the close button hides instead). Detach from the pipeline regardless.
 				ReleaseSubscriptions();
-				_onClosed?.Invoke();
 			}
 		})
 		{
@@ -124,6 +132,19 @@ public sealed class StatusWindow : IDisposable
 			Name = "MeltdownMonitor-StatusWindow",
 		};
 		_uiThread.Start();
+	}
+
+	/// <summary>Shows the window if hidden, otherwise hides it. Safe to call from any thread.</summary>
+	public void ToggleVisibility()
+	{
+		if (ImGuiApp.IsVisible)
+		{
+			ImGuiApp.Hide();
+		}
+		else
+		{
+			ImGuiApp.Show();
+		}
 	}
 
 	private void SafeRender(float deltaSeconds)
@@ -301,6 +322,11 @@ public sealed class StatusWindow : IDisposable
 
 	private void OnRender(float deltaSeconds)
 	{
+		// Pad the auto-fit so series don't hug the plot edges (fraction of the
+		// data range on each axis). Persisted in the ImPlot context; set each
+		// frame to stay robust against any style reset.
+		ImPlot.GetStyle().FitPadding = new Vector2(0.08f, 0.12f);
+
 		DrawStatusHeader();
 		ImGui.Separator();
 		_tabs.Draw();
@@ -362,14 +388,86 @@ public sealed class StatusWindow : IDisposable
 
 		ImGui.Separator();
 
-		float[] rmssd; float[] baseRmssd;
+		float[] rmssd, baseRmssd, pnn50, sdnn, hr, baseHr, lf, hf, lfhf, baseLfhf, sd1, sd2, sd1sd2;
+		double[] rrsD;
 		lock (_historyLock)
 		{
 			rmssd = SnapshotF(_rmssd);
 			baseRmssd = SnapshotF(_baselineRmssd);
+			pnn50 = SnapshotF(_pnn50);
+			sdnn = SnapshotF(_sdnn);
+			hr = SnapshotF(_meanHr);
+			baseHr = SnapshotF(_baselineHr);
+			lf = SnapshotF(_lfPower);
+			hf = SnapshotF(_hfPower);
+			lfhf = SnapshotF(_lfHfRatio);
+			baseLfhf = SnapshotF(_baselineLfHf);
+			sd1 = SnapshotF(_sd1);
+			sd2 = SnapshotF(_sd2);
+			sd1sd2 = SnapshotF(_sd1Sd2);
+			rrsD = SnapshotD(_recentRr);
 		}
 
-		PlotPair("RMSSD vs baseline (ms)", "RMSSD", rmssd, "Baseline", baseRmssd);
+		float[] rr = new float[rrsD.Length];
+		for (int i = 0; i < rrsD.Length; i++)
+		{
+			rr[i] = (float)rrsD[i];
+		}
+
+		// Every metric at full chart size, laid out with the ktsu.ImGui.Widgets grid,
+		// which fits as many columns as the window width allows. Baselines overlay
+		// where available; the Poincaré scatter is included as a square cell.
+		OverviewChart[] charts =
+		[
+			new("RMSSD vs baseline (ms)", rmssd, baseRmssd),
+			new("Heart rate vs baseline (bpm)", hr, baseHr),
+			new("LF/HF ratio (sympathovagal balance)", lfhf, baseLfhf),
+			new("pNN50 (%)", pnn50, null),
+			new("SDNN (ms)", sdnn, null),
+			new("LF power (ms²)", lf, null),
+			new("HF power (ms²)", hf, null),
+			new("SD1 (ms)", sd1, null),
+			new("SD2 (ms)", sd2, null),
+			new("SD1/SD2 ratio (parasympathetic index)", sd1sd2, null),
+			new("RR intervals (ms)", rr, null),
+			new("Poincaré (RR[i] vs RR[i+1])", rr, null, IsScatter: true),
+		];
+
+		ImGuiWidgets.RowMajorGrid("overview-charts", charts,
+			static _ => new Vector2(OverviewChartWidth, PlotHeight),
+			static (chart, cellSize, itemSize) => DrawOverviewChart(chart, itemSize));
+	}
+
+	private sealed record OverviewChart(string Title, float[] Data, float[]? Baseline, bool IsScatter = false);
+
+	private static void DrawOverviewChart(OverviewChart chart, Vector2 size)
+	{
+		if (chart.IsScatter)
+		{
+			DrawScatterPlot(chart.Title, chart.Data, size);
+			return;
+		}
+
+		ImPlotFlags flags = chart.Baseline is null
+			? ImPlotFlags.NoMouseText | ImPlotFlags.NoLegend
+			: ImPlotFlags.NoMouseText;
+
+		if (ImPlot.BeginPlot(chart.Title, size, flags))
+		{
+			ImPlot.SetupAxes(string.Empty, string.Empty,
+				ImPlotAxisFlags.AutoFit | ImPlotAxisFlags.NoTickLabels, ImPlotAxisFlags.AutoFit);
+
+			if (chart.Baseline is { Length: >= 2 } baseline)
+			{
+				ImPlot.PlotLine("baseline", ref baseline[0], baseline.Length);
+			}
+			if (chart.Data.Length >= 2)
+			{
+				ImPlot.PlotLine(chart.Title, ref chart.Data[0], chart.Data.Length);
+			}
+
+			ImPlot.EndPlot();
+		}
 	}
 
 	private void DrawHeartRateTab()
@@ -391,7 +489,7 @@ public sealed class StatusWindow : IDisposable
 			rrs[i] = (float)rrsD[i];
 		}
 
-		Plot("RR intervals (ms, last received beats)", rrs, FullWidth(PlotHeight));
+		PlotRow(PlotHeight, ("RR intervals (ms, last received beats)", rrs));
 	}
 
 	private void DrawTimeDomainTab()
@@ -406,8 +504,7 @@ public sealed class StatusWindow : IDisposable
 		}
 
 		PlotPair("RMSSD (ms)", "RMSSD", rmssd, "Baseline", baseRmssd);
-		Plot("pNN50 (%)", pnn50, FullWidth(PlotHeight));
-		Plot("SDNN (ms)", sdnn, FullWidth(PlotHeight));
+		PlotRow(PlotHeight, ("pNN50 (%)", pnn50), ("SDNN (ms)", sdnn));
 	}
 
 	private void DrawFrequencyTab()
@@ -422,8 +519,9 @@ public sealed class StatusWindow : IDisposable
 		}
 
 		PlotPair("LF/HF ratio (sympathovagal balance)", "LF/HF", ratio, "Baseline LF/HF", baseRatio);
-		Plot("LF power (ms², 0.04–0.15 Hz)", lf, FullWidth(PlotHeight));
-		Plot("HF power (ms², 0.15–0.40 Hz)", hf, FullWidth(PlotHeight));
+		PlotRow(PlotHeight,
+			("LF power (ms², 0.04–0.15 Hz)", lf),
+			("HF power (ms², 0.15–0.40 Hz)", hf));
 
 		if (ratio.Length < 2)
 		{
@@ -450,37 +548,43 @@ public sealed class StatusWindow : IDisposable
 
 		DrawPoincareScatter(rrs);
 
-		Plot("SD1 (short-term variability, ms)", sd1, FullWidth(PlotHeight));
-		Plot("SD2 (long-term variability, ms)", sd2, FullWidth(PlotHeight));
-		Plot("SD1/SD2 ratio (parasympathetic index)", ratio, FullWidth(PlotHeight));
+		PlotRow(PlotHeight,
+			("SD1 (short-term variability, ms)", sd1),
+			("SD2 (long-term variability, ms)", sd2));
+		PlotRow(PlotHeight, ("SD1/SD2 ratio (parasympathetic index)", ratio));
 	}
 
 	private static void DrawPoincareScatter(float[] rrs)
 	{
-		Vector2 size = FullWidth(340);
-		if (rrs.Length < 2)
-		{
-			ImGui.TextDisabled("Poincaré plot: (needs ≥2 beats)");
-			ImGui.Dummy(size);
-			return;
-		}
+		// Keep the scatter square and centred — Equal axes plus a wide region would
+		// otherwise spread the cloud thin and unreadable.
+		float avail = ImGui.GetContentRegionAvail().X;
+		float side = MathF.Min(avail, PoincareMaxSide);
+		Indent((avail - side) * 0.5f);
+		DrawScatterPlot("Poincaré (RR[i] vs RR[i+1])", rrs, new Vector2(side, side));
+	}
 
-		// Equal keeps the axes square so the identity line reads at 45°.
-		if (ImPlot.BeginPlot("Poincaré (RR[i] vs RR[i+1])", size,
+	// Equal axes keep the cloud square so the identity line reads at 45°.
+	private static void DrawScatterPlot(string id, float[] rrs, Vector2 size)
+	{
+		if (ImPlot.BeginPlot(id, size,
 				ImPlotFlags.Equal | ImPlotFlags.NoLegend | ImPlotFlags.NoMouseText))
 		{
 			ImPlot.SetupAxes("RR[i] (ms)", "RR[i+1] (ms)",
 				ImPlotAxisFlags.AutoFit, ImPlotAxisFlags.AutoFit);
 
-			// Identity line RR[i] = RR[i+1] — the cloud clusters along it.
-			float[] diagonal = [rrs.Min(), rrs.Max()];
-			ImPlot.SetNextLineStyle(new Vector4(0.55f, 0.55f, 0.55f, 0.40f), 1f);
-			ImPlot.PlotLine("identity", ref diagonal[0], ref diagonal[0], diagonal.Length);
+			if (rrs.Length >= 2)
+			{
+				// Identity line RR[i] = RR[i+1] — the cloud clusters along it.
+				float[] diagonal = [rrs.Min(), rrs.Max()];
+				ImPlot.SetNextLineStyle(new Vector4(0.55f, 0.55f, 0.55f, 0.40f), 1f);
+				ImPlot.PlotLine("identity", ref diagonal[0], ref diagonal[0], diagonal.Length);
 
-			// Offset trick: consecutive pairs (rrs[k], rrs[k+1]) without a second array.
-			ImPlot.SetNextMarkerStyle(ImPlotMarker.Circle, 2.5f,
-				new Vector4(0.40f, 0.80f, 1.00f, 0.85f), 1f);
-			ImPlot.PlotScatter("RR", ref rrs[0], ref rrs[1], rrs.Length - 1);
+				// Offset trick: consecutive pairs (rrs[k], rrs[k+1]) without a second array.
+				ImPlot.SetNextMarkerStyle(ImPlotMarker.Circle, 2.5f,
+					new Vector4(0.40f, 0.80f, 1.00f, 0.85f), 1f);
+				ImPlot.PlotScatter("RR", ref rrs[0], ref rrs[1], rrs.Length - 1);
+			}
 
 			ImPlot.EndPlot();
 		}
@@ -626,35 +730,27 @@ public sealed class StatusWindow : IDisposable
 
 	private static void Plot(string title, float[] data, Vector2 size)
 	{
-		if (data.Length < 2)
-		{
-			ImGui.TextDisabled($"{title}: (waiting for data)");
-			ImGui.Dummy(size);
-			return;
-		}
-
+		// Always draw the frame (even with no data) so rows stay aligned.
 		// X is just the sample index, so hide its tick labels; ImPlot auto-fits Y.
 		if (ImPlot.BeginPlot(title, size, ImPlotFlags.NoLegend | ImPlotFlags.NoMouseText))
 		{
 			ImPlot.SetupAxes(string.Empty, string.Empty,
 				ImPlotAxisFlags.AutoFit | ImPlotAxisFlags.NoTickLabels, ImPlotAxisFlags.AutoFit);
-			ImPlot.PlotLine(title, ref data[0], data.Length);
+			if (data.Length >= 2)
+			{
+				ImPlot.PlotLine(title, ref data[0], data.Length);
+			}
 			ImPlot.EndPlot();
 		}
 	}
 
+	// One comparison chart (a series plus its baseline) sharing a single auto-fit
+	// Y axis, capped to MaxPlotAspect and centred in the available width.
 	private static void PlotPair(string title, string aLabel, float[] a, string bLabel, float[] b)
 	{
-		Vector2 size = FullWidth(PlotHeight);
+		(Vector2 size, float indent) = CenteredCell(ImGui.GetContentRegionAvail().X, PlotHeight);
+		Indent(indent);
 
-		if (a.Length < 2 && b.Length < 2)
-		{
-			ImGui.TextDisabled($"{title}: (waiting for data)");
-			ImGui.Dummy(size);
-			return;
-		}
-
-		// Both series share the plot's auto-fit Y axis, so they stay on a common scale.
 		if (ImPlot.BeginPlot(title, size, ImPlotFlags.NoMouseText))
 		{
 			ImPlot.SetupAxes(string.Empty, string.Empty,
@@ -673,8 +769,47 @@ public sealed class StatusWindow : IDisposable
 		}
 	}
 
-	private static Vector2 FullWidth(float height) =>
-		new(ImGui.GetContentRegionAvail().X, height);
+	// Lay out N plots in a single row, each sharing the width equally (capped to
+	// MaxPlotAspect) and the group centred. Handles a single plot too.
+	private static void PlotRow(float height, params (string label, float[] data)[] plots)
+	{
+		int n = plots.Length;
+		if (n == 0)
+		{
+			return;
+		}
+
+		float spacing = ImGui.GetStyle().ItemSpacing.X;
+		float avail = ImGui.GetContentRegionAvail().X;
+		float cell = MathF.Min((avail - (spacing * (n - 1))) / n, height * MaxPlotAspect);
+		float used = (cell * n) + (spacing * (n - 1));
+		Indent((avail - used) * 0.5f);
+
+		Vector2 size = new(cell, height);
+		for (int i = 0; i < n; i++)
+		{
+			Plot(plots[i].label, plots[i].data, size);
+			if (i < n - 1)
+			{
+				ImGui.SameLine();
+			}
+		}
+	}
+
+	// Width capped to MaxPlotAspect, plus the horizontal slack to centre it.
+	private static (Vector2 size, float indent) CenteredCell(float availWidth, float height)
+	{
+		float w = MathF.Min(availWidth, height * MaxPlotAspect);
+		return (new Vector2(w, height), MathF.Max(0f, (availWidth - w) * 0.5f));
+	}
+
+	private static void Indent(float amount)
+	{
+		if (amount > 0f)
+		{
+			ImGui.SetCursorPosX(ImGui.GetCursorPosX() + amount);
+		}
+	}
 
 	private static ImColor StateColor(DetectorState state)
 	{

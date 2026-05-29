@@ -16,8 +16,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ktsu.ImGui.App" Version="2.4.0" />
-    <PackageReference Include="ktsu.ImGui.Widgets" Version="2.4.0" />
+    <!-- Tray state glyphs (Regulation Lemniscate). Logical names map to DetectorState in TrayIcon.cs. -->
+    <EmbeddedResource Include="Assets\Tray\tray-idle.ico" LogicalName="MeltdownMonitor.App.Tray.Idle.ico" />
+    <EmbeddedResource Include="Assets\Tray\tray-watching.ico" LogicalName="MeltdownMonitor.App.Tray.Watching.ico" />
+    <EmbeddedResource Include="Assets\Tray\tray-warning.ico" LogicalName="MeltdownMonitor.App.Tray.Warning.ico" />
+    <EmbeddedResource Include="Assets\Tray\tray-alerting.ico" LogicalName="MeltdownMonitor.App.Tray.Alerting.ico" />
+    <EmbeddedResource Include="Assets\Tray\tray-cooldown.ico" LogicalName="MeltdownMonitor.App.Tray.Cooldown.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ktsu.ImGui.App" Version="2.5.0" />
+    <PackageReference Include="ktsu.ImGui.Widgets" Version="2.5.0" />
     <PackageReference Include="ktsu.Containers" Version="1.0.12" />
     <PackageReference Include="ktsu.AppDataStorage" Version="1.16.18" />
     <PackageReference Include="ktsu.SingleAppInstance" Version="1.3.27" />

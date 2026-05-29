@@ -23,3 +23,9 @@ packages/
 
 # macOS
 .DS_Store
+
+# ImGui layout state (machine-specific)
+imgui.ini
+
+# SDK resolver scratch files
+*.SdkResolver.*.proj.Backup.tmp

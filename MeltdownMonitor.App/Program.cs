@@ -20,51 +20,18 @@ var dispatcher = new AlertDispatcher(settings);
 
 pipeline.AlertFired += dispatcher.Dispatch;
 
-// Status window is created on demand. The render loop runs on its own thread, so
-// access to the reference is guarded and the window clears it when it closes.
-StatusWindow? statusWindow = null;
-object statusWindowLock = new();
-
-void ShowStatusWindow()
-{
-	lock (statusWindowLock)
-	{
-		// Already open — the window owns its own close button.
-		if (statusWindow is not null)
-		{
-			return;
-		}
-
-		statusWindow = new StatusWindow(pipeline, repository, settings, onClosed: OnStatusWindowClosed);
-		statusWindow.Run();
-	}
-}
-
-// Fired on the status-window thread when its render loop exits. Drop the reference
-// so the next request reopens it. The loop has already ended, so we must not Join.
-void OnStatusWindowClosed()
-{
-	lock (statusWindowLock)
-	{
-		statusWindow = null;
-	}
-}
+// The status window runs hidden for the application's lifetime — its render loop can't
+// be restarted once stopped, so we start it once and toggle visibility from the tray.
+using var statusWindow = new StatusWindow(pipeline, repository, settings);
+statusWindow.Run();
 
 pipeline.Start();
 
 Application.EnableVisualStyles();
 Application.SetCompatibleTextRenderingDefault(false);
 
-using var tray = new TrayIcon(pipeline, repository, settings, ShowStatusWindow, Application.Exit);
+using var tray = new TrayIcon(pipeline, repository, settings, statusWindow.ToggleVisibility, Application.Exit);
 
 Application.Run();
 
-StatusWindow? remaining;
-lock (statusWindowLock)
-{
-	remaining = statusWindow;
-	statusWindow = null;
-}
-
-remaining?.Dispose();
 pipeline.Stop();
