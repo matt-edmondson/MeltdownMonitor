@@ -1032,19 +1032,8 @@ public sealed class StatusWindow : IDisposable
 		}
 	}
 
-	private static ImColor StateColor(DetectorState state)
-	{
-		Vector4 v = state switch
-		{
-			DetectorState.Idle      => new Vector4(0.55f, 0.55f, 0.55f, 1f),
-			DetectorState.Watching  => new Vector4(0.30f, 0.75f, 0.45f, 1f),
-			DetectorState.Warning   => new Vector4(0.95f, 0.75f, 0.20f, 1f),
-			DetectorState.Alerting  => new Vector4(0.95f, 0.30f, 0.25f, 1f),
-			DetectorState.Cooldown  => new Vector4(0.45f, 0.55f, 0.85f, 1f),
-			_                       => new Vector4(0.5f, 0.5f, 0.5f, 1f),
-		};
-		return new ImColor { Value = v };
-	}
+	private static ImColor StateColor(DetectorState state) =>
+		new() { Value = Regulation.MacchiatoPalette.State(state) };
 
 	// Detach from the pipeline and stop the backfill timer exactly once. Safe to
 	// call from either the UI thread (loop exit) or the owner thread (Dispose).
