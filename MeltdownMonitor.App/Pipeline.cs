@@ -39,8 +39,27 @@ public sealed class Pipeline : IDisposable
 
 	public void Start()
 	{
+		SeedBaselineFromHistory();
 		_cts = new CancellationTokenSource();
 		_pipelineTask = RunAsync(_cts.Token);
+	}
+
+	// Warm-start the baseline from recent persisted history before live samples flow.
+	// Best-effort: a missing or locked database must never prevent startup.
+	private void SeedBaselineFromHistory()
+	{
+		try
+		{
+			DateTimeOffset to = DateTimeOffset.UtcNow;
+			DateTimeOffset from = to.AddDays(-BaselineHrvTracker.AnchorWindowDays);
+			var history = MeltdownRepository.ReadHistory(_settings.DatabasePath, from, to);
+			_baseline.SeedFromHistory(history);
+		}
+		catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException
+			or IOException or InvalidOperationException)
+		{
+			System.Diagnostics.Debug.WriteLine($"Baseline seeding skipped: {ex.Message}");
+		}
 	}
 
 	public void Stop()
