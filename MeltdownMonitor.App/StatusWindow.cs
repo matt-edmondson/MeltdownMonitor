@@ -4,6 +4,7 @@ using ktsu.Containers;
 using ktsu.ImGui.Widgets;
 using ktsu.ImGui.App;
 using ktsu.IntervalAction;
+using MeltdownMonitor.Core.Baseline;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
@@ -610,6 +611,9 @@ public sealed class StatusWindow : IDisposable
 		ImGui.TextDisabled("Changes apply live; persisted to disk when you release the control. Hover (?) for tuning help.");
 		ImGui.Spacing();
 
+		DrawRestoreDefaultsButton();
+		ImGui.Spacing();
+
 		// ── Refresh ──────────────────────────────────────────────────────
 		ImGui.SeparatorText("Refresh");
 
@@ -905,6 +909,43 @@ public sealed class StatusWindow : IDisposable
 		if (ImGui.IsItemHovered())
 		{
 			ImGui.SetTooltip(text);
+		}
+	}
+
+	// Resets every tunable to its recommended default (behind a confirmation), then
+	// persists and re-seeds the baseline. Device/alert/data-path settings are left alone.
+	private void DrawRestoreDefaultsButton()
+	{
+		if (ImGui.Button("Restore best-practice defaults"))
+		{
+			ImGui.OpenPopup("restore-defaults");
+		}
+		ImGui.SameLine();
+		HelpMarker("Resets all tuning — detection thresholds, baseline, charts, HRV windows, and refresh — to the recommended defaults, then re-seeds the baseline. Your device, alert, and data-path settings are untouched.");
+
+		if (ImGui.BeginPopup("restore-defaults"))
+		{
+			ImGui.Text("Reset all tuning to recommended defaults?");
+			if (ImGui.Button("Yes, reset"))
+			{
+				_settings.Thresholds = new DetectionThresholds();
+				_settings.BaselineTuning = new BaselineTuning();
+				_settings.ChartTuning = new ChartTuning();
+				_settings.HrvTuning = new HrvTuning();
+				_settings.HrvEmitIntervalSeconds = 5.0;
+				_settings.SparklineWindowMinutes = 60;
+				_settings.Save();
+				_pipeline.ReseedBaseline();
+				ImGui.CloseCurrentPopup();
+			}
+
+			ImGui.SameLine();
+			if (ImGui.Button("Cancel"))
+			{
+				ImGui.CloseCurrentPopup();
+			}
+
+			ImGui.EndPopup();
 		}
 	}
 
