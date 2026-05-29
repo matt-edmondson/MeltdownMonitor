@@ -4,63 +4,119 @@
              xmlns:ctl="clr-namespace:MeltdownMonitor.Mobile.Controls"
              x:Class="MeltdownMonitor.Mobile.Views.NowView"
              x:DataType="vm:NowViewModel">
-    <Grid RowDefinitions="*,Auto,Auto,Auto" Margin="20">
+    <Grid>
+        <Grid RowDefinitions="*,Auto,Auto,Auto,Auto" Margin="20">
 
-        <Border Grid.Row="0"
-                CornerRadius="12"
-                Background="#101418"
-                Padding="12">
-            <Grid RowDefinitions="*,Auto">
-                <ctl:Sparkline Grid.Row="0"
-                               Values="{Binding RmssdHistory}"
-                               BaselineValues="{Binding BaselineHistory}"
-                               LineThickness="2.5" />
-                <TextBlock Grid.Row="1"
-                           Text="RMSSD vs baseline"
+            <Border Grid.Row="0"
+                    CornerRadius="12"
+                    Background="#101418"
+                    Padding="12">
+                <Grid RowDefinitions="*,Auto">
+                    <ctl:Sparkline Grid.Row="0"
+                                   Values="{Binding RmssdHistory}"
+                                   BaselineValues="{Binding BaselineHistory}"
+                                   LineThickness="2.5" />
+                    <TextBlock Grid.Row="1"
+                               Text="RMSSD vs baseline"
+                               Foreground="#8A8F98"
+                               FontSize="12"
+                               Margin="0,8,0,0"
+                               HorizontalAlignment="Center" />
+                </Grid>
+            </Border>
+
+            <Border Grid.Row="1"
+                    Margin="0,20,0,0"
+                    CornerRadius="20"
+                    Padding="16,10"
+                    HorizontalAlignment="Center"
+                    Background="{Binding StateBrush}">
+                <TextBlock Text="{Binding StateLabel}"
+                           Foreground="White"
+                           FontSize="18"
+                           FontWeight="SemiBold" />
+            </Border>
+
+            <StackPanel Grid.Row="2"
+                        Margin="0,16,0,0"
+                        Orientation="Vertical"
+                        HorizontalAlignment="Center"
+                        Spacing="4">
+                <TextBlock Text="{Binding HeartRateText}"
+                           FontSize="36"
+                           FontWeight="Light"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding RmssdText}" HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding BaselineText}"
+                           Foreground="#8A8F98"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding TimeSinceStateChange}"
                            Foreground="#8A8F98"
                            FontSize="12"
-                           Margin="0,8,0,0"
                            HorizontalAlignment="Center" />
-            </Grid>
-        </Border>
+            </StackPanel>
 
-        <Border Grid.Row="1"
-                Margin="0,20,0,0"
-                CornerRadius="20"
-                Padding="16,10"
-                HorizontalAlignment="Center"
-                Background="{Binding StateBrush}">
-            <TextBlock Text="{Binding StateLabel}"
-                       Foreground="White"
-                       FontSize="18"
-                       FontWeight="SemiBold" />
-        </Border>
-
-        <StackPanel Grid.Row="2"
+            <Button Grid.Row="3"
                     Margin="0,16,0,0"
-                    Orientation="Vertical"
-                    HorizontalAlignment="Center"
-                    Spacing="4">
-            <TextBlock Text="{Binding HeartRateText}"
-                       FontSize="36"
-                       FontWeight="Light"
-                       HorizontalAlignment="Center" />
-            <TextBlock Text="{Binding RmssdText}" HorizontalAlignment="Center" />
-            <TextBlock Text="{Binding BaselineText}"
-                       Foreground="#8A8F98"
-                       HorizontalAlignment="Center" />
-            <TextBlock Text="{Binding TimeSinceStateChange}"
-                       Foreground="#8A8F98"
-                       FontSize="12"
-                       HorizontalAlignment="Center" />
-        </StackPanel>
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    Padding="16,12"
+                    Content="How are you feeling?"
+                    Command="{Binding OpenAnnotationCommand}" />
 
-        <Button Grid.Row="3"
-                Margin="0,20,0,0"
-                HorizontalAlignment="Stretch"
-                HorizontalContentAlignment="Center"
-                Padding="16,12"
-                Content="{Binding ConnectionLabel}"
-                Command="{Binding ToggleConnectionCommand}" />
+            <Button Grid.Row="4"
+                    Margin="0,8,0,0"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    Padding="16,12"
+                    Content="{Binding ConnectionLabel}"
+                    Command="{Binding ToggleConnectionCommand}" />
+        </Grid>
+
+        <!-- Self check-in sheet (design doc §5): a dimmed backdrop with the
+             same four labels the desktop annotation dialog offers, plus an
+             optional note. Tapping a label records it and dismisses. -->
+        <Border Background="#CC000000"
+                IsVisible="{Binding IsAnnotationSheetOpen}">
+            <Border VerticalAlignment="Bottom"
+                    Background="#1A1F25"
+                    CornerRadius="16,16,0,0"
+                    Padding="20,24">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="How are you feeling?"
+                               FontSize="20"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Center" />
+
+                    <ItemsControl ItemsSource="{Binding AnnotationLabels}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal"
+                                            HorizontalAlignment="Center"
+                                            Spacing="8" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Content="{Binding}"
+                                        MinWidth="72"
+                                        Padding="12,10"
+                                        HorizontalContentAlignment="Center"
+                                        Command="{Binding $parent[ItemsControl].((vm:NowViewModel)DataContext).RecordAnnotationCommand}"
+                                        CommandParameter="{Binding}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBox Text="{Binding AnnotationNotes}"
+                             PlaceholderText="Optional note…"
+                             AcceptsReturn="False" />
+
+                    <Button Content="Cancel"
+                            HorizontalAlignment="Center"
+                            Command="{Binding CancelAnnotationCommand}" />
+                </StackPanel>
+            </Border>
+        </Border>
     </Grid>
 </UserControl>

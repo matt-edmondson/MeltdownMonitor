@@ -4,6 +4,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Persistence;
 
 namespace MeltdownMonitor.Mobile.ViewModels;
 
@@ -23,6 +24,7 @@ public sealed class NowViewModel : ViewModelBase
 
 	private readonly Func<Task>? _onConnect;
 	private readonly Func<Task>? _onDisconnect;
+	private readonly Func<AnnotationLabel, string?, Task>? _onAnnotate;
 
 	private DetectorState _state = DetectorState.Idle;
 	private bool _isPaused;
@@ -31,14 +33,21 @@ public sealed class NowViewModel : ViewModelBase
 	private double _baselineRmssd;
 	private DateTimeOffset _stateChangedAt = DateTimeOffset.UtcNow;
 	private ConnectionState _connection = ConnectionState.Disconnected;
+	private bool _isAnnotationSheetOpen;
+	private string _annotationNotes = string.Empty;
 
 	public NowViewModel(
 		Func<Task>? onConnect = null,
-		Func<Task>? onDisconnect = null)
+		Func<Task>? onDisconnect = null,
+		Func<AnnotationLabel, string?, Task>? onAnnotate = null)
 	{
 		_onConnect = onConnect;
 		_onDisconnect = onDisconnect;
+		_onAnnotate = onAnnotate;
 		ToggleConnectionCommand = new RelayCommand(ToggleConnection);
+		OpenAnnotationCommand = new RelayCommand(() => IsAnnotationSheetOpen = true);
+		CancelAnnotationCommand = new RelayCommand(CloseAnnotationSheet);
+		RecordAnnotationCommand = new RelayCommand<AnnotationLabel>(label => _ = RecordAnnotationAsync(label));
 	}
 
 	public IReadOnlyList<double> RmssdHistory => _rmssdHistory;
@@ -154,6 +163,54 @@ public sealed class NowViewModel : ViewModelBase
 	};
 
 	public ICommand ToggleConnectionCommand { get; }
+
+	/// <summary>
+	/// The four self check-in labels (design doc §5) — the same set the desktop
+	/// annotation dialog offers, surfaced as buttons in the Now-screen sheet.
+	/// </summary>
+	public IReadOnlyList<AnnotationLabel> AnnotationLabels { get; } = Enum.GetValues<AnnotationLabel>();
+
+	/// <summary>Whether the "How are you feeling?" sheet is visible.</summary>
+	public bool IsAnnotationSheetOpen
+	{
+		get => _isAnnotationSheetOpen;
+		private set => SetField(ref _isAnnotationSheetOpen, value);
+	}
+
+	/// <summary>Optional free-text note bound to the sheet's text box.</summary>
+	public string AnnotationNotes
+	{
+		get => _annotationNotes;
+		set => SetField(ref _annotationNotes, value);
+	}
+
+	public ICommand OpenAnnotationCommand { get; }
+	public ICommand CancelAnnotationCommand { get; }
+	public ICommand RecordAnnotationCommand { get; }
+
+	/// <summary>
+	/// Persist a self check-in. The actual write is host-injected (the iOS head
+	/// routes it through <c>MeltdownRepository.WriteAnnotation</c> and refreshes
+	/// the History tab); the VM owns only the sheet's transient state. Exposed
+	/// publicly so it can be awaited directly in tests rather than via the
+	/// fire-and-forget command.
+	/// </summary>
+	public async Task RecordAnnotationAsync(AnnotationLabel label)
+	{
+		var notes = string.IsNullOrWhiteSpace(_annotationNotes) ? null : _annotationNotes.Trim();
+		if (_onAnnotate is not null)
+		{
+			await _onAnnotate(label, notes).ConfigureAwait(true);
+		}
+
+		CloseAnnotationSheet();
+	}
+
+	private void CloseAnnotationSheet()
+	{
+		IsAnnotationSheetOpen = false;
+		AnnotationNotes = string.Empty;
+	}
 
 	/// <summary>
 	/// Subscribe to a live <see cref="Pipeline"/> so its samples and state

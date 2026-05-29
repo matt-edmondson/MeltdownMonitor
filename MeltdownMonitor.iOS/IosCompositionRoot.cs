@@ -63,7 +63,7 @@ public static class IosCompositionRoot
 		_healthStore = new HealthKitStore();
 		var exporter = new ShareSheetDatabaseExporter();
 
-		_now = new NowViewModel();
+		_now = new NowViewModel(onAnnotate: RecordAnnotationAsync);
 		_history = new HistoryViewModel();
 
 		var settingsTab = new SettingsViewModel(
@@ -146,6 +146,24 @@ public static class IosCompositionRoot
 
 		_alertDispatcher?.Dispose();
 		_alertDispatcher = new MobileAlertDispatcher(pipeline, settings, _notifications, chime);
+	}
+
+	/// <summary>
+	/// Persists a Now-screen self check-in (design doc §5) and refreshes the
+	/// History tab so it shows up immediately. The write goes through a
+	/// short-lived connection of its own (<see cref="MeltdownRepository.WriteAnnotation"/>)
+	/// rather than the pipeline's live connection, and runs off the UI thread.
+	/// </summary>
+	private static async Task RecordAnnotationAsync(AnnotationLabel label, string? notes)
+	{
+		string dbPath = DatabasePath();
+		await Task.Run(() => MeltdownRepository.WriteAnnotation(dbPath, DateTimeOffset.UtcNow, label, notes))
+			.ConfigureAwait(true);
+
+		if (_history is not null)
+		{
+			await _history.LoadAsync().ConfigureAwait(true);
+		}
 	}
 
 	/// <summary>
