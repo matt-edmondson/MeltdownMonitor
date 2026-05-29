@@ -94,6 +94,8 @@ public class BaselineHrvTracker
 			}
 		}
 
+		ClampToAnchor();
+
 		if (!_isWarm && (sample.Timestamp - _firstSampleTime).TotalMinutes >= WarmUpMinutes)
 		{
 			_isWarm = true;
@@ -158,6 +160,30 @@ public class BaselineHrvTracker
 			: sorted[mid];
 	}
 
+	// Keep the live EWMA within +/-MaxAnchorDrift of the personalised anchor so a long
+	// sub-threshold rough patch cannot silently re-normalise the baseline. No-op until
+	// an anchor has been seeded.
+	private void ClampToAnchor()
+	{
+		if (_anchorRmssd > 0)
+		{
+			_baselineRmssd = Math.Clamp(_baselineRmssd,
+				_anchorRmssd * (1.0 - MaxAnchorDrift), _anchorRmssd * (1.0 + MaxAnchorDrift));
+		}
+
+		if (_anchorHr > 0)
+		{
+			_baselineHr = Math.Clamp(_baselineHr,
+				_anchorHr * (1.0 - MaxAnchorDrift), _anchorHr * (1.0 + MaxAnchorDrift));
+		}
+
+		if (_anchorLfHfRatio > 0)
+		{
+			_baselineLfHfRatio = Math.Clamp(_baselineLfHfRatio,
+				_anchorLfHfRatio * (1.0 - MaxAnchorDrift), _anchorLfHfRatio * (1.0 + MaxAnchorDrift));
+		}
+	}
+
 	public void Reset()
 	{
 		_baselineRmssd = 0;
@@ -165,5 +191,8 @@ public class BaselineHrvTracker
 		_baselineLfHfRatio = 0;
 		_firstSampleTime = DateTimeOffset.MinValue;
 		_isWarm = false;
+		_anchorRmssd = 0;
+		_anchorHr = 0;
+		_anchorLfHfRatio = 0;
 	}
 }

@@ -92,4 +92,50 @@ public class BaselineSeedingTests
 		Assert.IsFalse(tracker.IsWarm);
 		Assert.AreEqual(0, tracker.BaselineRmssd, 0.001);
 	}
+
+	[TestMethod]
+	public void Guardrail_PreventsBaselineDriftingBelowAnchorBand()
+	{
+		// Warm-start with RMSSD median 49.5, HR median 69.5 (anchor == warm-start here).
+		var tracker = new BaselineHrvTracker();
+		tracker.SeedFromHistory(RecentClean());
+
+		// Feed a long run of crushed RMSSD; the EWMA would head toward 5 but the
+		// guardrail floors it at anchor * (1 - 0.40) = 49.5 * 0.6 = 29.7.
+		var now = DateTimeOffset.UtcNow;
+		for (int i = 0; i < 2000; i++)
+		{
+			tracker.Update(Sample(5, 69.5, now.AddSeconds(i)));
+		}
+
+		Assert.AreEqual(29.7, tracker.BaselineRmssd, 0.1,
+			"Baseline must not drop below 40% under the anchor.");
+	}
+
+	[TestMethod]
+	public void Guardrail_PreventsBaselineDriftingAboveAnchorBand()
+	{
+		var tracker = new BaselineHrvTracker();
+		tracker.SeedFromHistory(RecentClean());
+
+		var now = DateTimeOffset.UtcNow;
+		for (int i = 0; i < 2000; i++)
+		{
+			tracker.Update(Sample(49.5, 200, now.AddSeconds(i)));
+		}
+
+		// HR ceiling = anchor 69.5 * 1.40 = 97.3.
+		Assert.AreEqual(97.3, tracker.BaselineHr, 0.1,
+			"Baseline HR must not rise above 40% over the anchor.");
+	}
+
+	[TestMethod]
+	public void Guardrail_NoAnchor_DoesNotClamp()
+	{
+		// No seeding => no anchor => behaves exactly like cold start.
+		var tracker = new BaselineHrvTracker();
+		tracker.Update(Sample(5, 70, DateTimeOffset.UtcNow));
+
+		Assert.AreEqual(5, tracker.BaselineRmssd, 0.001);
+	}
 }
