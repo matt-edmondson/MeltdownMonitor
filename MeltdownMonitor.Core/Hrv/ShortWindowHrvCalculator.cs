@@ -7,8 +7,13 @@ public class ShortWindowHrvCalculator
 {
 	private const double WindowSeconds = 60.0;
 	private const double ExtendedWindowSeconds = 300.0; // 5-minute clinical standard
-	private const double EmitIntervalSeconds = 5.0;
 	private const double ExtendedComputeIntervalSeconds = 30.0;
+
+	/// <summary>
+	/// Minimum gap between emitted HRV samples. Lower = smoother live graphs, noisier metrics.
+	/// Settable so the UI can expose this as a refresh-rate control.
+	/// </summary>
+	public double EmitIntervalSeconds { get; set; } = 5.0;
 
 	private readonly LinkedList<Beat> _shortWindow = new();
 	private readonly LinkedList<Beat> _extendedWindow = new();

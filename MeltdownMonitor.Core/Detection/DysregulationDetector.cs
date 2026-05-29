@@ -9,11 +9,13 @@ namespace MeltdownMonitor.Core.Detection;
 /// </summary>
 public class DysregulationDetector
 {
-	private readonly DetectionThresholds _thresholds;
+	private readonly Func<DetectionThresholds> _thresholdsProvider;
 	private DetectorState _state = DetectorState.Idle;
 	private DateTimeOffset _stateEnteredAt = DateTimeOffset.MinValue;
 	private DateTimeOffset _warningConditionsMetAt = DateTimeOffset.MinValue;
 	private bool _warningConditionsActive;
+
+	private DetectionThresholds _thresholds => _thresholdsProvider();
 
 	public DetectorState State => _state;
 
@@ -22,7 +24,13 @@ public class DysregulationDetector
 
 	public DysregulationDetector(DetectionThresholds? thresholds = null)
 	{
-		_thresholds = thresholds ?? new DetectionThresholds();
+		var snapshot = thresholds ?? new DetectionThresholds();
+		_thresholdsProvider = () => snapshot;
+	}
+
+	public DysregulationDetector(Func<DetectionThresholds> thresholdsProvider)
+	{
+		_thresholdsProvider = thresholdsProvider;
 	}
 
 	/// <summary>

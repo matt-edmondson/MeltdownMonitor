@@ -30,4 +30,10 @@ public class AppSettings : AppData<AppSettings>
 			Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
 			"MeltdownMonitor",
 			"meltdown.db");
+
+	/// <summary>Minimum gap between HRV sample emissions (0.5–30s). Lower = smoother graphs.</summary>
+	public double HrvEmitIntervalSeconds { get; set; } = 5.0;
+
+	/// <summary>How much history the status-window sparklines display (1–360 min).</summary>
+	public int SparklineWindowMinutes { get; set; } = 60;
 }

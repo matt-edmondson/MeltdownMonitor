@@ -13,7 +13,7 @@ public sealed class TrayIcon : IDisposable
 	private readonly Pipeline _pipeline;
 	private readonly MeltdownRepository _repository;
 	private readonly AppSettings _settings;
-	private readonly Action _toggleStatusWindow;
+	private readonly Action _showStatusWindow;
 	private readonly Action _quit;
 
 	private static readonly Dictionary<DetectorState, Color> StateColors = new()
@@ -29,13 +29,13 @@ public sealed class TrayIcon : IDisposable
 		Pipeline pipeline,
 		MeltdownRepository repository,
 		AppSettings settings,
-		Action toggleStatusWindow,
+		Action showStatusWindow,
 		Action quit)
 	{
 		_pipeline = pipeline;
 		_repository = repository;
 		_settings = settings;
-		_toggleStatusWindow = toggleStatusWindow;
+		_showStatusWindow = showStatusWindow;
 		_quit = quit;
 
 		_notifyIcon = new NotifyIcon
@@ -46,7 +46,7 @@ public sealed class TrayIcon : IDisposable
 			ContextMenuStrip = BuildContextMenu(),
 		};
 
-		_notifyIcon.DoubleClick += (_, _) => _toggleStatusWindow();
+		_notifyIcon.DoubleClick += (_, _) => _showStatusWindow();
 		_pipeline.SampleUpdated += s => UpdateIcon(s.State);
 	}
 
@@ -77,7 +77,7 @@ public sealed class TrayIcon : IDisposable
 		menu.Items.Add(new ToolStripSeparator());
 		menu.Items.Add("Log how I'm feeling...", null, OnLogFeeling);
 		menu.Items.Add("Pause for 1 hour", null, OnPause);
-		menu.Items.Add("Show status window", null, (_, _) => _toggleStatusWindow());
+		menu.Items.Add("Show status window", null, (_, _) => _showStatusWindow());
 		menu.Items.Add("Open log folder", null, OnOpenLogFolder);
 		menu.Items.Add(new ToolStripSeparator());
 		menu.Items.Add("Quit", null, (_, _) => _quit());

@@ -24,14 +24,16 @@ public sealed class Pipeline : IDisposable
 
 	public DetectorState CurrentState => _detector.State;
 	public HrvSample? LatestSample { get; private set; }
+	public BaselineHrvTracker Baseline => _baseline;
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
+	public event Action<Beat>? BeatReceived;
 
 	public Pipeline(AppSettings settings, MeltdownRepository repository)
 	{
 		_settings = settings;
 		_repository = repository;
-		_detector = new DysregulationDetector(settings.Thresholds);
+		_detector = new DysregulationDetector(() => _settings.Thresholds);
 		_detector.AlertFired += OnAlertFired;
 	}
 
@@ -59,7 +61,9 @@ public sealed class Pipeline : IDisposable
 			}
 
 			_repository.InsertBeat(beat);
+			BeatReceived?.Invoke(beat);
 
+			_hrv.EmitIntervalSeconds = _settings.HrvEmitIntervalSeconds;
 			var sample = _hrv.AddBeat(beat, _baseline.BaselineRmssd, _baseline.BaselineHr, _detector.State, _baseline.BaselineLfHfRatio);
 			if (sample is null)
 			{

@@ -26,6 +26,26 @@ public class BaselineHrvTracker
 	public double BaselineLfHfRatio => _baselineLfHfRatio;
 	public bool IsWarm => _isWarm;
 
+	/// <summary>0..1 progress toward the warm-up threshold, for UI display.</summary>
+	public double WarmUpProgress
+	{
+		get
+		{
+			if (_isWarm)
+			{
+				return 1.0;
+			}
+
+			if (_firstSampleTime == DateTimeOffset.MinValue)
+			{
+				return 0.0;
+			}
+
+			double elapsed = (DateTimeOffset.UtcNow - _firstSampleTime).TotalMinutes;
+			return Math.Clamp(elapsed / WarmUpMinutes, 0.0, 1.0);
+		}
+	}
+
 	public void Update(HrvSample sample)
 	{
 		// Do not update during dysregulated states — prevents baseline from
