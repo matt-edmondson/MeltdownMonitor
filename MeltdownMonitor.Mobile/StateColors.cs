@@ -35,4 +35,15 @@ public static class StateColors
 
 	public static string LabelFor(DetectorState state, bool isPaused) =>
 		isPaused ? "Paused" : state.ToString();
+
+	/// <summary>
+	/// State colour as a <c>#RRGGBB</c> hex string. The Live Activity's SwiftUI
+	/// presentation (design doc Phase 8) renders from this so the Lock Screen
+	/// palette stays single-sourced here rather than duplicated in Swift.
+	/// </summary>
+	public static string HexFor(DetectorState state, bool isPaused = false)
+	{
+		var c = ColorFor(state, isPaused);
+		return $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+	}
 }

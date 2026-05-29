@@ -545,21 +545,39 @@ row 5 ("no Mac in CI").
   bundle to a new `docs/store-submission/` folder so a future submission
   doesn't have to re-derive them.
 
-### Phase 8 — Live Activity / Dynamic Island (v1.1)
+### Phase 8 — Live Activity / Dynamic Island (v1.1) — **managed side implemented**
 
 Promotes the §4.5 / §10 "out of scope for v1" item once the underlying
-app is shipping.
+app is shipping. The managed layer is built and unit-tested; the native
+SwiftUI widget target still has to be added in Xcode on a Mac. Full
+build/wiring guide: `docs/live-activity.md`.
 
-- New `MeltdownMonitor.iOS.WidgetExtension` target (Xamarin.iOS
-  bindings + Swift interop — this is the one place where a small Swift
-  file is unavoidable, since `ActivityKit` doesn't have a managed
-  binding yet).
-- `Pipeline.StateChanged` posts an `ActivityKit` content update with
-  state colour, current HR, and the RMSSD-vs-baseline ratio.
-- Lock-screen presentation mirrors the in-app state pill; Dynamic Island
-  compact view is just the colour + ratio glyph.
-- Throttle updates to ≤ 1 Hz to stay inside Apple's budget for
-  background activity refreshes.
+Done:
+- `MeltdownMonitor.Mobile` owns the testable logic:
+  `ILiveActivityController` + `LiveActivityContent`, and
+  `LiveActivityPublisher` which subscribes to `Pipeline.SampleUpdated` /
+  `StateChanged`, derives state colour (`StateColors.HexFor`), HR, and the
+  RMSSD-vs-baseline ratio, **throttles sample updates to ≤ 1 Hz**, and lets
+  **state transitions bypass the throttle**. Opt-in via
+  `MobileSettings.EnableLiveActivity` (Settings ▸ Display).
+- `MeltdownMonitor.iOS/Services/LiveActivityController.cs` P/Invokes the
+  Swift bridge via `[DllImport("__Internal")]`, degrading to a no-op if the
+  native widget target isn't linked yet.
+- Composition root constructs the publisher and dismisses the activity on
+  graceful terminate; `Info.plist` declares `NSSupportsLiveActivities`.
+- Native Swift (not compiled by the .NET build):
+  `MeltdownMonitor.iOS/LiveActivity/MeltdownActivityAttributes.swift`,
+  `LiveActivityBridge.swift` (`@_cdecl` C exports), and the
+  `MeltdownMonitor.iOS.WidgetExtension/` SwiftUI presentation.
+- `MeltdownMonitor.Tests/LiveActivityPublisherTests.cs` covers start,
+  throttle, state-change bypass, opt-in/runtime-disable, paused content,
+  warming-baseline ratio, and teardown.
+
+Remaining (needs a Mac + real device):
+- Add the Widget Extension target in Xcode and wire the Swift files into the
+  app/widget target membership (`docs/live-activity.md`).
+- Confirm Dynamic Island compact/expanded presentation and the ≤ 1 Hz
+  refresh budget on-device.
 
 ### Out of scope for v1 (logged for v1.1+)
 

@@ -19,6 +19,7 @@ namespace MeltdownMonitor.iOS;
 public static class IosCompositionRoot
 {
 	private static MobileAlertDispatcher? _alertDispatcher;
+	private static LiveActivityPublisher? _liveActivity;
 	private static HealthKitEpisodeRecorder? _episodeRecorder;
 	private static NotificationDispatcher? _notifications;
 	private static HealthKitStore? _healthStore;
@@ -112,6 +113,11 @@ public static class IosCompositionRoot
 			_episodeRecorder = new HealthKitEpisodeRecorder(pipeline, settings, _healthStore);
 		}
 
+		// Mirror state/HR/balance to the Lock Screen and Dynamic Island, throttled
+		// to ≤ 1 Hz (design doc §4.5 / Phase 8). Opt-in via settings; the publisher
+		// itself honours the flag, starting the activity only when enabled.
+		_liveActivity = new LiveActivityPublisher(pipeline, new LiveActivityController(), settings);
+
 		_pipeline = pipeline;
 
 		// ObservableCollection mutations and pill updates must land on the UI
@@ -171,6 +177,13 @@ public static class IosCompositionRoot
 		if (_pipeline is null)
 		{
 			return;
+		}
+
+		// Dismiss the Live Activity so the Lock Screen doesn't keep a stale card
+		// after we're gone (design doc §6.2 — graceful terminate).
+		if (_liveActivity is not null)
+		{
+			await _liveActivity.StopAsync().ConfigureAwait(false);
 		}
 
 		var stop = _pipeline.StopAsync();

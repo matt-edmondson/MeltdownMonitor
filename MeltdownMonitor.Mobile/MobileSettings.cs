@@ -45,4 +45,13 @@ public sealed class MobileSettings
 	/// by the platform head — on iOS that means <c>NSUserDefaults</c>.
 	/// </summary>
 	public bool IsDisclaimerAccepted { get; set; }
+
+	/// <summary>
+	/// When true, a Lock Screen / Dynamic Island Live Activity mirrors the
+	/// current state, HR, and RMSSD-vs-baseline ratio (design doc §4.5 /
+	/// Phase 8). Opt-in: a persistent on-device status surface is a deliberate
+	/// choice, and the activity is the closest mobile analogue to the desktop
+	/// tray icon.
+	/// </summary>
+	public bool EnableLiveActivity { get; set; }
 }
