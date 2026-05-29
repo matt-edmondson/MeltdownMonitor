@@ -1,4 +1,5 @@
 using ktsu.AppDataStorage;
+using MeltdownMonitor.Core.Baseline;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 
@@ -7,6 +8,15 @@ namespace MeltdownMonitor.App;
 public class AppSettings : AppData<AppSettings>
 {
 	public DetectionThresholds Thresholds { get; set; } = new();
+
+	/// <summary>HRV baseline seeding, responsiveness, and guardrail tuning.</summary>
+	public BaselineTuning BaselineTuning { get; set; } = new();
+
+	/// <summary>Status-window chart layout tuning.</summary>
+	public ChartTuning ChartTuning { get; set; } = new();
+
+	/// <summary>Advanced HRV computation window tuning.</summary>
+	public HrvTuning HrvTuning { get; set; } = new();
 
 	/// <summary>Pre-written calm suggestion shown in the alert toast.</summary>
 	public string AlertSuggestion { get; set; } =

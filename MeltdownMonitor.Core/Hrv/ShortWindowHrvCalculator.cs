@@ -5,9 +5,20 @@ namespace MeltdownMonitor.Core.Hrv;
 
 public class ShortWindowHrvCalculator
 {
-	private const double WindowSeconds = 60.0;
-	private const double ExtendedWindowSeconds = 300.0; // 5-minute clinical standard
-	private const double ExtendedComputeIntervalSeconds = 30.0;
+	/// <summary>
+	/// Length of the short NN window (seconds) for RMSSD/pNN50/mean-HR. 60 s is a common
+	/// standard; changing it alters the metrics and their comparability with references.
+	/// </summary>
+	public double WindowSeconds { get; set; } = 60.0;
+
+	/// <summary>
+	/// Length of the extended window (seconds) for frequency-domain and Poincaré metrics.
+	/// 300 s (5 min) is the clinical standard; changing it breaks comparability with norms.
+	/// </summary>
+	public double ExtendedWindowSeconds { get; set; } = 300.0;
+
+	/// <summary>How often (seconds) the extended metrics recompute.</summary>
+	public double ExtendedComputeIntervalSeconds { get; set; } = 30.0;
 
 	/// <summary>
 	/// Minimum gap between emitted HRV samples. Lower = smoother live graphs, noisier metrics.

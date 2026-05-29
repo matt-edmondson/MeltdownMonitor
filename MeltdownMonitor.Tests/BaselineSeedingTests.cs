@@ -138,4 +138,49 @@ public class BaselineSeedingTests
 
 		Assert.AreEqual(5, tracker.BaselineRmssd, 0.001);
 	}
+
+	[TestMethod]
+	public void Guardrail_RespectsCustomDriftBand()
+	{
+		// Tighter 10% band → floor = anchor 49.5 * 0.90 = 44.55.
+		var tracker = new BaselineHrvTracker { MaxAnchorDrift = 0.10 };
+		tracker.SeedFromHistory(RecentClean());
+
+		var now = DateTimeOffset.UtcNow;
+		for (int i = 0; i < 2000; i++)
+		{
+			tracker.Update(Sample(5, 49.5, now.AddSeconds(i)));
+		}
+
+		Assert.AreEqual(44.55, tracker.BaselineRmssd, 0.1);
+	}
+
+	[TestMethod]
+	public void WarmStart_RespectsCustomMinSamples()
+	{
+		// RecentClean() has 20 samples; requiring 50 must prevent a warm start.
+		var tracker = new BaselineHrvTracker { MinWarmStartSamples = 50 };
+		tracker.SeedFromHistory(RecentClean());
+
+		Assert.IsFalse(tracker.IsWarm);
+	}
+
+	[TestMethod]
+	public void CustomAlpha_ChangesConvergenceSpeed()
+	{
+		var fast = new BaselineHrvTracker { RmssdHrAlpha = 0.5 };
+		var slow = new BaselineHrvTracker { RmssdHrAlpha = 0.01 };
+
+		var now = DateTimeOffset.UtcNow;
+		fast.Update(Sample(100, 70, now));
+		slow.Update(Sample(100, 70, now));
+		for (int i = 1; i <= 10; i++)
+		{
+			fast.Update(Sample(0, 70, now.AddSeconds(i)));
+			slow.Update(Sample(0, 70, now.AddSeconds(i)));
+		}
+
+		Assert.IsTrue(fast.BaselineRmssd < slow.BaselineRmssd,
+			"A higher alpha converges toward the new value faster.");
+	}
 }

@@ -6,20 +6,23 @@ namespace MeltdownMonitor.Core.Baseline;
 
 public class BaselineHrvTracker
 {
-	// α ≈ 0.005 per sample at 5s cadence ≈ 15-minute effective window
-	private const double Alpha = 0.005;
-	// Slower alpha for LF/HF since extended metrics arrive every 30s
-	private const double AlphaExtended = 0.03;
-	private const double WarmUpMinutes = 10.0;
+	private readonly object _lock = new();
 
-	/// <summary>Look-back window (days) the owner should read for the anchor median.</summary>
-	public const int AnchorWindowDays = 7;
-	// Recent window whose median seeds the live EWMA at startup.
-	private const double WarmStartWindowMinutes = 60.0;
-	// Minimum recent clean samples required to warm-start (skip the live warm-up).
-	private const int MinWarmStartSamples = 12;
-	// Guardrail: the live baseline may not drift more than this fraction from the anchor.
-	private const double MaxAnchorDrift = 0.40;
+	// Tuning — defaults match the original constants; the owner (Pipeline) overrides
+	// these from user settings. The EWMA uses a fixed per-sample alpha (≈0.005 at a 5s
+	// cadence ≈ 15-minute memory); the LF/HF alpha is slower as extended metrics arrive ~30s.
+	/// <summary>Per-sample EWMA weight for the RMSSD/HR baseline.</summary>
+	public double RmssdHrAlpha { get; set; } = 0.005;
+	/// <summary>Per-sample EWMA weight for the LF/HF baseline.</summary>
+	public double LfHfAlpha { get; set; } = 0.03;
+	/// <summary>Cold-start warm-up duration (minutes) before the detector arms.</summary>
+	public double WarmUpMinutes { get; set; } = 10.0;
+	/// <summary>Recent window (minutes) whose median seeds the live baseline at startup.</summary>
+	public double WarmStartWindowMinutes { get; set; } = 60.0;
+	/// <summary>Minimum recent clean samples required to warm-start (skip the live warm-up).</summary>
+	public int MinWarmStartSamples { get; set; } = 12;
+	/// <summary>Guardrail: the live baseline may not drift more than this fraction from the anchor.</summary>
+	public double MaxAnchorDrift { get; set; } = 0.40;
 
 	private double _baselineRmssd;
 	private double _baselineHr;
@@ -68,37 +71,41 @@ public class BaselineHrvTracker
 			return;
 		}
 
-		if (_firstSampleTime == DateTimeOffset.MinValue)
+		// Lock guards against a concurrent re-seed (SeedFromHistory) from another thread.
+		lock (_lock)
 		{
-			_firstSampleTime = sample.Timestamp;
-			_baselineRmssd = sample.Rmssd;
-			_baselineHr = sample.MeanHr;
-		}
-		else
-		{
-			_baselineRmssd = ((1.0 - Alpha) * _baselineRmssd) + (Alpha * sample.Rmssd);
-			_baselineHr = ((1.0 - Alpha) * _baselineHr) + (Alpha * sample.MeanHr);
-		}
-
-		// Update LF/HF baseline when extended metrics are present
-		if (sample.Extended is { LfHfRatio: > 0 } extended)
-		{
-			if (_baselineLfHfRatio == 0)
+			if (_firstSampleTime == DateTimeOffset.MinValue)
 			{
-				_baselineLfHfRatio = extended.LfHfRatio;
+				_firstSampleTime = sample.Timestamp;
+				_baselineRmssd = sample.Rmssd;
+				_baselineHr = sample.MeanHr;
 			}
 			else
 			{
-				_baselineLfHfRatio = ((1.0 - AlphaExtended) * _baselineLfHfRatio)
-									+ (AlphaExtended * extended.LfHfRatio);
+				_baselineRmssd = ((1.0 - RmssdHrAlpha) * _baselineRmssd) + (RmssdHrAlpha * sample.Rmssd);
+				_baselineHr = ((1.0 - RmssdHrAlpha) * _baselineHr) + (RmssdHrAlpha * sample.MeanHr);
 			}
-		}
 
-		ClampToAnchor();
+			// Update LF/HF baseline when extended metrics are present
+			if (sample.Extended is { LfHfRatio: > 0 } extended)
+			{
+				if (_baselineLfHfRatio == 0)
+				{
+					_baselineLfHfRatio = extended.LfHfRatio;
+				}
+				else
+				{
+					_baselineLfHfRatio = ((1.0 - LfHfAlpha) * _baselineLfHfRatio)
+										+ (LfHfAlpha * extended.LfHfRatio);
+				}
+			}
 
-		if (!_isWarm && (sample.Timestamp - _firstSampleTime).TotalMinutes >= WarmUpMinutes)
-		{
-			_isWarm = true;
+			ClampToAnchor();
+
+			if (!_isWarm && (sample.Timestamp - _firstSampleTime).TotalMinutes >= WarmUpMinutes)
+			{
+				_isWarm = true;
+			}
 		}
 	}
 
@@ -110,37 +117,41 @@ public class BaselineHrvTracker
 	/// </summary>
 	public void SeedFromHistory(IReadOnlyList<HrvSample> history)
 	{
-		List<HrvSample> clean = [.. history.Where(IsClean)];
-
-		_anchorRmssd = Median([.. clean.Where(s => s.Rmssd > 0).Select(s => s.Rmssd)]);
-		_anchorHr = Median([.. clean.Where(s => s.MeanHr > 0).Select(s => s.MeanHr)]);
-		_anchorLfHfRatio = Median([.. clean.Where(s => s.Extended is { LfHfRatio: > 0 })
-			.Select(s => s.Extended!.LfHfRatio)]);
-
-		DateTimeOffset cutoff = DateTimeOffset.UtcNow.AddMinutes(-WarmStartWindowMinutes);
-		List<HrvSample> recent = [.. clean.Where(s => s.Timestamp >= cutoff)];
-		List<double> recentRmssd = [.. recent.Where(s => s.Rmssd > 0).Select(s => s.Rmssd)];
-		List<double> recentHr = [.. recent.Where(s => s.MeanHr > 0).Select(s => s.MeanHr)];
-
-		if (recentRmssd.Count < MinWarmStartSamples || recentHr.Count < MinWarmStartSamples)
+		// Lock guards against concurrent live Update() calls when re-seeding mid-run.
+		lock (_lock)
 		{
-			// Not enough recent data to trust a warm start; anchor (if any) still guards
-			// the live warm-up that follows.
-			return;
+			List<HrvSample> clean = [.. history.Where(IsClean)];
+
+			_anchorRmssd = Median([.. clean.Where(s => s.Rmssd > 0).Select(s => s.Rmssd)]);
+			_anchorHr = Median([.. clean.Where(s => s.MeanHr > 0).Select(s => s.MeanHr)]);
+			_anchorLfHfRatio = Median([.. clean.Where(s => s.Extended is { LfHfRatio: > 0 })
+				.Select(s => s.Extended!.LfHfRatio)]);
+
+			DateTimeOffset cutoff = DateTimeOffset.UtcNow.AddMinutes(-WarmStartWindowMinutes);
+			List<HrvSample> recent = [.. clean.Where(s => s.Timestamp >= cutoff)];
+			List<double> recentRmssd = [.. recent.Where(s => s.Rmssd > 0).Select(s => s.Rmssd)];
+			List<double> recentHr = [.. recent.Where(s => s.MeanHr > 0).Select(s => s.MeanHr)];
+
+			if (recentRmssd.Count < MinWarmStartSamples || recentHr.Count < MinWarmStartSamples)
+			{
+				// Not enough recent data to trust a warm start; anchor (if any) still guards
+				// the live warm-up that follows.
+				return;
+			}
+
+			_baselineRmssd = Median(recentRmssd);
+			_baselineHr = Median(recentHr);
+
+			List<double> recentLfHf = [.. recent.Where(s => s.Extended is { LfHfRatio: > 0 })
+				.Select(s => s.Extended!.LfHfRatio)];
+			if (recentLfHf.Count > 0)
+			{
+				_baselineLfHfRatio = Median(recentLfHf);
+			}
+
+			_firstSampleTime = recent.Max(s => s.Timestamp);
+			_isWarm = true;
 		}
-
-		_baselineRmssd = Median(recentRmssd);
-		_baselineHr = Median(recentHr);
-
-		List<double> recentLfHf = [.. recent.Where(s => s.Extended is { LfHfRatio: > 0 })
-			.Select(s => s.Extended!.LfHfRatio)];
-		if (recentLfHf.Count > 0)
-		{
-			_baselineLfHfRatio = Median(recentLfHf);
-		}
-
-		_firstSampleTime = recent.Max(s => s.Timestamp);
-		_isWarm = true;
 	}
 
 	private static bool IsClean(HrvSample sample) =>

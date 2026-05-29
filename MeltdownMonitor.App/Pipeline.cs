@@ -48,10 +48,11 @@ public sealed class Pipeline : IDisposable
 	// Best-effort: a missing or locked database must never prevent startup.
 	private void SeedBaselineFromHistory()
 	{
+		ApplyTuning();
 		try
 		{
 			DateTimeOffset to = DateTimeOffset.UtcNow;
-			DateTimeOffset from = to.AddDays(-BaselineHrvTracker.AnchorWindowDays);
+			DateTimeOffset from = to.AddDays(-_settings.BaselineTuning.AnchorWindowDays);
 			var history = MeltdownRepository.ReadHistory(_settings.DatabasePath, from, to);
 			_baseline.SeedFromHistory(history);
 		}
@@ -60,6 +61,42 @@ public sealed class Pipeline : IDisposable
 		{
 			System.Diagnostics.Debug.WriteLine($"Baseline seeding skipped: {ex.Message}");
 		}
+	}
+
+	/// <summary>
+	/// Re-applies tuning, re-reads history, and re-seeds the baseline live — for the
+	/// Settings "Re-seed baseline now" action. Thread-safe against the live update loop.
+	/// </summary>
+	public void ReseedBaseline() => SeedBaselineFromHistory();
+
+	// Push user tuning into the calculator and baseline tracker. Responsiveness windows
+	// (minutes) convert to a per-sample EWMA alpha using the relevant sample cadence.
+	private void ApplyTuning()
+	{
+		_hrv.EmitIntervalSeconds = _settings.HrvEmitIntervalSeconds;
+		_hrv.WindowSeconds = _settings.HrvTuning.ShortWindowSeconds;
+		_hrv.ExtendedWindowSeconds = _settings.HrvTuning.ExtendedWindowSeconds;
+		_hrv.ExtendedComputeIntervalSeconds = _settings.HrvTuning.ExtendedComputeIntervalSeconds;
+
+		BaselineTuning bt = _settings.BaselineTuning;
+		_baseline.RmssdHrAlpha = AlphaFromWindow(_settings.HrvEmitIntervalSeconds, bt.RmssdHrWindowMinutes);
+		_baseline.LfHfAlpha = AlphaFromWindow(_settings.HrvTuning.ExtendedComputeIntervalSeconds, bt.LfHfWindowMinutes);
+		_baseline.WarmUpMinutes = bt.WarmUpMinutes;
+		_baseline.WarmStartWindowMinutes = bt.WarmStartWindowMinutes;
+		_baseline.MinWarmStartSamples = bt.MinWarmStartSamples;
+		_baseline.MaxAnchorDrift = bt.MaxAnchorDrift;
+	}
+
+	// Convert an EWMA "memory window" (minutes) to a per-sample alpha at the given cadence.
+	private static double AlphaFromWindow(double cadenceSeconds, double windowMinutes)
+	{
+		double windowSeconds = windowMinutes * 60.0;
+		if (windowSeconds <= 0 || cadenceSeconds <= 0)
+		{
+			return 1.0;
+		}
+
+		return Math.Clamp(cadenceSeconds / windowSeconds, 0.0001, 1.0);
 	}
 
 	public void Stop()
@@ -82,7 +119,7 @@ public sealed class Pipeline : IDisposable
 			_repository.InsertBeat(beat);
 			BeatReceived?.Invoke(beat);
 
-			_hrv.EmitIntervalSeconds = _settings.HrvEmitIntervalSeconds;
+			ApplyTuning();
 			var sample = _hrv.AddBeat(beat, _baseline.BaselineRmssd, _baseline.BaselineHr, _detector.State, _baseline.BaselineLfHfRatio);
 			if (sample is null)
 			{

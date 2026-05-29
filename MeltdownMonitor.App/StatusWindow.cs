@@ -19,17 +19,13 @@ namespace MeltdownMonitor.App;
 public sealed class StatusWindow : IDisposable
 {
 	private const int PoincareScatterPoints = 512;
-	private const int PlotHeight = 256;
 	private const int InitialSparklineCapacity = 2048;
 
-	// Cap how wide a plot may stretch relative to its height so charts never
-	// become unreadable ribbons on wide windows; the Poincaré scatter is kept square.
-	private const float MaxPlotAspect = 4.0f;
-	private const float PoincareMaxSide = 512f;
-
-	// Target cell width for the Overview metric grid; the grid fits as many columns
-	// as the window width allows.
-	private const float OverviewChartWidth = 700f;
+	// Chart layout, tunable from the Settings tab (applied live).
+	private float PlotHeight => _settings.ChartTuning.PlotHeight;
+	private float OverviewChartWidth => _settings.ChartTuning.OverviewChartWidth;
+	private float MaxPlotAspect => _settings.ChartTuning.MaxPlotAspect;
+	private float PoincareMaxSide => _settings.ChartTuning.PoincareMaxSide;
 
 	private readonly object _historyLock = new();
 	private readonly Pipeline _pipeline;
@@ -434,7 +430,7 @@ public sealed class StatusWindow : IDisposable
 		];
 
 		ImGuiWidgets.RowMajorGrid("overview-charts", charts,
-			static _ => new Vector2(OverviewChartWidth, PlotHeight),
+			_ => new Vector2(OverviewChartWidth, PlotHeight),
 			static (chart, cellSize, itemSize) => DrawOverviewChart(chart, itemSize));
 	}
 
@@ -554,7 +550,7 @@ public sealed class StatusWindow : IDisposable
 		PlotRow(PlotHeight, ("SD1/SD2 ratio (parasympathetic index)", ratio));
 	}
 
-	private static void DrawPoincareScatter(float[] rrs)
+	private void DrawPoincareScatter(float[] rrs)
 	{
 		// Keep the scatter square and centred — Equal axes plus a wide region would
 		// otherwise spread the cloud thin and unreadable.
@@ -611,28 +607,30 @@ public sealed class StatusWindow : IDisposable
 
 	private void DrawSettingsTab()
 	{
-		ImGui.TextDisabled("Changes apply live; persisted to disk when you release the control.");
+		ImGui.TextDisabled("Changes apply live; persisted to disk when you release the control. Hover (?) for tuning help.");
 		ImGui.Spacing();
 
-		// ── Refresh / window ─────────────────────────────────────────────
+		// ── Refresh ──────────────────────────────────────────────────────
 		ImGui.SeparatorText("Refresh");
 
 		float emit = (float)_settings.HrvEmitIntervalSeconds;
-		if (ImGuiWidgets.Knob("HRV emit (s)", ref emit, 0.5f, 30f, format: "%.1f s",
-				flags: ImGuiKnobOptions.ValueTooltip))
+		if (ImGuiWidgets.Knob("HRV emit (s)", ref emit, 0.5f, 30f, format: "%.1f s", flags: ImGuiKnobOptions.ValueTooltip))
 		{
 			_settings.HrvEmitIntervalSeconds = emit;
 			_settingsDirty = true;
 		}
 		ImGui.SameLine();
+		HelpMarker("How often a new HRV sample is emitted. Lower = smoother live graphs but noisier per-sample metrics; higher = steadier metrics, coarser graphs.");
+		ImGui.SameLine();
 
 		int window = _settings.SparklineWindowMinutes;
-		if (ImGuiWidgets.Knob("Window (min)", ref window, 1, 360, format: "%d min",
-				flags: ImGuiKnobOptions.ValueTooltip))
+		if (ImGuiWidgets.Knob("History (min)", ref window, 1, 360, format: "%d min", flags: ImGuiKnobOptions.ValueTooltip))
 		{
 			_settings.SparklineWindowMinutes = window;
 			_settingsDirty = true;
 		}
+		ImGui.SameLine();
+		HelpMarker("How much history the live charts show. Higher = longer trends visible; lower = more recent detail.");
 
 		// ── Detection thresholds ─────────────────────────────────────────
 		// Fraction knobs work in percent (0..100) and divide on assign so the
@@ -644,55 +642,61 @@ public sealed class StatusWindow : IDisposable
 		float hrRisePct = (float)(t.HrWarningRiseFraction * 100.0);
 		float rmssdAlertPct = (float)(t.RmssdAlertingDropFraction * 100.0);
 
-		if (ImGuiWidgets.Knob("RMSSD warn drop", ref rmssdWarnPct, 5f, 90f, format: "%.0f%%",
-				flags: ImGuiKnobOptions.ValueTooltip))
+		if (ImGuiWidgets.Knob("RMSSD warn drop", ref rmssdWarnPct, 5f, 90f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
 		{
 			t = t with { RmssdWarningDropFraction = rmssdWarnPct / 100.0 };
 			_settingsDirty = true;
 		}
 		ImGui.SameLine();
+		HelpMarker("RMSSD drop below baseline that triggers a Warning. Lower = more sensitive (warns on small dips); higher = only large drops warn.");
+		ImGui.SameLine();
 
-		if (ImGuiWidgets.Knob("HR rise", ref hrRisePct, 5f, 80f, format: "%.0f%%",
-				flags: ImGuiKnobOptions.ValueTooltip))
+		if (ImGuiWidgets.Knob("HR rise", ref hrRisePct, 5f, 80f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
 		{
 			t = t with { HrWarningRiseFraction = hrRisePct / 100.0 };
 			_settingsDirty = true;
 		}
 		ImGui.SameLine();
+		HelpMarker("HR rise above baseline contributing to a Warning. Lower = more sensitive; higher = only large HR rises count.");
+		ImGui.SameLine();
 
-		if (ImGuiWidgets.Knob("RMSSD alert drop", ref rmssdAlertPct, 5f, 95f, format: "%.0f%%",
-				flags: ImGuiKnobOptions.ValueTooltip))
+		if (ImGuiWidgets.Knob("RMSSD alert drop", ref rmssdAlertPct, 5f, 95f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
 		{
 			t = t with { RmssdAlertingDropFraction = rmssdAlertPct / 100.0 };
 			_settingsDirty = true;
 		}
+		ImGui.SameLine();
+		HelpMarker("RMSSD drop that escalates to an Alert. Lower = escalates more readily; higher = reserves alerts for severe drops.");
 
 		float holdSec = (float)t.WarningHoldDuration.TotalSeconds;
 		float escalateSec = (float)t.AlertingEscalationDuration.TotalSeconds;
 		float cooldownMin = (float)t.CooldownDuration.TotalMinutes;
 
-		if (ImGuiWidgets.Knob("Warning hold (s)", ref holdSec, 5f, 300f, format: "%.0f s",
-				flags: ImGuiKnobOptions.ValueTooltip))
+		if (ImGuiWidgets.Knob("Warning hold (s)", ref holdSec, 5f, 300f, format: "%.0f s", flags: ImGuiKnobOptions.ValueTooltip))
 		{
 			t = t with { WarningHoldDuration = TimeSpan.FromSeconds(holdSec) };
 			_settingsDirty = true;
 		}
 		ImGui.SameLine();
+		HelpMarker("How long Warning conditions must persist before the state holds. Higher = fewer transient warnings; lower = reacts faster.");
+		ImGui.SameLine();
 
-		if (ImGuiWidgets.Knob("Escalate (s)", ref escalateSec, 10f, 600f, format: "%.0f s",
-				flags: ImGuiKnobOptions.ValueTooltip))
+		if (ImGuiWidgets.Knob("Escalate (s)", ref escalateSec, 10f, 600f, format: "%.0f s", flags: ImGuiKnobOptions.ValueTooltip))
 		{
 			t = t with { AlertingEscalationDuration = TimeSpan.FromSeconds(escalateSec) };
 			_settingsDirty = true;
 		}
 		ImGui.SameLine();
+		HelpMarker("How long a Warning must persist before escalating to an Alert. Higher = more patient; lower = alerts sooner.");
+		ImGui.SameLine();
 
-		if (ImGuiWidgets.Knob("Cooldown (min)", ref cooldownMin, 1f, 60f, format: "%.0f min",
-				flags: ImGuiKnobOptions.ValueTooltip))
+		if (ImGuiWidgets.Knob("Cooldown (min)", ref cooldownMin, 1f, 60f, format: "%.0f min", flags: ImGuiKnobOptions.ValueTooltip))
 		{
 			t = t with { CooldownDuration = TimeSpan.FromMinutes(cooldownMin) };
 			_settingsDirty = true;
 		}
+		ImGui.SameLine();
+		HelpMarker("Quiet period after an episode before the detector re-arms. Higher = fewer repeat alerts; lower = re-arms quickly.");
 
 		// ── LF/HF corroboration ─────────────────────────────────────────
 		ImGui.SeparatorText("LF/HF corroboration (optional)");
@@ -703,28 +707,204 @@ public sealed class StatusWindow : IDisposable
 			t = t with { UseLfHfCorroboration = useLfHf };
 			_settingsDirty = true;
 		}
+		ImGui.SameLine();
+		HelpMarker("When on, a Warning also requires the LF/HF balance to rise — fewer false positives, but may miss some episodes.");
 
 		using (new ScopedDisable(!useLfHf))
 		{
 			float lfHfRisePct = (float)(t.LfHfWarningRiseFraction * 100.0);
-			if (ImGuiWidgets.Knob("LF/HF rise", ref lfHfRisePct, 5f, 200f, format: "%.0f%%",
-					flags: ImGuiKnobOptions.ValueTooltip))
+			if (ImGuiWidgets.Knob("LF/HF rise", ref lfHfRisePct, 5f, 200f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
 			{
 				t = t with { LfHfWarningRiseFraction = lfHfRisePct / 100.0 };
 				_settingsDirty = true;
 			}
+			ImGui.SameLine();
+			HelpMarker("How much LF/HF must rise to corroborate a Warning. Lower = easier to corroborate; higher = stricter.");
 		}
 
-		// Apply changes to the live settings on every frame (so the Func<>
-		// provider sees them immediately), but defer the disk write until
-		// no widget is actively being dragged — otherwise we'd rewrite the
-		// settings file 30+ times per second.
 		_settings.Thresholds = t;
 
+		// ── Baseline seeding ─────────────────────────────────────────────
+		ImGui.SeparatorText("Baseline seeding (applies on re-seed / next launch)");
+
+		var bt = _settings.BaselineTuning;
+		int anchorDays = bt.AnchorWindowDays;
+		if (ImGuiWidgets.Knob("Anchor (days)", ref anchorDays, 1, 30, format: "%d d", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			bt = bt with { AnchorWindowDays = anchorDays };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Days of history feeding your long-term 'normal' (anchor). Higher = more stable, slower to reflect lifestyle change; lower = adapts faster but noisier.");
+		ImGui.SameLine();
+
+		float warmStartMin = (float)bt.WarmStartWindowMinutes;
+		if (ImGuiWidgets.Knob("Warm-start (min)", ref warmStartMin, 5f, 240f, format: "%.0f min", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			bt = bt with { WarmStartWindowMinutes = warmStartMin };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Recent window whose median seeds the live baseline at startup. Higher = smoother seed; lower = reflects the last few minutes.");
+		ImGui.SameLine();
+
+		int minSamples = bt.MinWarmStartSamples;
+		if (ImGuiWidgets.Knob("Min samples", ref minSamples, 1, 120, format: "%d", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			bt = bt with { MinWarmStartSamples = minSamples };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Clean recent samples required to skip the cold warm-up. Higher = only warm-start with solid recent data; lower = warm-start more eagerly.");
+
+		if (ImGui.Button("Re-seed baseline now"))
+		{
+			_settings.BaselineTuning = bt;
+			_pipeline.ReseedBaseline();
+		}
+		ImGui.SameLine();
+		HelpMarker("Re-read history and re-apply the seeding values immediately, without restarting.");
+
+		// ── Baseline responsiveness ──────────────────────────────────────
+		ImGui.SeparatorText("Baseline responsiveness (applies live)");
+
+		float driftPct = (float)(bt.MaxAnchorDrift * 100.0);
+		if (ImGuiWidgets.Knob("Guardrail (%)", ref driftPct, 10f, 100f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			bt = bt with { MaxAnchorDrift = driftPct / 100.0 };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How far the live baseline may stray from your anchor. Lower = tightly tethered to normal (catches slow declines, may clip real shifts); higher = freer to follow recent data.");
+		ImGui.SameLine();
+
+		float rmssdWin = (float)bt.RmssdHrWindowMinutes;
+		if (ImGuiWidgets.Knob("RMSSD/HR (min)", ref rmssdWin, 1f, 120f, format: "%.0f min", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			bt = bt with { RmssdHrWindowMinutes = rmssdWin };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Memory of the live RMSSD/HR baseline. Higher = smoother, slower baseline (deviations read larger); lower = chases recent values.");
+		ImGui.SameLine();
+
+		float lfhfWin = (float)bt.LfHfWindowMinutes;
+		if (ImGuiWidgets.Knob("LF/HF (min)", ref lfhfWin, 1f, 120f, format: "%.0f min", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			bt = bt with { LfHfWindowMinutes = lfhfWin };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Memory of the live LF/HF baseline. Same trade-off as RMSSD/HR, for sympathovagal balance.");
+		ImGui.SameLine();
+
+		float warmUpMin = (float)bt.WarmUpMinutes;
+		if (ImGuiWidgets.Knob("Warm-up (min)", ref warmUpMin, 0f, 60f, format: "%.0f min", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			bt = bt with { WarmUpMinutes = warmUpMin };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Cold-start delay before the detector arms (only when not warm-started from history). Higher = more cautious; lower = arms sooner.");
+
+		_settings.BaselineTuning = bt;
+
+		// ── Charts ───────────────────────────────────────────────────────
+		ImGui.SeparatorText("Charts (applies live)");
+
+		var ct = _settings.ChartTuning;
+		float plotH = ct.PlotHeight;
+		if (ImGuiWidgets.Knob("Plot height", ref plotH, 80f, 500f, format: "%.0f px", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			ct = ct with { PlotHeight = plotH };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Height of each chart. Taller = more vertical detail; shorter = more charts fit without scrolling.");
+		ImGui.SameLine();
+
+		float cellW = ct.OverviewChartWidth;
+		if (ImGuiWidgets.Knob("Cell width", ref cellW, 200f, 1200f, format: "%.0f px", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			ct = ct with { OverviewChartWidth = cellW };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Target width of each Overview grid cell. Smaller = more columns (denser); larger = fewer, wider charts.");
+		ImGui.SameLine();
+
+		float aspect = ct.MaxPlotAspect;
+		if (ImGuiWidgets.Knob("Max aspect", ref aspect, 1f, 8f, format: "%.1f", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			ct = ct with { MaxPlotAspect = aspect };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Cap on a chart's width:height before it stops widening — prevents unreadable ribbons on wide windows.");
+		ImGui.SameLine();
+
+		float poincare = ct.PoincareMaxSide;
+		if (ImGuiWidgets.Knob("Poincaré size", ref poincare, 200f, 900f, format: "%.0f px", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			ct = ct with { PoincareMaxSide = poincare };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Maximum size of the square Poincaré scatter.");
+
+		_settings.ChartTuning = ct;
+
+		// ── Advanced HRV windows ─────────────────────────────────────────
+		ImGui.SeparatorText("Advanced HRV windows (changes metric definitions)");
+
+		var ht = _settings.HrvTuning;
+		float shortWin = (float)ht.ShortWindowSeconds;
+		if (ImGuiWidgets.Knob("Short (s)", ref shortWin, 30f, 120f, format: "%.0f s", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			ht = ht with { ShortWindowSeconds = shortWin };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("⚠ NN window for RMSSD/pNN50/mean-HR. 60 s is a common standard — changing it alters the metrics and comparability with references.");
+		ImGui.SameLine();
+
+		float extWin = (float)ht.ExtendedWindowSeconds;
+		if (ImGuiWidgets.Knob("Extended (s)", ref extWin, 120f, 600f, format: "%.0f s", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			ht = ht with { ExtendedWindowSeconds = extWin };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("⚠ Window for frequency-domain & Poincaré metrics. 300 s (5 min) is the clinical standard — changing it breaks comparability with norms.");
+		ImGui.SameLine();
+
+		float extCompute = (float)ht.ExtendedComputeIntervalSeconds;
+		if (ImGuiWidgets.Knob("Recompute (s)", ref extCompute, 5f, 120f, format: "%.0f s", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			ht = ht with { ExtendedComputeIntervalSeconds = extCompute };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How often the extended (frequency/Poincaré) metrics recompute. Lower = fresher, more CPU.");
+
+		_settings.HrvTuning = ht;
+
+		// Apply on every frame (live), but defer the disk write until no widget is
+		// being dragged — otherwise we'd rewrite the settings file 30+ times a second.
 		if (_settingsDirty && !ImGui.IsAnyItemActive())
 		{
 			_settings.Save();
 			_settingsDirty = false;
+		}
+	}
+
+	// A small "(?)" hint that shows tuning guidance on hover.
+	private static void HelpMarker(string text)
+	{
+		ImGui.TextDisabled("(?)");
+		if (ImGui.IsItemHovered())
+		{
+			ImGui.SetTooltip(text);
 		}
 	}
 
@@ -746,7 +926,7 @@ public sealed class StatusWindow : IDisposable
 
 	// One comparison chart (a series plus its baseline) sharing a single auto-fit
 	// Y axis, capped to MaxPlotAspect and centred in the available width.
-	private static void PlotPair(string title, string aLabel, float[] a, string bLabel, float[] b)
+	private void PlotPair(string title, string aLabel, float[] a, string bLabel, float[] b)
 	{
 		(Vector2 size, float indent) = CenteredCell(ImGui.GetContentRegionAvail().X, PlotHeight);
 		Indent(indent);
@@ -771,7 +951,7 @@ public sealed class StatusWindow : IDisposable
 
 	// Lay out N plots in a single row, each sharing the width equally (capped to
 	// MaxPlotAspect) and the group centred. Handles a single plot too.
-	private static void PlotRow(float height, params (string label, float[] data)[] plots)
+	private void PlotRow(float height, params (string label, float[] data)[] plots)
 	{
 		int n = plots.Length;
 		if (n == 0)
@@ -797,7 +977,7 @@ public sealed class StatusWindow : IDisposable
 	}
 
 	// Width capped to MaxPlotAspect, plus the horizontal slack to centre it.
-	private static (Vector2 size, float indent) CenteredCell(float availWidth, float height)
+	private (Vector2 size, float indent) CenteredCell(float availWidth, float height)
 	{
 		float w = MathF.Min(availWidth, height * MaxPlotAspect);
 		return (new Vector2(w, height), MathF.Max(0f, (availWidth - w) * 0.5f));
