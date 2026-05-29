@@ -14,7 +14,7 @@ namespace MeltdownMonitor.Mobile.ViewModels;
 /// </summary>
 public sealed class HistoryViewModel : ViewModelBase
 {
-	private readonly string? _databasePath;
+	private string? _databasePath;
 	private bool _isLoading;
 	private string? _error;
 
@@ -22,6 +22,17 @@ public sealed class HistoryViewModel : ViewModelBase
 	{
 		_databasePath = databasePath;
 		LoadCommand = new RelayCommand(() => _ = LoadAsync());
+	}
+
+	/// <summary>
+	/// Point the history list at the live database. The iOS head calls this
+	/// once <c>BuildAndStartPipelineAsync</c> has resolved the sandbox path
+	/// (design doc §6.1) — the VM is constructed before that path is known.
+	/// </summary>
+	public void UseDatabase(string databasePath)
+	{
+		_databasePath = databasePath;
+		_ = LoadAsync();
 	}
 
 	public ObservableCollection<HistoryEvent> Events { get; } = [];

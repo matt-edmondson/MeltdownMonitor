@@ -18,6 +18,15 @@ public partial class App : Application
 	public static Func<RootViewModel> RootViewModelFactory { get; set; } =
 		RootViewModel.CreateDefault;
 
+	/// <summary>
+	/// Invoked once the root view is in place, on the UI thread, after
+	/// framework initialization completes. The iOS head uses this to kick off
+	/// the live BLE pipeline composition (design doc §6.1) — it can't run
+	/// before Avalonia is up because the view models it feeds are built by
+	/// <see cref="RootViewModelFactory"/>. No-op by default.
+	/// </summary>
+	public static Action? Started { get; set; }
+
 	public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
 	public override void OnFrameworkInitializationCompleted()
@@ -43,5 +52,7 @@ public partial class App : Application
 		}
 
 		base.OnFrameworkInitializationCompleted();
+
+		Started?.Invoke();
 	}
 }

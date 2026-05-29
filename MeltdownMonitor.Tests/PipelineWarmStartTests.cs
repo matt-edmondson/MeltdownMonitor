@@ -48,6 +48,32 @@ public class PipelineWarmStartTests
 	}
 
 	[TestMethod]
+	public async Task WarmStart_IsIdempotent_AcrossRepeatedCalls()
+	{
+		using var repo = NewRepo();
+		using var pipeline = new Pipeline(new MobileSettings(), repo, new EmptyBeatSource());
+
+		var start = DateTimeOffset.UtcNow.AddMinutes(-30);
+		var samples = new List<HrSample>();
+		for (int i = 0; i < 30 * 60 * 5; i++)
+		{
+			samples.Add(new HrSample(start.AddMilliseconds(i * 200), HeartRateBpm: 72));
+		}
+
+		var store = new FakeHealthStore(samples);
+		await pipeline.WarmStartAsync(store);
+		double afterFirst = BaselineHr(pipeline);
+
+		// Calling again with the same history should converge to the same place,
+		// not drift or double-count the contribution.
+		await pipeline.WarmStartAsync(store);
+		double afterSecond = BaselineHr(pipeline);
+
+		Assert.AreEqual(afterFirst, afterSecond, 0.5,
+			"Re-running warm-start with identical history must not move the baseline.");
+	}
+
+	[TestMethod]
 	public async Task WarmStart_EmptyHealthKit_LeavesBaselineCold()
 	{
 		using var repo = NewRepo();

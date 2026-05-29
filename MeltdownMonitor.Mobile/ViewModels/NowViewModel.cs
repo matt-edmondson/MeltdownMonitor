@@ -156,37 +156,62 @@ public sealed class NowViewModel : ViewModelBase
 	public ICommand ToggleConnectionCommand { get; }
 
 	/// <summary>
+	/// Subscribe to a live <see cref="Pipeline"/> so its samples and state
+	/// transitions drive the Now screen. Called by the iOS head once the BLE
+	/// pipeline is composed (design doc §6.1). Reflects the pipeline's current
+	/// state immediately in case it advanced before the view subscribed.
+	/// </summary>
+	public void AttachPipeline(Pipeline pipeline)
+	{
+		ArgumentNullException.ThrowIfNull(pipeline);
+		pipeline.SampleUpdated += OnSampleUpdated;
+		pipeline.StateChanged += OnStateChanged;
+		OnStateChanged(pipeline.CurrentState);
+	}
+
+	/// <summary>
 	/// Push a fresh sample into the VM. Marshals to the UI thread so the
 	/// pipeline callback can call this from a background BLE thread.
 	/// </summary>
-	public void OnSampleUpdated(HrvSample sample)
+	public void OnSampleUpdated(HrvSample sample) => RunOnUi(() =>
 	{
-		void Apply()
-		{
-			HeartRate = sample.MeanHr;
-			Rmssd = sample.Rmssd;
-			BaselineRmssd = sample.BaselineRmssd;
-			State = sample.State;
+		// A sample arriving means beats are flowing — the link is live.
+		Connection = ConnectionState.Connected;
 
-			_rmssdHistory.Add(sample.Rmssd);
-			_baselineHistory.Add(sample.BaselineRmssd);
-			TrimHistory();
+		HeartRate = sample.MeanHr;
+		Rmssd = sample.Rmssd;
+		BaselineRmssd = sample.BaselineRmssd;
+		State = sample.State;
 
-			Raise(nameof(RmssdHistory));
-			Raise(nameof(BaselineHistory));
-		}
+		_rmssdHistory.Add(sample.Rmssd);
+		_baselineHistory.Add(sample.BaselineRmssd);
+		TrimHistory();
 
+		Raise(nameof(RmssdHistory));
+		Raise(nameof(BaselineHistory));
+	});
+
+	/// <summary>
+	/// Update the state pill from a <see cref="Pipeline.StateChanged"/> event.
+	/// State can advance without a fresh sample (e.g. Idle→Watching as the
+	/// baseline warms, or Cooldown→Watching on the timer), so this is wired
+	/// independently of <see cref="OnSampleUpdated"/>.
+	/// </summary>
+	public void OnStateChanged(DetectorState state) => RunOnUi(() => State = state);
+
+	public void TickTimeDisplay() => Raise(nameof(TimeSinceStateChange));
+
+	private static void RunOnUi(Action apply)
+	{
 		if (Dispatcher.UIThread.CheckAccess())
 		{
-			Apply();
+			apply();
 		}
 		else
 		{
-			Dispatcher.UIThread.Post(Apply);
+			Dispatcher.UIThread.Post(apply);
 		}
 	}
-
-	public void TickTimeDisplay() => Raise(nameof(TimeSinceStateChange));
 
 	private void TrimHistory()
 	{

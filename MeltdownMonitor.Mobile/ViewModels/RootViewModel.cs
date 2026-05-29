@@ -60,7 +60,7 @@ public sealed class RootViewModel : ViewModelBase
 		}
 
 		_settings.IsDisclaimerAccepted = true;
-		_store?.SaveDisclaimerAccepted(true);
+		_store?.Save(_settings);
 		Raise(nameof(IsDisclaimerAccepted));
 		Raise(nameof(IsDisclaimerPending));
 	}
