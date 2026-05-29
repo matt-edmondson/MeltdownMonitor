@@ -9,6 +9,13 @@ namespace MeltdownMonitor.iOS;
 [Register("AppDelegate")]
 public partial class AppDelegate : AvaloniaAppDelegate<MeltdownMonitor.Mobile.App>
 {
+	// Notification tokens are retained for the app's lifetime so the observers
+	// aren't collected. AvaloniaAppDelegate doesn't expose the UIApplication
+	// lifecycle methods as overridable (scene-based lifecycle), so we observe
+	// the notifications instead (design doc §6.2).
+	private NSObject? _foregroundObserver;
+	private NSObject? _terminateObserver;
+
 	protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
 	{
 		// Install the iOS-specific factory so Avalonia's
@@ -30,35 +37,29 @@ public partial class AppDelegate : AvaloniaAppDelegate<MeltdownMonitor.Mobile.Ap
 		// point that still runs once per cold start.
 		AudioSessionConfigurator.Configure();
 
+		RegisterLifecycleObservers();
+
 		return base.CustomizeAppBuilder(builder);
 	}
 
-	// --- Background lifecycle (design doc §6.2) ---
-
-	public override void DidEnterBackground(UIApplication application)
+	private void RegisterLifecycleObservers()
 	{
-		// Deliberately do NOT stop the pipeline — staying connected in the
-		// background is the whole point of the bluetooth-central mode. The
-		// TRUNCATE journal commits each write durably, so there is nothing to
-		// flush here.
-		base.DidEnterBackground(application);
-	}
+		var center = NSNotificationCenter.DefaultCenter;
 
-	public override void WillEnterForeground(UIApplication application)
-	{
-		base.WillEnterForeground(application);
+		// Foreground return: views may have torn down while backgrounded, so
+		// refresh the state pill and reload history from the live pipeline.
+		_foregroundObserver = center.AddObserver(
+			UIApplication.WillEnterForegroundNotification,
+			_ => IosCompositionRoot.OnEnterForeground());
 
-		// Views may have torn down while backgrounded; refresh the pill and
-		// reload history from the live pipeline.
-		IosCompositionRoot.OnEnterForeground();
-	}
+		// Graceful stop so the repository's last writes land before iOS
+		// reclaims us. Bounded — we can't block the terminate path for long.
+		_terminateObserver = center.AddObserver(
+			UIApplication.WillTerminateNotification,
+			_ => IosCompositionRoot.StopAsync(TimeSpan.FromSeconds(1)).GetAwaiter().GetResult());
 
-	public override void WillTerminate(UIApplication application)
-	{
-		// Bounded graceful stop so the repository's last writes land before iOS
-		// SIGKILLs us. We can't await on this callback, so block briefly.
-		IosCompositionRoot.StopAsync(TimeSpan.FromSeconds(1)).GetAwaiter().GetResult();
-
-		base.WillTerminate(application);
+		// DidEnterBackground is deliberately not observed: staying connected in
+		// the background is the whole point of bluetooth-central mode, and the
+		// TRUNCATE journal commits each write durably, so there is nothing to do.
 	}
 }
