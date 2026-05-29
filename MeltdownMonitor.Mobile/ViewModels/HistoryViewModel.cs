@@ -75,12 +75,25 @@ public sealed class HistoryViewModel : ViewModelBase
 			var to = DateTimeOffset.UtcNow;
 			var from = to - (window ?? TimeSpan.FromHours(24));
 
+			var path = _databasePath;
 			var samples = await Task.Run(
-				() => MeltdownRepository.ReadHistory(_databasePath, from, to))
+				() => MeltdownRepository.ReadHistory(path, from, to))
 				.ConfigureAwait(true);
 
+			// Annotations are additive context, not the backbone of the list — a
+			// read failure (e.g. the table doesn't exist on a brand-new DB) must
+			// not blank out the state timeline, so it degrades to "no check-ins".
+			var annotations = await Task.Run(
+				() => ReadAnnotationsSafe(path, from, to))
+				.ConfigureAwait(true);
+
+			var merged = BuildTransitions(samples)
+				.Concat(annotations.Select(a => HistoryEvent.ForAnnotation(a.Timestamp, a.Label, a.Notes)))
+				.OrderBy(e => e.Timestamp)
+				.ToList();
+
 			Events.Clear();
-			foreach (var ev in BuildTransitions(samples))
+			foreach (var ev in merged)
 			{
 				Events.Add(ev);
 			}
@@ -104,7 +117,7 @@ public sealed class HistoryViewModel : ViewModelBase
 		{
 			if (last != sample.State)
 			{
-				yield return new HistoryEvent(
+				yield return HistoryEvent.ForStateChange(
 					sample.Timestamp,
 					sample.State,
 					sample.Rmssd,
@@ -114,18 +127,82 @@ public sealed class HistoryViewModel : ViewModelBase
 			}
 		}
 	}
+
+	private static IReadOnlyList<AnnotationRecord> ReadAnnotationsSafe(
+		string databasePath, DateTimeOffset from, DateTimeOffset to)
+	{
+		try
+		{
+			return MeltdownRepository.ReadAnnotations(databasePath, from, to);
+		}
+		catch
+		{
+			return [];
+		}
+	}
 }
 
-public sealed record HistoryEvent(
-	DateTimeOffset Timestamp,
-	DetectorState State,
-	double Rmssd,
-	double BaselineRmssd,
-	double MeanHr)
+public enum HistoryEventKind
 {
+	StateChange,
+	Annotation,
+}
+
+/// <summary>
+/// One row in the History timeline — either a detector state transition or a
+/// user self check-in. A single record (rather than a class hierarchy) keeps
+/// the Avalonia <c>DataTemplate</c> to one binding surface; the display
+/// properties switch on <see cref="Kind"/>.
+/// </summary>
+public sealed record HistoryEvent
+{
+	private static readonly IBrush AnnotationBrush =
+		new SolidColorBrush(Color.FromRgb(0x3A, 0xA0, 0x8A));
+
+	public required DateTimeOffset Timestamp { get; init; }
+	public required HistoryEventKind Kind { get; init; }
+
+	public DetectorState State { get; init; }
+	public double Rmssd { get; init; }
+	public double BaselineRmssd { get; init; }
+	public double MeanHr { get; init; }
+
+	public AnnotationLabel AnnotationLabel { get; init; }
+	public string? Notes { get; init; }
+
+	public static HistoryEvent ForStateChange(
+		DateTimeOffset timestamp, DetectorState state, double rmssd, double baselineRmssd, double meanHr) =>
+		new()
+		{
+			Timestamp = timestamp,
+			Kind = HistoryEventKind.StateChange,
+			State = state,
+			Rmssd = rmssd,
+			BaselineRmssd = baselineRmssd,
+			MeanHr = meanHr,
+		};
+
+	public static HistoryEvent ForAnnotation(DateTimeOffset timestamp, AnnotationLabel label, string? notes) =>
+		new()
+		{
+			Timestamp = timestamp,
+			Kind = HistoryEventKind.Annotation,
+			AnnotationLabel = label,
+			Notes = notes,
+		};
+
 	public string TimeLabel => Timestamp.ToLocalTime().ToString("HH:mm");
 	public string DateLabel => Timestamp.ToLocalTime().ToString("ddd MMM d");
-	public string StateLabel => State.ToString();
-	public IBrush StateBrush => StateColors.BrushFor(State);
-	public string Detail => $"RMSSD {Rmssd:F1} / baseline {BaselineRmssd:F1} · HR {MeanHr:F0}";
+
+	public string Title => Kind == HistoryEventKind.Annotation
+		? $"You felt {AnnotationLabel}"
+		: State.ToString();
+
+	public IBrush StateBrush => Kind == HistoryEventKind.Annotation
+		? AnnotationBrush
+		: StateColors.BrushFor(State);
+
+	public string Detail => Kind == HistoryEventKind.Annotation
+		? (string.IsNullOrWhiteSpace(Notes) ? "Self check-in" : Notes!)
+		: $"RMSSD {Rmssd:F1} / baseline {BaselineRmssd:F1} · HR {MeanHr:F0}";
 }

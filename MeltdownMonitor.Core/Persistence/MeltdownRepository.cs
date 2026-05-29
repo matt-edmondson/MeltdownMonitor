@@ -215,6 +215,69 @@ public class MeltdownRepository : IDisposable
 		cmd.ExecuteNonQuery();
 	}
 
+	/// <summary>
+	/// Records a self check-in via a short-lived connection of its own, mirroring
+	/// <see cref="ReadHistory"/>. The live pipeline owns a single long-running
+	/// connection on a background thread; user-initiated annotation writes arrive
+	/// on the UI thread, so routing them through an independent connection avoids
+	/// concurrent use of the pipeline's <see cref="SqliteConnection"/>. A short
+	/// <c>busy_timeout</c> lets SQLite's file lock serialise the two writers
+	/// instead of failing fast with SQLITE_BUSY.
+	/// </summary>
+	public static void WriteAnnotation(string databasePath, DateTimeOffset timestamp, AnnotationLabel label, string? notes = null)
+	{
+		using var conn = new SqliteConnection($"Data Source={databasePath}");
+		conn.Open();
+		using var cmd = conn.CreateCommand();
+		cmd.CommandText = """
+			PRAGMA busy_timeout=3000;
+			CREATE TABLE IF NOT EXISTS annotations (
+				ts    INTEGER PRIMARY KEY,
+				label TEXT    NOT NULL,
+				notes TEXT
+			);
+			INSERT OR REPLACE INTO annotations (ts, label, notes)
+			VALUES ($ts, $label, $notes)
+			""";
+		cmd.Parameters.AddWithValue("$ts", timestamp.ToUnixTimeMilliseconds());
+		cmd.Parameters.AddWithValue("$label", label.ToString().ToLowerInvariant());
+		cmd.Parameters.AddWithValue("$notes", notes ?? (object)DBNull.Value);
+		cmd.ExecuteNonQuery();
+	}
+
+	/// <summary>
+	/// Reads the self check-ins in the window via a short-lived read-only
+	/// connection, mirroring <see cref="ReadHistory"/>. Labels are stored
+	/// lower-cased (see <see cref="InsertAnnotation"/>), so parsing is
+	/// case-insensitive.
+	/// </summary>
+	public static IReadOnlyList<AnnotationRecord> ReadAnnotations(string databasePath, DateTimeOffset from, DateTimeOffset to)
+	{
+		using var conn = new SqliteConnection($"Data Source={databasePath};Mode=ReadOnly");
+		conn.Open();
+		using var cmd = conn.CreateCommand();
+		cmd.CommandText = """
+			SELECT ts, label, notes
+			FROM annotations
+			WHERE ts >= $from AND ts <= $to
+			ORDER BY ts
+			""";
+		cmd.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+		cmd.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+
+		var results = new List<AnnotationRecord>();
+		using var reader = cmd.ExecuteReader();
+		while (reader.Read())
+		{
+			var ts = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0));
+			var label = Enum.Parse<AnnotationLabel>(reader.GetString(1), ignoreCase: true);
+			var notes = reader.IsDBNull(2) ? null : reader.GetString(2);
+			results.Add(new AnnotationRecord(ts, label, notes));
+		}
+
+		return results;
+	}
+
 	public IReadOnlyList<HrvSample> GetHrvSamples(DateTimeOffset from, DateTimeOffset to)
 	{
 		using var cmd = _connection.CreateCommand();

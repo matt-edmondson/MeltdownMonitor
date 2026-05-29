@@ -580,6 +580,35 @@ Remaining (needs a Mac + real device):
 - Confirm Dynamic Island compact/expanded presentation and the ≤ 1 Hz
   refresh budget on-device.
 
+### Phase 9 — Self check-in annotations (v1.1) — **managed side implemented**
+
+Brings the desktop's "How are you feeling?" annotation dialog (§5) to the
+phone and surfaces the result in the History timeline (§6). Fully managed and
+unit-tested; no native iOS work required.
+
+Done:
+- `MeltdownMonitor.Core` gains path-keyed static helpers
+  `MeltdownRepository.WriteAnnotation` / `ReadAnnotations` and an
+  `AnnotationRecord` type, mirroring the existing `ReadHistory` pattern so
+  user-initiated writes use a short-lived connection rather than the
+  pipeline's single live connection (a `busy_timeout` lets SQLite serialise
+  the two writers). Desktop's `InsertAnnotation` is unchanged.
+- `NowViewModel` owns a "How are you feeling?" sheet — the same four labels
+  (`Fine` / `Edged` / `Escalating` / `Blown`) plus an optional note — and a
+  host-injected `onAnnotate` callback. `NowView.axaml` renders the sheet as a
+  dimmed bottom overlay.
+- `HistoryViewModel` merges annotations into the state-transition timeline,
+  ordered chronologically; an annotation read failure degrades to "no
+  check-ins" without blanking the state list. `HistoryEvent` carries a
+  `Kind` discriminator so one `DataTemplate` renders both row types.
+- `IosCompositionRoot` wires `onAnnotate` through
+  `MeltdownRepository.WriteAnnotation` off the UI thread and refreshes the
+  History tab.
+- Tests: `MeltdownRepositoryAnnotationTests` (round-trip, window filter,
+  instance-write → static-read), `NowViewModelTests` (sheet open/cancel,
+  note trimming, blank→null, label set), `HistoryViewModelTests` (merge
+  ordering, no-notes fallback).
+
 ### Out of scope for v1 (logged for v1.1+)
 
 - Live Activity / Dynamic Island.

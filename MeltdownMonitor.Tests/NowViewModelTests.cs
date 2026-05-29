@@ -1,5 +1,6 @@
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Persistence;
 using MeltdownMonitor.Mobile.ViewModels;
 
 namespace MeltdownMonitor.Tests;
@@ -48,6 +49,77 @@ public class NowViewModelTests
 		vm.IsPaused = true;
 
 		StringAssert.Contains(vm.StateLabel, "Paused", StringComparison.OrdinalIgnoreCase);
+	}
+
+	[TestMethod]
+	public void OpenAnnotationCommand_ShowsSheet()
+	{
+		var vm = new NowViewModel();
+		Assert.IsFalse(vm.IsAnnotationSheetOpen);
+
+		vm.OpenAnnotationCommand.Execute(null);
+
+		Assert.IsTrue(vm.IsAnnotationSheetOpen);
+	}
+
+	[TestMethod]
+	public async Task RecordAnnotation_InvokesCallbackWithTrimmedNotesThenClosesSheet()
+	{
+		(AnnotationLabel Label, string? Notes)? captured = null;
+		var vm = new NowViewModel(onAnnotate: (label, notes) =>
+		{
+			captured = (label, notes);
+			return Task.CompletedTask;
+		});
+		vm.OpenAnnotationCommand.Execute(null);
+		vm.AnnotationNotes = "  shaky  ";
+
+		await vm.RecordAnnotationAsync(AnnotationLabel.Escalating);
+
+		Assert.IsNotNull(captured);
+		Assert.AreEqual(AnnotationLabel.Escalating, captured.Value.Label);
+		Assert.AreEqual("shaky", captured.Value.Notes, "Notes should be trimmed before persisting.");
+		Assert.IsFalse(vm.IsAnnotationSheetOpen, "Recording dismisses the sheet.");
+		Assert.AreEqual(string.Empty, vm.AnnotationNotes, "Notes reset after recording.");
+	}
+
+	[TestMethod]
+	public async Task RecordAnnotation_BlankNotesBecomeNull()
+	{
+		string? captured = "sentinel";
+		var vm = new NowViewModel(onAnnotate: (_, notes) =>
+		{
+			captured = notes;
+			return Task.CompletedTask;
+		});
+		vm.AnnotationNotes = "   ";
+
+		await vm.RecordAnnotationAsync(AnnotationLabel.Fine);
+
+		Assert.IsNull(captured, "Whitespace-only notes must collapse to null.");
+	}
+
+	[TestMethod]
+	public void CancelAnnotation_ClosesSheetAndClearsNotes()
+	{
+		var vm = new NowViewModel();
+		vm.OpenAnnotationCommand.Execute(null);
+		vm.AnnotationNotes = "draft";
+
+		vm.CancelAnnotationCommand.Execute(null);
+
+		Assert.IsFalse(vm.IsAnnotationSheetOpen);
+		Assert.AreEqual(string.Empty, vm.AnnotationNotes);
+	}
+
+	[TestMethod]
+	public void AnnotationLabels_ExposesTheFourCheckInChoices()
+	{
+		var vm = new NowViewModel();
+
+		CollectionAssert.AreEquivalent(
+			Enum.GetValues<AnnotationLabel>(),
+			vm.AnnotationLabels.ToArray());
 	}
 
 	private static HrvSample Sample(double rmssd, double meanHr, double baseline, DetectorState state) =>
