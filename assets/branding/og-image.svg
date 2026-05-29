@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="MeltdownMonitor social preview">
+  <title>MeltdownMonitor — Open Graph / Social Image</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e2030"/><stop offset="1" stop-color="#181926"/>
+    </linearGradient>
+    <linearGradient id="cool" gradientUnits="objectBoundingBox" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7dc4e4"/><stop offset="1" stop-color="#91d7e3"/>
+    </linearGradient>
+    <linearGradient id="warm" gradientUnits="objectBoundingBox" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f5a97f"/><stop offset="1" stop-color="#ee99a0"/>
+    </linearGradient>
+    <radialGradient id="node" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#cad3f5"/><stop offset="0.45" stop-color="#b7bdf8"/>
+      <stop offset="1" stop-color="#b7bdf8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#b7bdf8" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#b7bdf8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="1200" height="630" fill="url(#bg)"/>
+
+  <!-- large mark on the right -->
+  <circle cx="905" cy="315" r="240" fill="url(#halo)"/>
+  <g transform="translate(905,315) scale(1.55) translate(-128,-128)">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="15">
+      <path d="M128 128 C116 86 60 86 44 128 C60 170 116 170 128 128 Z" stroke="url(#cool)"/>
+      <path d="M128 128 C140 86 196 86 212 128 C196 170 140 170 128 128 Z" stroke="url(#warm)"/>
+    </g>
+    <circle cx="128" cy="128" r="24" fill="url(#node)"/>
+    <circle cx="128" cy="128" r="8.5" fill="#b7bdf8"/>
+    <circle cx="128" cy="128" r="3.5" fill="#cad3f5"/>
+  </g>
+
+  <!-- wordmark + tagline -->
+  <text x="96" y="250" font-family="Inter,'Segoe UI',system-ui,-apple-system,sans-serif" font-size="74" font-weight="600" letter-spacing="-2">
+    <tspan fill="#cad3f5">Meltdown</tspan><tspan fill="#b8c0e0" font-weight="400">Monitor</tspan>
+  </text>
+  <text x="98" y="320" font-family="Inter,'Segoe UI',system-ui,sans-serif" font-size="38" font-weight="500" fill="#c6a0f6">Catch dysregulation before you feel it.</text>
+  <text x="98" y="372" font-family="'JetBrains Mono',ui-monospace,monospace" font-size="22" fill="#a5adcb">Real-time HRV awareness for nervous-system regulation.</text>
+
+  <!-- pole legend strip -->
+  <g font-family="'JetBrains Mono',ui-monospace,monospace" font-size="18">
+    <circle cx="104" cy="438" r="7" fill="#7dc4e4"/>
+    <text x="120" y="444" fill="#a5adcb">parasympathetic · rest</text>
+    <circle cx="104" cy="474" r="7" fill="#f5a97f"/>
+    <text x="120" y="480" fill="#a5adcb">sympathetic · arousal</text>
+    <circle cx="104" cy="510" r="7" fill="#b7bdf8"/>
+    <text x="120" y="516" fill="#a5adcb">your window of tolerance</text>
+  </g>
+</svg>

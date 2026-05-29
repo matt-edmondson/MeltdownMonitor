@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="MeltdownMonitor monochrome mark">
+  <title>MeltdownMonitor — Monochrome Mark</title>
+  <!-- Single-color variant for watermarks, stamps, embossing. Default fill = Text (#cad3f5) for dark surfaces.
+       For light surfaces, override currentColor / the stroke + node fill to Crust (#181926). -->
+  <g fill="none" stroke="#cad3f5" stroke-linecap="round" stroke-linejoin="round" stroke-width="15">
+    <path d="M128 128 C116 86 60 86 44 128 C60 170 116 170 128 128 Z"/>
+    <path d="M128 128 C140 86 196 86 212 128 C196 170 140 170 128 128 Z"/>
+  </g>
+  <circle cx="128" cy="128" r="9" fill="#cad3f5"/>
+</svg>
