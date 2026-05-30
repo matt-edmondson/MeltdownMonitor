@@ -19,7 +19,7 @@ namespace MeltdownMonitor.Ble.Apple;
 /// <see cref="WillRestoreState"/> rehydrates the connected peripheral after
 /// iOS relaunches the app.
 /// </summary>
-public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource
+public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource
 {
 	public const string DefaultRestoreIdentifier = "com.thethreethousands.meltdownmonitor.central";
 
@@ -30,11 +30,32 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 	private static readonly CBUUID BatteryServiceUuid = CBUUID.FromString("180F");
 	private static readonly CBUUID BatteryLevelCharUuid = CBUUID.FromString("2A19");
 
+	// Standard GATT Device Information Service and its string characteristics.
+	private static readonly CBUUID DeviceInfoServiceUuid = CBUUID.FromString("180A");
+	private static readonly CBUUID ManufacturerNameCharUuid = CBUUID.FromString("2A29");
+	private static readonly CBUUID ModelNumberCharUuid = CBUUID.FromString("2A24");
+	private static readonly CBUUID SerialNumberCharUuid = CBUUID.FromString("2A25");
+	private static readonly CBUUID FirmwareRevisionCharUuid = CBUUID.FromString("2A26");
+	private static readonly CBUUID HardwareRevisionCharUuid = CBUUID.FromString("2A27");
+	private static readonly CBUUID SoftwareRevisionCharUuid = CBUUID.FromString("2A28");
+
+	private readonly CBUUID[] _deviceInfoCharacteristics =
+	[
+		ManufacturerNameCharUuid, ModelNumberCharUuid, SerialNumberCharUuid,
+		FirmwareRevisionCharUuid, HardwareRevisionCharUuid, SoftwareRevisionCharUuid,
+	];
+
+	// Accumulated as the individual DIS characteristics are read back one by one.
+	private DeviceInformation _deviceInfo = new();
+
 	/// <inheritdoc />
 	public event Action<BatteryReading>? BatteryLevelChanged;
 
 	/// <inheritdoc />
 	public event Action<SensorContactStatus>? SensorContactChanged;
+
+	/// <inheritdoc />
+	public event Action<DeviceInformation>? DeviceInformationChanged;
 
 	/// <summary>
 	/// BLE advertisement name prefixes for each known device type.
@@ -77,6 +98,11 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 	internal CBUUID CharacteristicUuid => HrMeasurementCharUuid;
 	internal CBUUID BatteryService => BatteryServiceUuid;
 	internal CBUUID BatteryCharacteristic => BatteryLevelCharUuid;
+	internal CBUUID DeviceInfoService => DeviceInfoServiceUuid;
+	internal CBUUID[] DeviceInfoCharacteristics => _deviceInfoCharacteristics;
+
+	internal bool IsDeviceInfoCharacteristic(CBUUID uuid) =>
+		Array.Exists(_deviceInfoCharacteristics, u => u.Equals(uuid));
 
 	public async IAsyncEnumerable<Beat> GetBeatsAsync(
 		[EnumeratorCancellation] CancellationToken cancellationToken)
@@ -142,7 +168,7 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 		}
 
 		_artifactFilter.Reset();
-		peripheral.DiscoverServices(new[] { HeartRateServiceUuid, BatteryServiceUuid });
+		peripheral.DiscoverServices(new[] { HeartRateServiceUuid, BatteryServiceUuid, DeviceInfoServiceUuid });
 	}
 
 	public override void DisconnectedPeripheral(
@@ -181,7 +207,7 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 
 		if (peripheral.State == CBPeripheralState.Connected)
 		{
-			peripheral.DiscoverServices(new[] { HeartRateServiceUuid, BatteryServiceUuid });
+			peripheral.DiscoverServices(new[] { HeartRateServiceUuid, BatteryServiceUuid, DeviceInfoServiceUuid });
 		}
 		else
 		{
@@ -218,6 +244,29 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 	internal void OnBatteryByte(byte percent)
 		=> BatteryLevelChanged?.Invoke(new BatteryReading(DateTimeOffset.UtcNow, Math.Clamp((int)percent, 0, 100)));
 
+	// DIS characteristics are read back one at a time; fold each into the record
+	// and re-emit so subscribers converge on the full identity as fields arrive.
+	internal void OnDeviceInfoCharacteristic(CBUUID uuid, byte[] bytes)
+	{
+		// DIS string characteristics are UTF-8; trim any trailing NUL padding.
+		string value = System.Text.Encoding.UTF8.GetString(bytes).TrimEnd('\0').Trim();
+		if (value.Length == 0)
+		{
+			return;
+		}
+
+		_deviceInfo =
+			uuid.Equals(ManufacturerNameCharUuid) ? _deviceInfo with { ManufacturerName = value } :
+			uuid.Equals(ModelNumberCharUuid)      ? _deviceInfo with { ModelNumber = value } :
+			uuid.Equals(SerialNumberCharUuid)     ? _deviceInfo with { SerialNumber = value } :
+			uuid.Equals(FirmwareRevisionCharUuid) ? _deviceInfo with { FirmwareRevision = value } :
+			uuid.Equals(HardwareRevisionCharUuid) ? _deviceInfo with { HardwareRevision = value } :
+			uuid.Equals(SoftwareRevisionCharUuid) ? _deviceInfo with { SoftwareRevision = value } :
+			_deviceInfo;
+
+		DeviceInformationChanged?.Invoke(_deviceInfo);
+	}
+
 	private sealed class PeripheralObserver : CBPeripheralDelegate
 	{
 		private PolarHrSource? _owner;
@@ -243,6 +292,10 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 				{
 					peripheral.DiscoverCharacteristics(new[] { _owner.BatteryCharacteristic }, service);
 				}
+				else if (service.UUID.Equals(_owner.DeviceInfoService))
+				{
+					peripheral.DiscoverCharacteristics(_owner.DeviceInfoCharacteristics, service);
+				}
 			}
 		}
 
@@ -265,6 +318,11 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 					peripheral.ReadValue(characteristic);
 					peripheral.SetNotifyValue(true, characteristic);
 				}
+				else if (_owner.IsDeviceInfoCharacteristic(characteristic.UUID))
+				{
+					// Static identity — a single read, no notifications.
+					peripheral.ReadValue(characteristic);
+				}
 			}
 		}
 
@@ -280,7 +338,8 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 
 			bool isHr = characteristic.UUID.Equals(_owner.CharacteristicUuid);
 			bool isBattery = characteristic.UUID.Equals(_owner.BatteryCharacteristic);
-			if (!isHr && !isBattery)
+			bool isDeviceInfo = _owner.IsDeviceInfoCharacteristic(characteristic.UUID);
+			if (!isHr && !isBattery && !isDeviceInfo)
 			{
 				return;
 			}
@@ -298,9 +357,13 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 			{
 				_owner.OnMeasurementBytes(bytes);
 			}
-			else
+			else if (isBattery)
 			{
 				_owner.OnBatteryByte(bytes[0]);
+			}
+			else
+			{
+				_owner.OnDeviceInfoCharacteristic(characteristic.UUID, bytes);
 			}
 		}
 	}

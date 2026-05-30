@@ -72,6 +72,11 @@
                            Foreground="#8A8F98"
                            FontSize="12"
                            HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding DeviceInfoText}"
+                           IsVisible="{Binding HasDeviceInfo}"
+                           Foreground="#5A6068"
+                           FontSize="11"
+                           HorizontalAlignment="Center" />
             </StackPanel>
 
             <Button Grid.Row="3"
