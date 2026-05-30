@@ -24,10 +24,8 @@ public sealed class StatusWindow : IDisposable
 	private const int InitialSparklineCapacity = 2048;
 
 	// Chart layout, tunable from the Settings tab (applied live).
-	private float PlotHeight => _settings.ChartTuning.PlotHeight;
 	private float OverviewChartWidth => _settings.ChartTuning.OverviewChartWidth;
 	private float MaxPlotAspect => _settings.ChartTuning.MaxPlotAspect;
-	private float PoincareMaxSide => _settings.ChartTuning.PoincareMaxSide;
 
 	private readonly object _historyLock = new();
 	private readonly Pipeline _pipeline;
@@ -1106,16 +1104,6 @@ public sealed class StatusWindow : IDisposable
 		ImGui.SeparatorText("Charts (applies live)");
 
 		var ct = _settings.ChartTuning;
-		float plotH = ct.PlotHeight;
-		if (ImGuiWidgets.Knob("Plot height", ref plotH, 80f, 500f, format: "%.0f px", flags: ImGuiKnobOptions.ValueTooltip))
-		{
-			ct = ct with { PlotHeight = plotH };
-			_settingsDirty = true;
-		}
-		ImGui.SameLine();
-		HelpMarker("Height of each chart. Taller = more vertical detail; shorter = more charts fit without scrolling.");
-		ImGui.SameLine();
-
 		float cellW = ct.OverviewChartWidth;
 		if (ImGuiWidgets.Knob("Cell width", ref cellW, 200f, 1200f, format: "%.0f px", flags: ImGuiKnobOptions.ValueTooltip))
 		{
@@ -1134,16 +1122,6 @@ public sealed class StatusWindow : IDisposable
 		}
 		ImGui.SameLine();
 		HelpMarker("Cap on a chart's width:height before it stops widening — prevents unreadable ribbons on wide windows.");
-		ImGui.SameLine();
-
-		float poincare = ct.PoincareMaxSide;
-		if (ImGuiWidgets.Knob("Poincaré size", ref poincare, 200f, 900f, format: "%.0f px", flags: ImGuiKnobOptions.ValueTooltip))
-		{
-			ct = ct with { PoincareMaxSide = poincare };
-			_settingsDirty = true;
-		}
-		ImGui.SameLine();
-		HelpMarker("Maximum size of the square Poincaré scatter.");
 
 		_settings.ChartTuning = ct;
 
