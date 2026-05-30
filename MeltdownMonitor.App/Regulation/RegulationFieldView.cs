@@ -2,6 +2,7 @@ using System.Numerics;
 using Hexa.NET.ImGui;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
+using MeltdownMonitor.Core.Hrv;
 using MeltdownMonitor.Core.Regulation;
 
 namespace MeltdownMonitor.App.Regulation;
@@ -46,12 +47,20 @@ public sealed class RegulationFieldView : IDisposable
 	public RegulationFieldView(Pipeline pipeline)
 	{
 		_pipeline = pipeline;
-		_pipeline.ReadingUpdated += OnReadingUpdated;
+		_pipeline.SampleUpdated += OnSampleUpdated;
 		_pipeline.BeatReceived += OnBeatReceived;
 	}
 
-	private void OnReadingUpdated(RegulationReading reading)
+	private void OnSampleUpdated(HrvSample sample)
 	{
+		// Compute the reading here (self-contained) rather than depending on a pipeline
+		// reading event — keeps the view robust to pipeline API changes.
+		var reading = RegulationFieldCalculator.Compute(
+			sample,
+			_pipeline.LatestThresholds,
+			_pipeline.Baseline.WarmUpProgress,
+			_pipeline.Baseline.IsWarm);
+
 		lock (_lock)
 		{
 			var point = new TrailPoint(DateTimeOffset.UtcNow, reading);
@@ -374,7 +383,7 @@ public sealed class RegulationFieldView : IDisposable
 
 	public void Dispose()
 	{
-		_pipeline.ReadingUpdated -= OnReadingUpdated;
+		_pipeline.SampleUpdated -= OnSampleUpdated;
 		_pipeline.BeatReceived -= OnBeatReceived;
 	}
 }
