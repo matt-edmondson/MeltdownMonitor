@@ -4,6 +4,7 @@ using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 using MeltdownMonitor.Core.Persistence;
+using MeltdownMonitor.Core.Regulation;
 
 namespace MeltdownMonitor.App;
 
@@ -26,9 +27,16 @@ public sealed class Pipeline : IDisposable
 	public DetectionThresholds LatestThresholds => _settings.Thresholds;
 	public HrvSample? LatestSample { get; private set; }
 	public BaselineHrvTracker Baseline => _baseline;
+
+	/// <summary>Latest arousal-vs-baseline reading driving the Regulation Field overlay.</summary>
+	public RegulationReading LatestReading { get; private set; } = new(0.0, 1.0, 0.0);
+
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<Beat>? BeatReceived;
+
+	/// <summary>Fires after <see cref="SampleUpdated"/> with the recomputed Regulation Field reading.</summary>
+	public event Action<RegulationReading>? ReadingUpdated;
 
 	public Pipeline(AppSettings settings, MeltdownRepository repository)
 	{
@@ -141,6 +149,14 @@ public sealed class Pipeline : IDisposable
 			_repository.InsertHrvSample(finalSample);
 			LatestSample = finalSample;
 			SampleUpdated?.Invoke(finalSample);
+
+			var reading = RegulationFieldCalculator.Compute(
+				finalSample,
+				_settings.Thresholds,
+				_baseline.WarmUpProgress,
+				_baseline.IsWarm);
+			LatestReading = reading;
+			ReadingUpdated?.Invoke(reading);
 		}
 	}
 
