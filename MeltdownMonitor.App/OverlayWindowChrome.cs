@@ -46,6 +46,8 @@ internal sealed class OverlayWindowChrome
 	// Last-applied values, so per-frame calls only touch Win32 on a real change.
 	private bool _lastClickThrough;
 	private byte _lastAlpha;
+	private (OverlayCorner Corner, int OffsetX, int OffsetY, int Width, int Height) _lastGeometry;
+	private bool _geometryApplied;
 
 	/// <summary>True once overlay styles have been applied (and not yet restored).</summary>
 	public bool IsApplied => _applied;
@@ -110,19 +112,61 @@ internal sealed class OverlayWindowChrome
 		_ = SetWindowPos(_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 
 		_applied = false;
+		_geometryApplied = false;
 		_lastAlpha = 0;
 		_lastClickThrough = false;
 	}
 
-	/// <summary>Nudges the overlay window by a pixel delta, keeping it topmost. Used for the drag handle.</summary>
-	public void MoveBy(int dx, int dy)
+	/// <summary>
+	/// Locks the overlay to the given corner of its monitor's work area at the given offset
+	/// and size. Re-applies only when something changed (or on the first call after entering
+	/// overlay mode). The explicit resize also forces the renderer to refresh its framebuffer
+	/// after the title bar was removed — without it the top of the content can be clipped.
+	/// </summary>
+	public void ApplyGeometry(OverlayCorner corner, int offsetX, int offsetY, int width, int height)
 	{
-		if (!_applied || _hwnd == 0 || (dx == 0 && dy == 0) || !GetWindowRect(_hwnd, out RECT rect))
+		if (!_applied || _hwnd == 0)
 		{
 			return;
 		}
 
-		_ = SetWindowPos(_hwnd, HWND_TOPMOST, rect.Left + dx, rect.Top + dy, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+		width = Math.Max(200, width);
+		height = Math.Max(140, height);
+
+		var geometry = (corner, offsetX, offsetY, width, height);
+		if (_geometryApplied && geometry == _lastGeometry)
+		{
+			return;
+		}
+
+		if (!TryGetWorkArea(_hwnd, out RECT work))
+		{
+			return;
+		}
+
+		bool right = corner is OverlayCorner.TopRight or OverlayCorner.BottomRight;
+		bool bottom = corner is OverlayCorner.BottomLeft or OverlayCorner.BottomRight;
+
+		int x = right ? work.Right - width - offsetX : work.Left + offsetX;
+		int y = bottom ? work.Bottom - height - offsetY : work.Top + offsetY;
+
+		_ = SetWindowPos(_hwnd, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
+		_lastGeometry = geometry;
+		_geometryApplied = true;
+	}
+
+	private static bool TryGetWorkArea(nint hwnd, out RECT work)
+	{
+		nint monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+		var info = new MONITORINFO { cbSize = Marshal.SizeOf<MONITORINFO>() };
+		if (monitor != 0 && GetMonitorInfo(monitor, ref info))
+		{
+			work = info.rcWork;
+			return true;
+		}
+
+		work = default;
+		return false;
 	}
 
 	// ktsu.ImGui.App doesn't expose its native handle publicly, so we find it ourselves:
@@ -154,6 +198,8 @@ internal sealed class OverlayWindowChrome
 
 	private delegate bool EnumThreadWindowsProc(nint hWnd, nint lParam);
 
+	private const uint MONITOR_DEFAULTTONEAREST = 2;
+
 	[StructLayout(LayoutKind.Sequential)]
 	private struct RECT
 	{
@@ -161,6 +207,15 @@ internal sealed class OverlayWindowChrome
 		public int Top;
 		public int Right;
 		public int Bottom;
+	}
+
+	[StructLayout(LayoutKind.Sequential)]
+	private struct MONITORINFO
+	{
+		public int cbSize;
+		public RECT rcMonitor;
+		public RECT rcWork;
+		public uint dwFlags;
 	}
 
 	[DllImport("user32.dll", SetLastError = true)]
@@ -177,9 +232,12 @@ internal sealed class OverlayWindowChrome
 	[return: MarshalAs(UnmanagedType.Bool)]
 	private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
-	[DllImport("user32.dll", SetLastError = true)]
+	[DllImport("user32.dll")]
+	private static extern nint MonitorFromWindow(nint hwnd, uint dwFlags);
+
+	[DllImport("user32.dll", CharSet = CharSet.Unicode)]
 	[return: MarshalAs(UnmanagedType.Bool)]
-	private static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
+	private static extern bool GetMonitorInfo(nint hMonitor, ref MONITORINFO lpmi);
 
 	[DllImport("user32.dll")]
 	[return: MarshalAs(UnmanagedType.Bool)]

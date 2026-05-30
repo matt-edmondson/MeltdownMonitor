@@ -22,7 +22,6 @@ public sealed class StatusWindow : IDisposable
 {
 	private const int PoincareScatterPoints = 512;
 	private const int InitialSparklineCapacity = 2048;
-	private const int RegulationTrailLength = 32;
 
 	// Chart layout, tunable from the Settings tab (applied live).
 	private float PlotHeight => _settings.ChartTuning.PlotHeight;
@@ -38,7 +37,6 @@ public sealed class StatusWindow : IDisposable
 	private readonly Regulation.RegulationFieldView _regulationField;
 	private readonly ImGuiWidgets.TabPanel _tabs;
 	private readonly OverlayWindowChrome _chrome = new();
-	private readonly RingBuffer<RegulationReading> _readingTrail = new(RegulationTrailLength);
 	private readonly StatusTheme _theme = new();
 	private Thread? _uiThread;
 	private int _appliedCapacity = InitialSparklineCapacity;
@@ -75,7 +73,6 @@ public sealed class StatusWindow : IDisposable
 
 		_pipeline.SampleUpdated += OnSampleUpdated;
 		_pipeline.BeatReceived += OnBeatReceived;
-		_pipeline.ReadingUpdated += OnReadingUpdated;
 
 		_regulationField = new Regulation.RegulationFieldView(_pipeline);
 
@@ -258,14 +255,6 @@ public sealed class StatusWindow : IDisposable
 		}
 	}
 
-	private void OnReadingUpdated(RegulationReading reading)
-	{
-		lock (_historyLock)
-		{
-			_readingTrail.PushBack(reading);
-		}
-	}
-
 	private void BackfillFromRepository()
 	{
 		var to = DateTimeOffset.UtcNow;
@@ -335,17 +324,6 @@ public sealed class StatusWindow : IDisposable
 		return arr;
 	}
 
-	private static RegulationReading[] SnapshotReadings(RingBuffer<RegulationReading> rb)
-	{
-		var arr = new RegulationReading[rb.Count];
-		for (int i = 0; i < rb.Count; i++)
-		{
-			arr[i] = rb.At(i);
-		}
-
-		return arr;
-	}
-
 	private void OnRender(float deltaSeconds)
 	{
 		// Re-tint the Catppuccin Macchiato theme to match the live detection state.
@@ -385,6 +363,7 @@ public sealed class StatusWindow : IDisposable
 	{
 		var ov = _settings.Overlay;
 		_chrome.Apply(ov.ClickThrough, ov.Opacity);
+		_chrome.ApplyGeometry(ov.Corner, ov.OffsetX, ov.OffsetY, ov.Width, ov.Height);
 
 		DrawOverlayToolbar(ov);
 
@@ -398,22 +377,34 @@ public sealed class StatusWindow : IDisposable
 		{
 			DrawCompactHud(ov);
 		}
+
+		DrawResizeGrip(ov);
 	}
 
-	// A slim control strip pinned to the top of the overlay: a drag handle to reposition
-	// the borderless window, plus expand / opacity / click-through / exit controls.
+	// A slim control strip pinned to the top of the overlay: a drag handle that nudges the
+	// corner offset, plus expand / opacity / click-through / exit controls.
 	private void DrawOverlayToolbar(OverlaySettings ov)
 	{
-		// Drag handle — moves the borderless OS window with the mouse while held.
+		// Drag handle — adjusts the offset from the locked corner while held. The sign
+		// depends on the corner so dragging always moves the window the way the mouse goes.
 		ImGui.Button(":::");
 		if (ImGui.IsItemActive())
 		{
 			Vector2 delta = ImGui.GetIO().MouseDelta;
-			_chrome.MoveBy((int)delta.X, (int)delta.Y);
+			bool right = ov.Corner is OverlayCorner.TopRight or OverlayCorner.BottomRight;
+			bool bottom = ov.Corner is OverlayCorner.BottomLeft or OverlayCorner.BottomRight;
+			int newX = ov.OffsetX + (int)(right ? -delta.X : delta.X);
+			int newY = ov.OffsetY + (int)(bottom ? -delta.Y : delta.Y);
+			if (newX != ov.OffsetX || newY != ov.OffsetY)
+			{
+				ov.OffsetX = Math.Max(0, newX);
+				ov.OffsetY = Math.Max(0, newY);
+				_settingsDirty = true;
+			}
 		}
 		if (ImGui.IsItemHovered())
 		{
-			ImGui.SetTooltip("Drag to move the overlay");
+			ImGui.SetTooltip("Drag to move the overlay (adjusts the corner offset)");
 		}
 
 		ImGui.SameLine();
@@ -455,19 +446,9 @@ public sealed class StatusWindow : IDisposable
 	{
 		if (ov.ShowRegulationField)
 		{
-			RegulationReading[] trail;
-			lock (_historyLock)
-			{
-				trail = SnapshotReadings(_readingTrail);
-			}
-
-			float width = ImGui.GetContentRegionAvail().X;
-			float height = Math.Clamp(width * 0.55f, 120f, 240f);
-			RegulationFieldRenderer.Draw(
-				new Vector2(width, height),
-				_pipeline.LatestReading,
-				trail,
-				StateColors.For(_pipeline.CurrentState));
+			// Reuse the signature Regulation Field instrument so the overlay and the tab
+			// stay identical (animation, palette, trail all live in one place).
+			_regulationField.Draw();
 			ImGui.Spacing();
 		}
 
@@ -497,6 +478,32 @@ public sealed class StatusWindow : IDisposable
 			{
 				ImGui.Text(value);
 			}
+		}
+	}
+
+	// A small grip in the bottom-right corner; dragging it resizes the overlay window. The
+	// window stays anchored to its corner, so it grows or shrinks away from that corner.
+	private void DrawResizeGrip(OverlaySettings ov)
+	{
+		const float grip = 16f;
+		Vector2 windowSize = ImGui.GetWindowSize();
+		ImGui.SetCursorPos(new Vector2(windowSize.X - grip - 4f, windowSize.Y - grip - 4f));
+		ImGui.Button("##overlay-resize", new Vector2(grip, grip));
+		if (ImGui.IsItemActive())
+		{
+			Vector2 delta = ImGui.GetIO().MouseDelta;
+			int newW = ov.Width + (int)delta.X;
+			int newH = ov.Height + (int)delta.Y;
+			if (newW != ov.Width || newH != ov.Height)
+			{
+				ov.Width = Math.Max(200, newW);
+				ov.Height = Math.Max(140, newH);
+				_settingsDirty = true;
+			}
+		}
+		if (ImGui.IsItemHovered())
+		{
+			ImGui.SetTooltip("Drag to resize");
 		}
 	}
 
@@ -1133,6 +1140,56 @@ public sealed class StatusWindow : IDisposable
 			_settingsDirty = true;
 		}
 
+		ImGui.Text("Corner:");
+		ImGui.SameLine();
+		foreach (var corner in Enum.GetValues<OverlayCorner>())
+		{
+			if (ImGui.RadioButton(corner.ToString(), ov.Corner == corner))
+			{
+				ov.Corner = corner;
+				_settingsDirty = true;
+			}
+
+			ImGui.SameLine();
+		}
+		ImGui.NewLine();
+		ImGui.SameLine();
+		HelpMarker("Which screen corner the overlay locks to. Drag the ':::' handle in the overlay to nudge the offset from that corner.");
+
+		int offsetX = ov.OffsetX;
+		ImGui.SetNextItemWidth(120f);
+		if (ImGui.InputInt("Offset X", ref offsetX))
+		{
+			ov.OffsetX = Math.Max(0, offsetX);
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		int offsetY = ov.OffsetY;
+		ImGui.SetNextItemWidth(120f);
+		if (ImGui.InputInt("Offset Y", ref offsetY))
+		{
+			ov.OffsetY = Math.Max(0, offsetY);
+			_settingsDirty = true;
+		}
+
+		int overlayW = ov.Width;
+		ImGui.SetNextItemWidth(120f);
+		if (ImGui.InputInt("Width", ref overlayW))
+		{
+			ov.Width = Math.Max(200, overlayW);
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		int overlayH = ov.Height;
+		ImGui.SetNextItemWidth(120f);
+		if (ImGui.InputInt("Height", ref overlayH))
+		{
+			ov.Height = Math.Max(140, overlayH);
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Overlay window size in pixels. You can also drag the grip in the overlay's bottom-right corner to resize.");
+
 		ImGui.TextDisabled("HUD metrics:");
 		foreach (var metric in OverlayMetrics.All)
 		{
@@ -1340,7 +1397,6 @@ public sealed class StatusWindow : IDisposable
 
 		_pipeline.SampleUpdated -= OnSampleUpdated;
 		_pipeline.BeatReceived -= OnBeatReceived;
-		_pipeline.ReadingUpdated -= OnReadingUpdated;
 		_historyRefreshAction.Stop();
 	}
 
