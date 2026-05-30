@@ -22,8 +22,14 @@ public static class HrMeasurementParser
 
 		byte flags = payload[0];
 		bool hrIs16Bit = (flags & 0x01) != 0;
+		bool contactSupported = (flags & 0x04) != 0;
+		bool contactDetected = (flags & 0x02) != 0;
 		bool energyPresent = (flags & 0x08) != 0;
 		bool rrPresent = (flags & 0x10) != 0;
+
+		SensorContactStatus contact = contactSupported
+			? (contactDetected ? SensorContactStatus.Detected : SensorContactStatus.NotDetected)
+			: SensorContactStatus.NotSupported;
 
 		int offset = 1;
 
@@ -56,6 +62,6 @@ public static class HrMeasurementParser
 			}
 		}
 
-		return new HrMeasurement(heartRateBpm, rrIntervals);
+		return new HrMeasurement(heartRateBpm, rrIntervals, contact);
 	}
 }

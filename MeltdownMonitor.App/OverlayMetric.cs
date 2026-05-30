@@ -1,3 +1,4 @@
+using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 using MeltdownMonitor.Core.Regulation;
@@ -23,6 +24,7 @@ public enum OverlayMetric
 	Sd1Sd2Ratio,
 	BaselineWarmUp,
 	Battery,
+	Contact,
 }
 
 /// <summary>Immutable snapshot of the pipeline state the overlay reads each frame.</summary>
@@ -31,7 +33,8 @@ public readonly record struct OverlaySample(
 	HrvSample? Latest,
 	double WarmUpProgress,
 	RegulationReading Reading,
-	int? BatteryPercent = null);
+	int? BatteryPercent = null,
+	SensorContactStatus Contact = SensorContactStatus.NotSupported);
 
 /// <summary>
 /// Labels and value formatting for each <see cref="OverlayMetric"/>. Pure (no ImGui or
@@ -64,6 +67,7 @@ public static class OverlayMetrics
 		OverlayMetric.Sd1Sd2Ratio     => "SD1/SD2",
 		OverlayMetric.BaselineWarmUp  => "Warm-up",
 		OverlayMetric.Battery         => "Battery",
+		OverlayMetric.Contact         => "Contact",
 		_                             => metric.ToString(),
 	};
 
@@ -81,6 +85,13 @@ public static class OverlayMetrics
 				return $"{sample.WarmUpProgress * 100:F0}%";
 			case OverlayMetric.Battery:
 				return sample.BatteryPercent is { } pct ? $"{pct}%" : Unavailable;
+			case OverlayMetric.Contact:
+				return sample.Contact switch
+				{
+					SensorContactStatus.Detected => "OK",
+					SensorContactStatus.NotDetected => "No contact",
+					_ => Unavailable,
+				};
 		}
 
 		if (sample.Latest is not { } latest)

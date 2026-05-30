@@ -32,6 +32,9 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Latest sensor battery level (0–100), or null until the source reports one.</summary>
 	public int? LatestBatteryPercent { get; private set; }
 
+	/// <summary>Latest skin / electrode contact state from the sensor.</summary>
+	public SensorContactStatus LatestContact { get; private set; } = SensorContactStatus.NotSupported;
+
 	/// <summary>The thresholds the detector is currently using — the same value
 	/// the Regulation Field needs to scale arousal-vs-baseline. Mirrors the
 	/// desktop pipeline's accessor.</summary>
@@ -50,6 +53,10 @@ public sealed class Pipeline : IDisposable
 	/// implements <see cref="IBatterySource"/>.</summary>
 	public event Action<BatteryReading>? BatteryUpdated;
 
+	/// <summary>Fires when the sensor's skin / electrode contact state changes.
+	/// Only ever raised when the injected source implements <see cref="IContactSource"/>.</summary>
+	public event Action<SensorContactStatus>? ContactChanged;
+
 	/// <summary>Fires after <see cref="SampleUpdated"/> with the Regulation Field
 	/// reading derived from the same sample, so the Now screen can drive the
 	/// field without recomputing the calculator inputs itself.</summary>
@@ -64,10 +71,15 @@ public sealed class Pipeline : IDisposable
 		_detector.AlertFired += OnAlertFired;
 		_detector.StateChanged += OnStateChanged;
 
-		// Battery is an optional source capability — wire it only when supported.
+		// Battery and contact are optional source capabilities — wire each only when supported.
 		if (source is IBatterySource batterySource)
 		{
 			batterySource.BatteryLevelChanged += OnBatteryLevelChanged;
+		}
+
+		if (source is IContactSource contactSource)
+		{
+			contactSource.SensorContactChanged += OnSensorContactChanged;
 		}
 	}
 
@@ -78,6 +90,13 @@ public sealed class Pipeline : IDisposable
 		LatestBatteryPercent = reading.Percent;
 		_repository.InsertBattery(reading);
 		BatteryUpdated?.Invoke(reading);
+	}
+
+	// Contact is a live quality signal, not persisted — just track and fan out.
+	private void OnSensorContactChanged(SensorContactStatus status)
+	{
+		LatestContact = status;
+		ContactChanged?.Invoke(status);
 	}
 
 	public void Start()

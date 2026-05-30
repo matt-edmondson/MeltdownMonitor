@@ -36,6 +36,7 @@ public sealed class NowViewModel : ViewModelBase
 	private double _rmssd;
 	private double _baselineRmssd;
 	private int? _batteryPercent;
+	private SensorContactStatus _contact = SensorContactStatus.NotSupported;
 	private DateTimeOffset _stateChangedAt = DateTimeOffset.UtcNow;
 	private ConnectionState _connection = ConnectionState.Disconnected;
 	private RegulationReading _reading = new(0.0, 1.0, 0.0, 0.5, 0.0);
@@ -171,6 +172,23 @@ public sealed class NowViewModel : ViewModelBase
 	public string BatteryText =>
 		_batteryPercent is { } percent ? $"Battery {percent}%" : "Battery —";
 
+	/// <summary>Live skin / electrode contact state from the sensor.</summary>
+	public SensorContactStatus Contact
+	{
+		get => _contact;
+		private set
+		{
+			if (SetField(ref _contact, value))
+			{
+				Raise(nameof(IsContactLost));
+			}
+		}
+	}
+
+	/// <summary>True when the sensor supports contact reporting and is currently
+	/// out of contact — the cue to warn that readings are unreliable.</summary>
+	public bool IsContactLost => _contact == SensorContactStatus.NotDetected;
+
 	public string TimeSinceStateChange
 	{
 		get
@@ -267,7 +285,9 @@ public sealed class NowViewModel : ViewModelBase
 		pipeline.StateChanged += OnStateChanged;
 		pipeline.ReadingUpdated += OnReadingUpdated;
 		pipeline.BatteryUpdated += OnBatteryUpdated;
+		pipeline.ContactChanged += OnContactChanged;
 		OnStateChanged(pipeline.CurrentState);
+		OnContactChanged(pipeline.LatestContact);
 
 		// Reflect a battery level the source may have already reported before we subscribed.
 		if (pipeline.LatestBatteryPercent is { } percent)
@@ -312,6 +332,13 @@ public sealed class NowViewModel : ViewModelBase
 	/// the other handlers. Public so tests can drive it without a live pipeline.
 	/// </summary>
 	public void OnBatteryUpdated(BatteryReading reading) => RunOnUi(() => BatteryPercent = reading.Percent);
+
+	/// <summary>
+	/// Push a fresh sensor contact state into the VM. Wired to
+	/// <see cref="Pipeline.ContactChanged"/> and marshalled to the UI thread like
+	/// the other handlers. Public so tests can drive it without a live pipeline.
+	/// </summary>
+	public void OnContactChanged(SensorContactStatus status) => RunOnUi(() => Contact = status);
 
 	/// <summary>
 	/// Push a fresh Regulation Field reading into the VM, appending it to the

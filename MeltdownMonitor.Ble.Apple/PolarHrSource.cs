@@ -19,7 +19,7 @@ namespace MeltdownMonitor.Ble.Apple;
 /// <see cref="WillRestoreState"/> rehydrates the connected peripheral after
 /// iOS relaunches the app.
 /// </summary>
-public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource
+public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource
 {
 	public const string DefaultRestoreIdentifier = "com.thethreethousands.meltdownmonitor.central";
 
@@ -32,6 +32,9 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 
 	/// <inheritdoc />
 	public event Action<BatteryReading>? BatteryLevelChanged;
+
+	/// <inheritdoc />
+	public event Action<SensorContactStatus>? SensorContactChanged;
 
 	/// <summary>
 	/// BLE advertisement name prefixes for each known device type.
@@ -198,6 +201,10 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 	{
 		var measurement = HrMeasurementParser.Parse(payload);
 		var now = DateTimeOffset.UtcNow;
+
+		// Surface contact on every notification — it's the only signal that
+		// survives contact loss, when RR intervals (and beats) dry up.
+		SensorContactChanged?.Invoke(measurement.SensorContact);
 
 		foreach (double rrMs in measurement.RrIntervals)
 		{

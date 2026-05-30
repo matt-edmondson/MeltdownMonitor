@@ -65,15 +65,43 @@ public class HrMeasurementParserTests
 		Assert.AreEqual(768.0 * 1000.0 / 1024.0, result.RrIntervals[0], 0.001);
 	}
 
-	// Sensor contact bits (bits 1-2) should not affect parsing
+	// Sensor contact bits (bits 1-2) must not disturb HR/RR parsing.
 	[TestMethod]
-	public void Parse_SensorContactBitsIgnored()
+	public void Parse_SensorContactBitsDoNotAffectHrOrRr()
 	{
 		// Flags with sensor contact bits set (0x06 = 0b00000110) but no RR, HR uint8
 		byte[] payload = [0x06, 60];
 		var result = HrMeasurementParser.Parse(payload);
 		Assert.AreEqual(60, result.HeartRateBpm);
 		Assert.AreEqual(0, result.RrIntervals.Count);
+	}
+
+	// Support bit (0x04) set + status bit (0x02) set → contact detected.
+	[TestMethod]
+	public void Parse_ContactSupportedAndDetected()
+	{
+		byte[] payload = [0x06, 60];
+		var result = HrMeasurementParser.Parse(payload);
+		Assert.AreEqual(SensorContactStatus.Detected, result.SensorContact);
+	}
+
+	// Support bit (0x04) set, status bit clear → supported but not in contact.
+	[TestMethod]
+	public void Parse_ContactSupportedNotDetected()
+	{
+		byte[] payload = [0x04, 60];
+		var result = HrMeasurementParser.Parse(payload);
+		Assert.AreEqual(SensorContactStatus.NotDetected, result.SensorContact);
+	}
+
+	// Support bit clear → contact unknown, even if the stray status bit is set.
+	[TestMethod]
+	public void Parse_ContactNotSupportedWhenSupportBitClear()
+	{
+		Assert.AreEqual(SensorContactStatus.NotSupported,
+			HrMeasurementParser.Parse([0x00, 60]).SensorContact);
+		Assert.AreEqual(SensorContactStatus.NotSupported,
+			HrMeasurementParser.Parse([0x02, 60]).SensorContact);
 	}
 
 	[TestMethod]
