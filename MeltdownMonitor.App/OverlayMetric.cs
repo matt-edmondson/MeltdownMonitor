@@ -1,5 +1,6 @@
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Regulation;
 
 namespace MeltdownMonitor.App;
 
@@ -7,6 +8,7 @@ namespace MeltdownMonitor.App;
 public enum OverlayMetric
 {
 	State,
+	RegulationIndex,
 	HeartRate,
 	Rmssd,
 	RmssdVsBaseline,
@@ -23,7 +25,11 @@ public enum OverlayMetric
 }
 
 /// <summary>Immutable snapshot of the pipeline state the overlay reads each frame.</summary>
-public readonly record struct OverlaySample(DetectorState State, HrvSample? Latest, double WarmUpProgress);
+public readonly record struct OverlaySample(
+	DetectorState State,
+	HrvSample? Latest,
+	double WarmUpProgress,
+	RegulationReading Reading);
 
 /// <summary>
 /// Labels and value formatting for each <see cref="OverlayMetric"/>. Pure (no ImGui or
@@ -41,6 +47,7 @@ public static class OverlayMetrics
 	public static string Label(OverlayMetric metric) => metric switch
 	{
 		OverlayMetric.State           => "State",
+		OverlayMetric.RegulationIndex => "Regulation",
 		OverlayMetric.HeartRate       => "HR",
 		OverlayMetric.Rmssd           => "RMSSD",
 		OverlayMetric.RmssdVsBaseline => "RMSSD Δ",
@@ -64,6 +71,9 @@ public static class OverlayMetrics
 		{
 			case OverlayMetric.State:
 				return sample.State.ToString();
+			case OverlayMetric.RegulationIndex:
+				// Signed arousal-vs-baseline: negative = rest, positive = activation.
+				return $"{sample.Reading.Index:+0.00;-0.00;0.00}";
 			case OverlayMetric.BaselineWarmUp:
 				return $"{sample.WarmUpProgress * 100:F0}%";
 		}

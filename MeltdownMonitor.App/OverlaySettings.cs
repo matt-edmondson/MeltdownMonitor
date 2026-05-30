@@ -1,33 +1,31 @@
 namespace MeltdownMonitor.App;
 
-/// <summary>Which corner of the window the heads-up overlay pins to.</summary>
-public enum OverlayCorner
-{
-	TopLeft,
-	TopRight,
-	BottomLeft,
-	BottomRight,
-}
-
-/// <summary>Heads-up metrics overlay configuration, persisted as part of <see cref="AppSettings"/>.</summary>
+/// <summary>
+/// Overlay-mode configuration, persisted as part of <see cref="AppSettings"/>. When enabled,
+/// the whole status window becomes a borderless, translucent, always-on-top overlay.
+/// </summary>
 public sealed class OverlaySettings
 {
-	/// <summary>Whether the transparent overlay is drawn on top of the status window.</summary>
+	/// <summary>When true the status window is rendered as a transparent, always-on-top overlay.</summary>
 	public bool Enabled { get; set; }
 
-	/// <summary>The corner the overlay pins to.</summary>
-	public OverlayCorner Corner { get; set; } = OverlayCorner.TopRight;
-
-	/// <summary>Background opacity, 0 (fully transparent) – 1 (opaque).</summary>
-	public float BackgroundAlpha { get; set; } = 0.35f;
+	/// <summary>In overlay mode: false shows the compact metrics HUD, true shows the full tabbed UI.</summary>
+	public bool Expanded { get; set; }
 
 	/// <summary>
-	/// When true the overlay ignores the mouse so clicks pass through to the charts beneath.
-	/// The right-click metric menu is unavailable while this is on.
+	/// In overlay mode, ignore the mouse so clicks pass through to whatever is behind the
+	/// overlay. Toggle it back off from the tray menu (the in-overlay controls are unclickable
+	/// while this is on).
 	/// </summary>
 	public bool ClickThrough { get; set; }
 
-	/// <summary>The metrics shown, in the order they're listed.</summary>
+	/// <summary>Whole-window opacity in overlay mode, 0.2 (faint) – 1.0 (opaque).</summary>
+	public float Opacity { get; set; } = 0.85f;
+
+	/// <summary>Show the Regulation Field figure-8 at the top of the compact HUD.</summary>
+	public bool ShowRegulationField { get; set; } = true;
+
+	/// <summary>The metrics shown in the compact HUD, in the order they're listed.</summary>
 	public List<OverlayMetric> Metrics { get; set; } =
 	[
 		OverlayMetric.State,
