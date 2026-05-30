@@ -20,6 +20,30 @@ public record DetectionThresholds
 	/// <summary>Minimum time between alerts.</summary>
 	public TimeSpan CooldownDuration { get; init; } = TimeSpan.FromMinutes(10);
 
+	// ── Physiological recovery (exiting Alerting) ──
+	// Distinguishes a genuine vagal rebound from a transient return toward baseline.
+	// Merely clearing the Warning trigger is not recovery; RMSSD must climb back
+	// *near* baseline and HR must settle, and both must hold for RecoveryHoldDuration.
+
+	/// <summary>
+	/// During an alert, RMSSD must have climbed back to within this fraction of
+	/// baseline (i.e. its drop is no deeper than this) to count toward recovery.
+	/// Tighter than the Warning trigger so a partial rebound doesn't end the alert.
+	/// </summary>
+	public double RmssdRecoveryDropFraction { get; init; } = 0.10;
+
+	/// <summary>
+	/// During an alert, HR must have settled to within this fraction above baseline
+	/// to count toward recovery.
+	/// </summary>
+	public double HrRecoveryRiseFraction { get; init; } = 0.05;
+
+	/// <summary>
+	/// Recovery conditions must hold continuously for this long before the detector
+	/// accepts that the body has physiologically recovered and steps down to Cooldown.
+	/// </summary>
+	public TimeSpan RecoveryHoldDuration { get; init; } = TimeSpan.FromSeconds(60);
+
 	// ── LF/HF corroboration (disabled by default — calibrate from logged data first) ──
 
 	/// <summary>
