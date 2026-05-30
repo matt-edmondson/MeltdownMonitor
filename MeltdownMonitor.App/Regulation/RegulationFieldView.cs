@@ -50,8 +50,8 @@ public sealed class RegulationFieldView : IDisposable
 	// Animation state (UI thread only).
 	private float _breathPhase;
 	private float _animTime;
-	private float _hrDisplay = 60f;                              // eased HR for a smooth breathing cadence
-	private readonly float[] _jitter = new float[LobeSegments];  // eased per-vertex RR deflection
+	private float _hrDisplay = 60f;   // eased HR for a smooth breathing cadence
+	private float _scroll;            // continuous RR-texture scroll position (advances with HR)
 
 	private readonly record struct TrailPoint(DateTimeOffset Time, RegulationReading Reading);
 
@@ -258,18 +258,28 @@ public sealed class RegulationFieldView : IDisposable
 		// Jitter each VERTEX once (along the smoothed vertex normal) so adjacent segments
 		// share an endpoint and the trace stays continuous. The trace IS the live beat-to-beat
 		// signal: jagged when HRV is healthy, flat when it collapses; tapers to nothing at the crossover.
-		// Ease each vertex's deflection toward its RR target so the texture morphs smoothly
-		// between per-beat updates instead of popping.
-		float jitterK = 1f - MathF.Exp(-dt * 8f);
+		// Continuously scroll the RR texture around the lobe at the heart-rate cadence (one
+		// sample per beat) and read it with linear interpolation, so the trace flows fluidly
+		// instead of morphing-then-stopping between beats.
+		_scroll += dt * (MathF.Max(40f, _hrDisplay) / 60f);
+		int devLen = dev.Length;
 		var pts = new Vector2[n];
 		for (int i = 0; i < n; i++)
 		{
 			Vector2 v = live[i];
 			float depth = MathF.Min(1f, MathF.Abs(v.X - centre.X) / halfWidth);
-			float target = dev.Length > 0 ? dev[i % dev.Length] * MaxJitterPx * depth : 0f;
-			_jitter[i] += (target - _jitter[i]) * jitterK;
+			float jitter = 0f;
+			if (devLen > 1)
+			{
+				float pos = i + _scroll;
+				float fl = MathF.Floor(pos);
+				int i0 = ((((int)fl) % devLen) + devLen) % devLen;
+				int i1 = (i0 + 1) % devLen;
+				float d = dev[i0] + ((dev[i1] - dev[i0]) * (pos - fl));
+				jitter = d * MaxJitterPx * depth;
+			}
 			Vector2 normal = Normal(live[(i - 1 + n) % n], live[(i + 1) % n]);
-			pts[i] = v + (normal * _jitter[i]);
+			pts[i] = v + (normal * jitter);
 		}
 
 		// Draw a closed Catmull-Rom spline through the jittered vertices: smooth flowing
