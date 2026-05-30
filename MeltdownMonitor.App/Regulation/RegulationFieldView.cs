@@ -122,6 +122,10 @@ public sealed class RegulationFieldView : IDisposable
 				Array.Copy(_rr, 1, _rr, 0, RrBufferLength - 1);
 				_rr[^1] = beat.RrMs;
 			}
+
+			// A new sample arrived: consume one unit of scroll so the texture's continuous
+			// time-advance stays aligned to the data (net forward flow, no runaway/cycling).
+			_scroll = MathF.Max(0f, _scroll - 1f);
 		}
 	}
 
@@ -184,10 +188,19 @@ public sealed class RegulationFieldView : IDisposable
 		_hrDisplay += (hrTarget - _hrDisplay) * (1f - MathF.Exp(-dt * 1.5f));
 		_breathPhase += dt * (MathF.Max(40f, _hrDisplay) / 60f) * MathF.Tau;
 
+		// Advance the RR-texture scroll with time (consumed one-per-beat in OnBeatReceived),
+		// so the trace flows continuously and stays aligned to the incoming samples.
+		float scroll;
+		lock (_lock)
+		{
+			_scroll = MathF.Min(2f, _scroll + (dt * (MathF.Max(40f, _hrDisplay) / 60f)));
+			scroll = _scroll;
+		}
+
 		DrawLfHfHalo(draw, centre, halfWidth, disp, confidence);
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
 		DrawVagalAxis(draw, centre, markerYClamp, confidence);
-		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, dt, confidence);
+		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, scroll, confidence);
 		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, disp, confidence);
 		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, confidence);
 		DrawMarker(draw, centre, halfWidth, liveLobeHeight, disp, confidence);
@@ -237,7 +250,7 @@ public sealed class RegulationFieldView : IDisposable
 		draw.AddEllipseFilled(centre, new Vector2(halfWidth * 0.32f, lobeHeight * 0.7f), Col(zone));
 	}
 
-	private void DrawLemniscate(ImDrawListPtr draw, Vector2 centre, float halfWidth, float baseLobeHeight, float liveLobeHeight, RegulationReading r, double[] rr, float dt, float confidence)
+	private void DrawLemniscate(ImDrawListPtr draw, Vector2 centre, float halfWidth, float baseLobeHeight, float liveLobeHeight, RegulationReading r, double[] rr, float scroll, float confidence)
 	{
 		// Ghost baseline (symmetric resting frame) at the base height.
 		var ghost = LemniscateGeometry.Polyline(centre, halfWidth, baseLobeHeight, LobeSegments);
@@ -258,11 +271,13 @@ public sealed class RegulationFieldView : IDisposable
 		// Jitter each VERTEX once (along the smoothed vertex normal) so adjacent segments
 		// share an endpoint and the trace stays continuous. The trace IS the live beat-to-beat
 		// signal: jagged when HRV is healthy, flat when it collapses; tapers to nothing at the crossover.
-		// Continuously scroll the RR texture around the lobe at the heart-rate cadence (one
-		// sample per beat) and read it with linear interpolation, so the trace flows fluidly
-		// instead of morphing-then-stopping between beats.
-		_scroll += dt * (MathF.Max(40f, _hrDisplay) / 60f);
+		// Map the lobe ONCE onto the most-recent RR window (no tiling → no spatial repeat),
+		// rotating so the oldest↔newest seam lands on a crossover (depth≈0, hidden). `scroll`
+		// is a fractional position advanced by time and consumed one-per-beat, giving
+		// continuous flow that stays aligned to the incoming samples.
 		int devLen = dev.Length;
+		int quarter = n / 4;
+		float span = MathF.Min(devLen - 1, n - 1);
 		var pts = new Vector2[n];
 		for (int i = 0; i < n; i++)
 		{
@@ -271,11 +286,12 @@ public sealed class RegulationFieldView : IDisposable
 			float jitter = 0f;
 			if (devLen > 1)
 			{
-				float pos = i + _scroll;
-				float fl = MathF.Floor(pos);
-				int i0 = ((((int)fl) % devLen) + devLen) % devLen;
-				int i1 = (i0 + 1) % devLen;
-				float d = dev[i0] + ((dev[i1] - dev[i0]) * (pos - fl));
+				int seg = (((i - quarter) % n) + n) % n;
+				float pos = (devLen - 1 - span) + ((seg / (float)(n - 1)) * span) + scroll;
+				pos = Math.Clamp(pos, 0f, devLen - 1);
+				int i0 = (int)MathF.Floor(pos);
+				int i1 = Math.Min(i0 + 1, devLen - 1);
+				float d = dev[i0] + ((dev[i1] - dev[i0]) * (pos - i0));
 				jitter = d * MaxJitterPx * depth;
 			}
 			Vector2 normal = Normal(live[(i - 1 + n) % n], live[(i + 1) % n]);
