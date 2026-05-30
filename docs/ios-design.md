@@ -609,6 +609,43 @@ Done:
   note trimming, blank→null, label set), `HistoryViewModelTests` (merge
   ordering, no-notes fallback).
 
+### Phase 10 — Regulation Field on mobile (v1.1) — **implemented**
+
+Brings the desktop's signature visualization (the figure-8 "window of
+tolerance" instrument from the Regulation Field plan) to the phone's Now
+screen (§6). Fully managed and unit-tested; no native iOS work required —
+the build runs anywhere the Mobile assembly does.
+
+Done:
+- The pure, already-tested Core pieces are reused verbatim:
+  `RegulationFieldCalculator.Compute` (arousal-vs-baseline `RegulationReading`)
+  and `LemniscateGeometry` (marker needle + figure-8 polyline). No second copy
+  of the maths — the same code the desktop view is specified against.
+- `MeltdownMonitor.Mobile/Pipeline.cs` now computes a `RegulationReading` per
+  sample from its live thresholds + baseline warm-up state and surfaces it via
+  a `ReadingUpdated` event and `LatestReading` / `LatestThresholds` accessors
+  (mirroring the desktop pipeline), additive to `SampleUpdated`.
+- `MeltdownMonitor.Mobile/Controls/RegulationField.cs` renders the instrument
+  through Avalonia's `DrawingContext` (Skia): window-of-tolerance zone, ghost
+  baseline, live two-tone trace (warm/cool swell + variability-driven stroke
+  fatness), fading comet trail, the state-coloured marker, REST / MELTDOWN /
+  WINDOW OF TOLERANCE labels, and a "Calibrating baseline… N%" dimming overlay
+  while the baseline is cold. It uses the Catppuccin Macchiato palette to match
+  the desktop renderer. There is no per-frame animation loop on mobile (the
+  control re-renders on each new reading), so the desktop's breathing/jitter
+  flourishes are intentionally deferred.
+- `NowViewModel` consumes `ReadingUpdated`, keeps a bounded comet trail, and
+  exposes `Reading` / `RegulationTrail` / `RegulationStateColor`. `NowView.axaml`
+  promotes the field to the hero of the Now card with the RMSSD sparkline
+  retained beneath it as a secondary strip.
+- Tests (`NowViewModelTests`): reading set + trail append, trail bounded to 48
+  keeping the newest, a fresh trail instance published per update (so the
+  control's `AffectsRender` binding fires), and `RegulationStateColor` tracking
+  state + pause.
+
+Deferred (fast-follow): on-device breathing/jitter animation (needs a render
+tick), and annotation dots on the trail (the desktop plan flagged the same gap).
+
 ### Out of scope for v1 (logged for v1.1+)
 
 - Live Activity / Dynamic Island.

@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 using MeltdownMonitor.Core.Persistence;
+using MeltdownMonitor.Core.Regulation;
 
 namespace MeltdownMonitor.Mobile.ViewModels;
 
@@ -18,9 +19,11 @@ namespace MeltdownMonitor.Mobile.ViewModels;
 public sealed class NowViewModel : ViewModelBase
 {
 	private const int SparklineMaxPoints = 360; // ~60 s at 6 Hz update cadence
+	private const int RegulationTrailLength = 48; // comet trail length, matches the desktop field
 
 	private readonly ObservableCollection<double> _rmssdHistory = [];
 	private readonly ObservableCollection<double> _baselineHistory = [];
+	private readonly List<RegulationReading> _regulationTrail = [];
 
 	private readonly Func<Task>? _onConnect;
 	private readonly Func<Task>? _onDisconnect;
@@ -33,6 +36,8 @@ public sealed class NowViewModel : ViewModelBase
 	private double _baselineRmssd;
 	private DateTimeOffset _stateChangedAt = DateTimeOffset.UtcNow;
 	private ConnectionState _connection = ConnectionState.Disconnected;
+	private RegulationReading _reading = new(0.0, 1.0, 0.0);
+	private IReadOnlyList<RegulationReading> _regulationTrailSnapshot = [];
 	private bool _isAnnotationSheetOpen;
 	private string _annotationNotes = string.Empty;
 
@@ -53,6 +58,24 @@ public sealed class NowViewModel : ViewModelBase
 	public IReadOnlyList<double> RmssdHistory => _rmssdHistory;
 	public IReadOnlyList<double> BaselineHistory => _baselineHistory;
 
+	/// <summary>Latest arousal-vs-baseline reading driving the Regulation Field.</summary>
+	public RegulationReading Reading
+	{
+		get => _reading;
+		private set => SetField(ref _reading, value);
+	}
+
+	/// <summary>Recent readings (oldest first) drawn as the field's comet trail.
+	/// Replaced with a fresh snapshot on each update so the control re-renders.</summary>
+	public IReadOnlyList<RegulationReading> RegulationTrail
+	{
+		get => _regulationTrailSnapshot;
+		private set => SetField(ref _regulationTrailSnapshot, value);
+	}
+
+	/// <summary>The detector-state accent the field's marker and trail take.</summary>
+	public Color RegulationStateColor => StateColors.ColorFor(_state, _isPaused);
+
 	public DetectorState State
 	{
 		get => _state;
@@ -63,6 +86,7 @@ public sealed class NowViewModel : ViewModelBase
 				_stateChangedAt = DateTimeOffset.UtcNow;
 				Raise(nameof(StateLabel));
 				Raise(nameof(StateBrush));
+				Raise(nameof(RegulationStateColor));
 				Raise(nameof(TimeSinceStateChange));
 			}
 		}
@@ -77,6 +101,7 @@ public sealed class NowViewModel : ViewModelBase
 			{
 				Raise(nameof(StateLabel));
 				Raise(nameof(StateBrush));
+				Raise(nameof(RegulationStateColor));
 			}
 		}
 	}
@@ -223,6 +248,7 @@ public sealed class NowViewModel : ViewModelBase
 		ArgumentNullException.ThrowIfNull(pipeline);
 		pipeline.SampleUpdated += OnSampleUpdated;
 		pipeline.StateChanged += OnStateChanged;
+		pipeline.ReadingUpdated += OnReadingUpdated;
 		OnStateChanged(pipeline.CurrentState);
 	}
 
@@ -255,6 +281,26 @@ public sealed class NowViewModel : ViewModelBase
 	/// independently of <see cref="OnSampleUpdated"/>.
 	/// </summary>
 	public void OnStateChanged(DetectorState state) => RunOnUi(() => State = state);
+
+	/// <summary>
+	/// Push a fresh Regulation Field reading into the VM, appending it to the
+	/// comet trail. Wired to <see cref="Pipeline.ReadingUpdated"/> and marshalled
+	/// to the UI thread like <see cref="OnSampleUpdated"/>. Public so tests can
+	/// drive the trail without a live pipeline.
+	/// </summary>
+	public void OnReadingUpdated(RegulationReading reading) => RunOnUi(() =>
+	{
+		Reading = reading;
+
+		_regulationTrail.Add(reading);
+		while (_regulationTrail.Count > RegulationTrailLength)
+		{
+			_regulationTrail.RemoveAt(0);
+		}
+
+		// Hand the control a fresh list instance so its AffectsRender binding fires.
+		RegulationTrail = _regulationTrail.ToArray();
+	});
 
 	public void TickTimeDisplay() => Raise(nameof(TimeSinceStateChange));
 
