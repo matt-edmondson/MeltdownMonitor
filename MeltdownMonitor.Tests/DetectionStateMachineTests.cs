@@ -1,3 +1,4 @@
+using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 
@@ -275,6 +276,108 @@ public class DetectionStateMachineTests
 			"Must not reach Cooldown while dysregulation persists");
 		Assert.AreEqual(DetectorState.Alerting, detector.State);
 		StringAssert.Contains(firedAlert.TriggerReason, "Sustained");
+	}
+
+	[TestMethod]
+	public void ContactLost_SevereDrop_IsIgnoredAndNoAlertFires()
+	{
+		var detector = new DysregulationDetector(FastThresholds);
+		var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+		AlertPayload? fired = null;
+		detector.AlertFired += p => fired = p;
+
+		detector.Process(NormalSample(start), baselineIsWarm: true); // → Watching
+
+		// A severe drop while the sensor is off-body must not drive the state machine.
+		var gated = detector.Process(
+			SeverelySample(start.AddSeconds(5)), baselineIsWarm: true, contact: SensorContactStatus.NotDetected);
+
+		Assert.AreEqual(DetectorState.Watching, gated);
+		Assert.IsNull(fired, "Contact-lost data must never raise an alert.");
+	}
+
+	[TestMethod]
+	public void ContactRestored_ResumesNormalDetection()
+	{
+		var detector = new DysregulationDetector(FastThresholds);
+		var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+		AlertPayload? fired = null;
+		detector.AlertFired += p => fired = p;
+
+		detector.Process(NormalSample(start), baselineIsWarm: true); // → Watching
+		detector.Process(SeverelySample(start.AddSeconds(5)), baselineIsWarm: true, contact: SensorContactStatus.NotDetected);
+
+		// Once contact returns, the same severe drop fires as it normally would.
+		var restored = detector.Process(
+			SeverelySample(start.AddSeconds(10)), baselineIsWarm: true, contact: SensorContactStatus.Detected);
+
+		Assert.AreEqual(DetectorState.Alerting, restored);
+		Assert.IsNotNull(fired);
+	}
+
+	[TestMethod]
+	public void ContactLost_DuringAlerting_DoesNotCountAsRecovery()
+	{
+		var detector = new DysregulationDetector(FastThresholds);
+		var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+		detector.Process(NormalSample(start), baselineIsWarm: true);
+		detector.Process(SeverelySample(start.AddSeconds(5)), baselineIsWarm: true);
+		Assert.AreEqual(DetectorState.Alerting, detector.State);
+
+		// "Recovered"-looking samples while off-body are untrustworthy — a dropped
+		// sensor reads like calm. They must not satisfy the recovery hold.
+		DetectorState? state = null;
+		for (int i = 2; i <= 8; i++)
+		{
+			state = detector.Process(
+				NormalSample(start.AddSeconds(i * 5)), baselineIsWarm: true, contact: SensorContactStatus.NotDetected);
+		}
+
+		Assert.AreEqual(DetectorState.Alerting, state, "Contact-lost samples must not end an alert.");
+
+		// With contact restored, sustained recovery proceeds to Cooldown as usual.
+		detector.Process(NormalSample(start.AddSeconds(45)), baselineIsWarm: true, contact: SensorContactStatus.Detected);
+		var recovered = detector.Process(NormalSample(start.AddSeconds(55)), baselineIsWarm: true, contact: SensorContactStatus.Detected);
+
+		Assert.AreEqual(DetectorState.Cooldown, recovered);
+	}
+
+	[TestMethod]
+	public void ContactLost_ResetsInProgressWarningStreak()
+	{
+		var detector = new DysregulationDetector(FastThresholds);
+		var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+		detector.Process(NormalSample(start), baselineIsWarm: true); // → Watching
+
+		// Stressed conditions accumulate from t=5s but haven't yet held 30s by t=30s.
+		for (int i = 1; i <= 6; i++)
+		{
+			detector.Process(StressedSample(start.AddSeconds(i * 5)), baselineIsWarm: true);
+		}
+		Assert.AreEqual(DetectorState.Watching, detector.State);
+
+		// A contact-lost sample at t=35s — which would otherwise complete the 30s hold —
+		// resets the streak instead of escalating to Warning.
+		var gated = detector.Process(
+			StressedSample(start.AddSeconds(35)), baselineIsWarm: true, contact: SensorContactStatus.NotDetected);
+		Assert.AreEqual(DetectorState.Watching, gated);
+
+		// Clean stressed data resumes; the streak must re-accumulate from t=40s, so a
+		// sample just after wouldn't yet escalate…
+		var resumed = detector.Process(StressedSample(start.AddSeconds(40)), baselineIsWarm: true);
+		Assert.AreEqual(DetectorState.Watching, resumed, "The streak should have reset, delaying the Warning.");
+
+		// …but once a fresh 30s hold elapses (by t=70s) it escalates as normal.
+		DetectorState? last = null;
+		for (int i = 9; i <= 14; i++)
+		{
+			last = detector.Process(StressedSample(start.AddSeconds(i * 5)), baselineIsWarm: true);
+		}
+		Assert.AreEqual(DetectorState.Warning, last);
 	}
 
 	[TestMethod]
