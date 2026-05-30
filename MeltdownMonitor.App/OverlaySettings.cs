@@ -1,8 +1,18 @@
 namespace MeltdownMonitor.App;
 
+/// <summary>Which corner of the screen work area the overlay locks to.</summary>
+public enum OverlayCorner
+{
+	TopLeft,
+	TopRight,
+	BottomLeft,
+	BottomRight,
+}
+
 /// <summary>
 /// Overlay-mode configuration, persisted as part of <see cref="AppSettings"/>. When enabled,
-/// the whole status window becomes a borderless, translucent, always-on-top overlay.
+/// the whole status window becomes a borderless, translucent, always-on-top overlay locked to
+/// a chosen corner with a configurable offset and size.
 /// </summary>
 public sealed class OverlaySettings
 {
@@ -24,6 +34,21 @@ public sealed class OverlaySettings
 
 	/// <summary>Show the Regulation Field figure-8 at the top of the compact HUD.</summary>
 	public bool ShowRegulationField { get; set; } = true;
+
+	/// <summary>The screen corner the overlay locks to.</summary>
+	public OverlayCorner Corner { get; set; } = OverlayCorner.TopRight;
+
+	/// <summary>Horizontal inset (px) from the locked corner.</summary>
+	public int OffsetX { get; set; } = 24;
+
+	/// <summary>Vertical inset (px) from the locked corner.</summary>
+	public int OffsetY { get; set; } = 24;
+
+	/// <summary>Overlay window width in pixels (resizable from the grip).</summary>
+	public int Width { get; set; } = 460;
+
+	/// <summary>Overlay window height in pixels (resizable from the grip).</summary>
+	public int Height { get; set; } = 500;
 
 	/// <summary>The metrics shown in the compact HUD, in the order they're listed.</summary>
 	public List<OverlayMetric> Metrics { get; set; } =
