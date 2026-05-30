@@ -1,4 +1,5 @@
 using MeltdownMonitor.Core.Baseline;
+using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 
@@ -77,6 +78,31 @@ public class BaselineTrackerTests
 
 		tracker.Update(MakeSample(rmssd: 5, state: DetectorState.Alerting));
 		Assert.AreEqual(beforeBaseline, tracker.BaselineRmssd, 0.001);
+	}
+
+	[TestMethod]
+	public void ContactLost_Sample_NotUsedToUpdateBaseline()
+	{
+		var tracker = new BaselineHrvTracker();
+		tracker.Update(MakeSample(rmssd: 60));
+		double beforeBaseline = tracker.BaselineRmssd;
+
+		// An off-body sample with extreme RMSSD must not move the baseline.
+		tracker.Update(MakeSample(rmssd: 5), SensorContactStatus.NotDetected);
+		Assert.AreEqual(beforeBaseline, tracker.BaselineRmssd, 0.001);
+	}
+
+	[TestMethod]
+	public void ContactDetected_Sample_StillUpdatesBaseline()
+	{
+		var tracker = new BaselineHrvTracker();
+		tracker.Update(MakeSample(rmssd: 60));
+		double beforeBaseline = tracker.BaselineRmssd;
+
+		// A reading with confirmed contact is reliable and updates as normal.
+		tracker.Update(MakeSample(rmssd: 5), SensorContactStatus.Detected);
+		Assert.AreNotEqual(beforeBaseline, tracker.BaselineRmssd, 0.001,
+			"A contact-confirmed sample should still move the baseline.");
 	}
 
 	[TestMethod]
