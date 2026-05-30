@@ -18,6 +18,9 @@ public class AppSettings : AppData<AppSettings>
 	/// <summary>Advanced HRV computation window tuning.</summary>
 	public HrvTuning HrvTuning { get; set; } = new();
 
+	/// <summary>Transparent heads-up metrics overlay configuration.</summary>
+	public OverlaySettings Overlay { get; set; } = new();
+
 	/// <summary>Pre-written calm suggestion shown in the alert toast.</summary>
 	public string AlertSuggestion { get; set; } =
 		"Step away. Five minutes. Find something quiet.";
