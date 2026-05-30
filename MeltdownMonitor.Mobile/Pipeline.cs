@@ -193,7 +193,7 @@ public sealed class Pipeline : IDisposable
 				continue;
 			}
 
-			_baseline.Update(sample);
+			_baseline.Update(sample, LatestContact);
 
 			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact);
 
