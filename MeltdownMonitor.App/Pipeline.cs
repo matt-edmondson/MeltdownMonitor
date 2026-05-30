@@ -23,6 +23,7 @@ public sealed class Pipeline : IDisposable
 	private Task? _pipelineTask;
 
 	public DetectorState CurrentState => _detector.State;
+	public DetectionThresholds LatestThresholds => _settings.Thresholds;
 	public HrvSample? LatestSample { get; private set; }
 	public BaselineHrvTracker Baseline => _baseline;
 	public event Action<AlertPayload>? AlertFired;
