@@ -9,6 +9,7 @@ using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 using MeltdownMonitor.Core.Persistence;
+using MeltdownMonitor.Core.Regulation;
 using System.Numerics;
 
 namespace MeltdownMonitor.App;
@@ -21,6 +22,7 @@ public sealed class StatusWindow : IDisposable
 {
 	private const int PoincareScatterPoints = 512;
 	private const int InitialSparklineCapacity = 2048;
+	private const int RegulationTrailLength = 32;
 
 	// Chart layout, tunable from the Settings tab (applied live).
 	private float PlotHeight => _settings.ChartTuning.PlotHeight;
@@ -35,7 +37,8 @@ public sealed class StatusWindow : IDisposable
 	private readonly IntervalAction _historyRefreshAction;
 	private readonly Regulation.RegulationFieldView _regulationField;
 	private readonly ImGuiWidgets.TabPanel _tabs;
-	private readonly MetricsOverlay _overlay = new();
+	private readonly OverlayWindowChrome _chrome = new();
+	private readonly RingBuffer<RegulationReading> _readingTrail = new(RegulationTrailLength);
 	private readonly StatusTheme _theme = new();
 	private Thread? _uiThread;
 	private int _appliedCapacity = InitialSparklineCapacity;
@@ -72,6 +75,7 @@ public sealed class StatusWindow : IDisposable
 
 		_pipeline.SampleUpdated += OnSampleUpdated;
 		_pipeline.BeatReceived += OnBeatReceived;
+		_pipeline.ReadingUpdated += OnReadingUpdated;
 
 		_regulationField = new Regulation.RegulationFieldView(_pipeline);
 
@@ -254,6 +258,14 @@ public sealed class StatusWindow : IDisposable
 		}
 	}
 
+	private void OnReadingUpdated(RegulationReading reading)
+	{
+		lock (_historyLock)
+		{
+			_readingTrail.PushBack(reading);
+		}
+	}
+
 	private void BackfillFromRepository()
 	{
 		var to = DateTimeOffset.UtcNow;
@@ -323,6 +335,17 @@ public sealed class StatusWindow : IDisposable
 		return arr;
 	}
 
+	private static RegulationReading[] SnapshotReadings(RingBuffer<RegulationReading> rb)
+	{
+		var arr = new RegulationReading[rb.Count];
+		for (int i = 0; i < rb.Count; i++)
+		{
+			arr[i] = rb.At(i);
+		}
+
+		return arr;
+	}
+
 	private void OnRender(float deltaSeconds)
 	{
 		// Re-tint the Catppuccin Macchiato theme to match the live detection state.
@@ -334,21 +357,21 @@ public sealed class StatusWindow : IDisposable
 		// frame to stay robust against any style reset.
 		ImPlot.GetStyle().FitPadding = new Vector2(0.08f, 0.12f);
 
-		DrawStatusHeader();
-		ImGui.Separator();
-		_tabs.Draw();
-
-		// Drawn last so it floats above the tab content. Persist context-menu changes,
-		// deferring the disk write while a menu interaction is in flight.
-		var overlaySample = new OverlaySample(
-			_pipeline.CurrentState,
-			_pipeline.LatestSample,
-			_pipeline.Baseline.WarmUpProgress);
-		if (_overlay.Draw(overlaySample, _settings.Overlay))
+		if (_settings.Overlay.Enabled)
 		{
-			_settingsDirty = true;
+			DrawOverlayMode();
+		}
+		else
+		{
+			// Leaving overlay mode (or never in it) restores the decorated window.
+			_chrome.Restore();
+			DrawStatusHeader();
+			ImGui.Separator();
+			_tabs.Draw();
 		}
 
+		// Persist any setting touched this frame, deferring the disk write while a
+		// control is being dragged so we don't rewrite the file every frame.
 		if (_settingsDirty && !ImGui.IsAnyItemActive())
 		{
 			_settings.Save();
@@ -356,10 +379,130 @@ public sealed class StatusWindow : IDisposable
 		}
 	}
 
+	// Render the window as a borderless, translucent, always-on-top overlay: a compact
+	// metrics HUD (with the Regulation Field) by default, or the full tabbed UI when expanded.
+	private void DrawOverlayMode()
+	{
+		var ov = _settings.Overlay;
+		_chrome.Apply(ov.ClickThrough, ov.Opacity);
+
+		DrawOverlayToolbar(ov);
+
+		if (ov.Expanded)
+		{
+			DrawStatusHeader();
+			ImGui.Separator();
+			_tabs.Draw();
+		}
+		else
+		{
+			DrawCompactHud(ov);
+		}
+	}
+
+	// A slim control strip pinned to the top of the overlay: a drag handle to reposition
+	// the borderless window, plus expand / opacity / click-through / exit controls.
+	private void DrawOverlayToolbar(OverlaySettings ov)
+	{
+		// Drag handle — moves the borderless OS window with the mouse while held.
+		ImGui.Button(":::");
+		if (ImGui.IsItemActive())
+		{
+			Vector2 delta = ImGui.GetIO().MouseDelta;
+			_chrome.MoveBy((int)delta.X, (int)delta.Y);
+		}
+		if (ImGui.IsItemHovered())
+		{
+			ImGui.SetTooltip("Drag to move the overlay");
+		}
+
+		ImGui.SameLine();
+		if (ImGui.Button(ov.Expanded ? "Compact" : "Expand"))
+		{
+			ov.Expanded = !ov.Expanded;
+			_settingsDirty = true;
+		}
+
+		ImGui.SameLine();
+		ImGui.SetNextItemWidth(110f);
+		float opacity = ov.Opacity;
+		if (ImGui.SliderFloat("##overlay-opacity", ref opacity, 0.2f, 1.0f, "opacity %.2f"))
+		{
+			ov.Opacity = opacity;
+			_settingsDirty = true;
+		}
+
+		ImGui.SameLine();
+		bool clickThrough = ov.ClickThrough;
+		if (ImGui.Checkbox("Click-through", ref clickThrough))
+		{
+			ov.ClickThrough = clickThrough;
+			_settingsDirty = true;
+		}
+
+		ImGui.SameLine();
+		if (ImGui.Button("Exit overlay"))
+		{
+			ov.Enabled = false;
+			_settingsDirty = true;
+		}
+
+		ImGui.Separator();
+	}
+
+	// The default overlay content: the Regulation Field figure-8 plus the selected metrics.
+	private void DrawCompactHud(OverlaySettings ov)
+	{
+		if (ov.ShowRegulationField)
+		{
+			RegulationReading[] trail;
+			lock (_historyLock)
+			{
+				trail = SnapshotReadings(_readingTrail);
+			}
+
+			float width = ImGui.GetContentRegionAvail().X;
+			float height = Math.Clamp(width * 0.55f, 120f, 240f);
+			RegulationFieldRenderer.Draw(
+				new Vector2(width, height),
+				_pipeline.LatestReading,
+				trail,
+				StateColors.For(_pipeline.CurrentState));
+			ImGui.Spacing();
+		}
+
+		var sample = new OverlaySample(
+			_pipeline.CurrentState,
+			_pipeline.LatestSample,
+			_pipeline.Baseline.WarmUpProgress,
+			_pipeline.LatestReading);
+
+		if (ov.Metrics.Count == 0)
+		{
+			ImGui.TextDisabled("No metrics selected — see Settings.");
+			return;
+		}
+
+		foreach (var metric in ov.Metrics)
+		{
+			ImGui.TextDisabled($"{OverlayMetrics.Label(metric)}:");
+			ImGui.SameLine();
+
+			string value = OverlayMetrics.Format(metric, sample);
+			if (metric == OverlayMetric.State)
+			{
+				ImGui.TextColored(StateColors.For(sample.State), value);
+			}
+			else
+			{
+				ImGui.Text(value);
+			}
+		}
+	}
+
 	/// <summary>
-	/// Shows or hides the transparent metrics overlay. The overlay is drawn inside the
-	/// status window, so enabling it also reveals the window if it was hidden. Safe to
-	/// call from any thread.
+	/// Turns overlay mode on or off. Enabling it reveals the window if it was hidden, since
+	/// the overlay is the window itself. Safe to call from any thread.
 	/// </summary>
 	public void ToggleOverlay()
 	{
@@ -371,6 +514,13 @@ public sealed class StatusWindow : IDisposable
 		{
 			ImGuiApp.Show();
 		}
+	}
+
+	/// <summary>Toggles click-through for overlay mode (needed when the in-overlay controls are unclickable).</summary>
+	public void ToggleOverlayClickThrough()
+	{
+		_settings.Overlay.ClickThrough = !_settings.Overlay.ClickThrough;
+		_settings.Save();
 	}
 
 	private void DrawStatusHeader()
@@ -935,19 +1085,28 @@ public sealed class StatusWindow : IDisposable
 
 		_settings.ChartTuning = ct;
 
-		// ── Metrics overlay ──────────────────────────────────────────────
-		ImGui.SeparatorText("Metrics overlay (applies live)");
+		// ── Overlay mode ──────────────────────────────────────────────────
+		ImGui.SeparatorText("Overlay mode (applies live)");
 
 		var ov = _settings.Overlay;
 
 		bool overlayEnabled = ov.Enabled;
-		if (ImGui.Checkbox("Show transparent overlay", ref overlayEnabled))
+		if (ImGui.Checkbox("Overlay mode", ref overlayEnabled))
 		{
 			ov.Enabled = overlayEnabled;
 			_settingsDirty = true;
 		}
 		ImGui.SameLine();
-		HelpMarker("A small, transparent heads-up panel pinned to a corner showing your chosen metrics. Right-click the panel to pick metrics, corner, and click-through.");
+		HelpMarker("Turns the whole window into a borderless, translucent, always-on-top overlay. Defaults to a compact metrics HUD (with the Regulation Field); use Expand in the overlay's toolbar for the full UI. Drag the ':::' handle to reposition it.");
+
+		bool expanded = ov.Expanded;
+		if (ImGui.Checkbox("Expanded (full UI)", ref expanded))
+		{
+			ov.Expanded = expanded;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("In overlay mode, show the full tabbed UI instead of the compact HUD.");
 
 		bool clickThrough = ov.ClickThrough;
 		if (ImGui.Checkbox("Click-through (ignore mouse)", ref clickThrough))
@@ -956,29 +1115,25 @@ public sealed class StatusWindow : IDisposable
 			_settingsDirty = true;
 		}
 		ImGui.SameLine();
-		HelpMarker("When on, the overlay ignores the mouse so clicks reach the charts beneath. The right-click metric menu is disabled while this is on.");
+		HelpMarker("When on, the overlay ignores the mouse so clicks reach the windows beneath. Toggle it back off from the tray menu, since the overlay's own controls are unclickable while it's on.");
 
-		float alpha = ov.BackgroundAlpha;
-		if (ImGui.SliderFloat("Background opacity", ref alpha, 0f, 1f, "%.2f"))
+		bool showField = ov.ShowRegulationField;
+		if (ImGui.Checkbox("Show Regulation Field", ref showField))
 		{
-			ov.BackgroundAlpha = alpha;
+			ov.ShowRegulationField = showField;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Show the figure-8 Regulation Field at the top of the compact HUD.");
+
+		float opacity = ov.Opacity;
+		if (ImGui.SliderFloat("Opacity", ref opacity, 0.2f, 1.0f, "%.2f"))
+		{
+			ov.Opacity = opacity;
 			_settingsDirty = true;
 		}
 
-		ImGui.Text("Corner:");
-		ImGui.SameLine();
-		foreach (var corner in Enum.GetValues<OverlayCorner>())
-		{
-			if (ImGui.RadioButton(corner.ToString(), ov.Corner == corner))
-			{
-				ov.Corner = corner;
-				_settingsDirty = true;
-			}
-			ImGui.SameLine();
-		}
-		ImGui.NewLine();
-
-		ImGui.TextDisabled("Metrics shown:");
+		ImGui.TextDisabled("HUD metrics:");
 		foreach (var metric in OverlayMetrics.All)
 		{
 			bool shown = ov.Metrics.Contains(metric);
@@ -1185,6 +1340,7 @@ public sealed class StatusWindow : IDisposable
 
 		_pipeline.SampleUpdated -= OnSampleUpdated;
 		_pipeline.BeatReceived -= OnBeatReceived;
+		_pipeline.ReadingUpdated -= OnReadingUpdated;
 		_historyRefreshAction.Stop();
 	}
 

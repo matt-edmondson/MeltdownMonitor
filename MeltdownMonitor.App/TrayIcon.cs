@@ -15,6 +15,7 @@ public sealed class TrayIcon : IDisposable
 	private readonly AppSettings _settings;
 	private readonly Action _toggleStatusWindow;
 	private readonly Action _toggleOverlay;
+	private readonly Action _toggleOverlayClickThrough;
 	private readonly Action _quit;
 	private readonly Dictionary<DetectorState, Icon> _stateIcons;
 
@@ -35,6 +36,7 @@ public sealed class TrayIcon : IDisposable
 		AppSettings settings,
 		Action toggleStatusWindow,
 		Action toggleOverlay,
+		Action toggleOverlayClickThrough,
 		Action quit)
 	{
 		_pipeline = pipeline;
@@ -42,6 +44,7 @@ public sealed class TrayIcon : IDisposable
 		_settings = settings;
 		_toggleStatusWindow = toggleStatusWindow;
 		_toggleOverlay = toggleOverlay;
+		_toggleOverlayClickThrough = toggleOverlayClickThrough;
 		_quit = quit;
 
 		_stateIcons = StateIconResources.ToDictionary(
@@ -91,7 +94,8 @@ public sealed class TrayIcon : IDisposable
 		menu.Items.Add("Log how I'm feeling...", null, OnLogFeeling);
 		menu.Items.Add("Pause for 1 hour", null, OnPause);
 		menu.Items.Add("Show/hide status window", null, (_, _) => _toggleStatusWindow());
-		menu.Items.Add("Show/hide metrics overlay", null, (_, _) => _toggleOverlay());
+		menu.Items.Add("Toggle overlay mode", null, (_, _) => _toggleOverlay());
+		menu.Items.Add("Toggle overlay click-through", null, (_, _) => _toggleOverlayClickThrough());
 		menu.Items.Add("Open log folder", null, OnOpenLogFolder);
 		menu.Items.Add(new ToolStripSeparator());
 		menu.Items.Add("Quit", null, (_, _) => _quit());
