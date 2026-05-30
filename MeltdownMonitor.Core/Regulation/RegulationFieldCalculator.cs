@@ -32,7 +32,7 @@ public static class RegulationFieldCalculator
 			|| !double.IsFinite(sample.Rmssd) || !double.IsFinite(sample.MeanHr))
 		{
 			// Baseline not usable yet — neutral position, no confidence.
-			return new RegulationReading(0.0, 1.0, 0.0);
+			return new RegulationReading(0.0, 1.0, 0.0, 0.5, 0.0);
 		}
 
 		double rmssdDrop = (sample.BaselineRmssd - sample.Rmssd) / sample.BaselineRmssd; // + when stressed
@@ -50,6 +50,24 @@ public static class RegulationFieldCalculator
 
 		double quality = Math.Clamp(sample.Rmssd / sample.BaselineRmssd, 0.0, 1.0);
 
-		return new RegulationReading(index, quality, confidence);
+		// Poincaré SD1/SD2 ratio → cosmetic lobe fatness. Un-baselined: healthy ratios sit
+		// roughly in [0.2, 0.6]; map that band to [0, 1]. Neutral 0.5 when extended metrics
+		// are absent. (SD2, the long-term axis, makes this independent of the RMSSD collapse
+		// that VariabilityQuality already shows.)
+		double lobeRoundness = 0.5;
+		if (sample.Extended is { SD1SD2Ratio: > 0 } poincare)
+		{
+			lobeRoundness = Math.Clamp((poincare.SD1SD2Ratio - 0.2) / 0.4, 0.0, 1.0);
+		}
+
+		// Signed LF/HF relative to its own baseline. 0 when no extended LF/HF or no baseline.
+		double lfHfBalance = 0.0;
+		if (sample.BaselineLfHfRatio > 0 && sample.Extended is { LfHfRatio: > 0 } freq)
+		{
+			double rise = (freq.LfHfRatio - sample.BaselineLfHfRatio) / sample.BaselineLfHfRatio;
+			lfHfBalance = Math.Clamp(rise, -1.0, 1.0);
+		}
+
+		return new RegulationReading(index, quality, confidence, lobeRoundness, lfHfBalance);
 	}
 }

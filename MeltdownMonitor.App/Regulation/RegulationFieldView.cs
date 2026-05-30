@@ -62,7 +62,7 @@ public sealed class RegulationFieldView : IDisposable
 		{
 			if (_trailCount == 0)
 			{
-				return (new RegulationReading(0, 1, 0), []);
+				return (new RegulationReading(0, 1, 0, 0.5, 0), []);
 			}
 
 			var copy = new RegulationReading[_trailCount];

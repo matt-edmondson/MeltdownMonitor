@@ -42,7 +42,7 @@ public sealed class RegulationField : Control
 
 	public static readonly StyledProperty<RegulationReading> ReadingProperty =
 		AvaloniaProperty.Register<RegulationField, RegulationReading>(
-			nameof(Reading), new RegulationReading(0.0, 1.0, 0.0));
+			nameof(Reading), new RegulationReading(0.0, 1.0, 0.0, 0.5, 0.0));
 
 	public static readonly StyledProperty<IReadOnlyList<RegulationReading>?> TrailProperty =
 		AvaloniaProperty.Register<RegulationField, IReadOnlyList<RegulationReading>?>(nameof(Trail));
