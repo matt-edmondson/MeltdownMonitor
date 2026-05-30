@@ -1,3 +1,4 @@
+using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Hrv;
 
 namespace MeltdownMonitor.Core.Detection;
@@ -38,8 +39,31 @@ public class DysregulationDetector
 	/// <summary>
 	/// Processes a new HRV sample. Returns the (possibly updated) detector state.
 	/// </summary>
-	public DetectorState Process(HrvSample sample, bool baselineIsWarm)
+	/// <param name="sample">The latest HRV sample.</param>
+	/// <param name="baselineIsWarm">Whether the baseline tracker has enough data to arm the detector.</param>
+	/// <param name="contact">
+	/// The sensor's skin / electrode contact state. When <see cref="SensorContactStatus.NotDetected"/>,
+	/// the sample is treated as untrustworthy: the state is held and in-progress streaks reset, so a
+	/// dropped sensor can neither raise an alert nor be mistaken for recovery. The default
+	/// (<see cref="SensorContactStatus.NotSupported"/>) and <see cref="SensorContactStatus.Detected"/>
+	/// are both treated as reliable — sensors that don't report contact are never gated.
+	/// </param>
+	public DetectorState Process(
+		HrvSample sample,
+		bool baselineIsWarm,
+		SensorContactStatus contact = SensorContactStatus.NotSupported)
 	{
+		// Sensor off-body: RR data is unreliable, so don't let this sample drive the
+		// state machine. Hold the current state and clear any in-progress warning or
+		// recovery streak, so a contact blip neither triggers an alert nor counts as
+		// recovery — the streak must re-accumulate from clean data once contact returns.
+		if (contact == SensorContactStatus.NotDetected)
+		{
+			_warningConditionsActive = false;
+			_recoveryActive = false;
+			return _state;
+		}
+
 		if (!baselineIsWarm && _state == DetectorState.Idle)
 		{
 			return _state;
