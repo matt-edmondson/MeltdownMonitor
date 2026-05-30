@@ -702,6 +702,39 @@ public sealed class StatusWindow : IDisposable
 		ImGui.SameLine();
 		HelpMarker("Quiet period after an episode before the detector re-arms. Higher = fewer repeat alerts; lower = re-arms quickly.");
 
+		// ── Physiological recovery (ends an alert) ───────────────────────
+		ImGui.SeparatorText("Recovery (ends an alert)");
+
+		float rmssdRecoverPct = (float)(t.RmssdRecoveryDropFraction * 100.0);
+		float hrRecoverPct = (float)(t.HrRecoveryRiseFraction * 100.0);
+		float recoverHoldSec = (float)t.RecoveryHoldDuration.TotalSeconds;
+
+		if (ImGuiWidgets.Knob("RMSSD recovered", ref rmssdRecoverPct, 0f, 50f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			t = t with { RmssdRecoveryDropFraction = rmssdRecoverPct / 100.0 };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How close RMSSD must climb back to baseline to count as a genuine vagal rebound (not just leaving the Warning zone). Lower = stricter recovery.");
+		ImGui.SameLine();
+
+		if (ImGuiWidgets.Knob("HR settled", ref hrRecoverPct, 0f, 30f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			t = t with { HrRecoveryRiseFraction = hrRecoverPct / 100.0 };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How close HR must settle back to baseline to count toward recovery. Lower = stricter.");
+		ImGui.SameLine();
+
+		if (ImGuiWidgets.Knob("Recovery hold (s)", ref recoverHoldSec, 5f, 600f, format: "%.0f s", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			t = t with { RecoveryHoldDuration = TimeSpan.FromSeconds(recoverHoldSec) };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How long recovery must be sustained before the alert ends — distinguishes real recovery from a transient return to baseline. Higher = surer; lower = ends alerts sooner.");
+
 		// ── LF/HF corroboration ─────────────────────────────────────────
 		ImGui.SeparatorText("LF/HF corroboration (optional)");
 
