@@ -9,6 +9,11 @@ public class MeltdownRepository : IDisposable
 {
 	private readonly SqliteConnection _connection;
 
+	// Serializes writes on the shared connection: the pipeline loop writes beats
+	// and HRV samples while battery readings arrive on a background BLE thread,
+	// and SqliteConnection is not safe for concurrent use.
+	private readonly object _writeLock = new();
+
 	public MeltdownRepository(string databasePath)
 		: this(databasePath, MeltdownRepositoryOptions.Default)
 	{
@@ -97,6 +102,10 @@ public class MeltdownRepository : IDisposable
 				label TEXT    NOT NULL,
 				notes TEXT
 			);
+			CREATE TABLE IF NOT EXISTS battery (
+				ts      INTEGER PRIMARY KEY,
+				percent INTEGER NOT NULL
+			);
 			""";
 		cmd.ExecuteNonQuery();
 
@@ -145,74 +154,101 @@ public class MeltdownRepository : IDisposable
 
 	public void InsertBeat(Beat beat)
 	{
-		using var cmd = _connection.CreateCommand();
-		cmd.CommandText = """
-			INSERT OR IGNORE INTO beats (ts, rr_ms, hr_bpm, artifact)
-			VALUES ($ts, $rr, $hr, $artifact)
-			""";
-		cmd.Parameters.AddWithValue("$ts", beat.Timestamp.ToUnixTimeMilliseconds());
-		cmd.Parameters.AddWithValue("$rr", beat.RrMs);
-		cmd.Parameters.AddWithValue("$hr", beat.HeartRateBpm);
-		cmd.Parameters.AddWithValue("$artifact", beat.IsArtifact ? 1 : 0);
-		cmd.ExecuteNonQuery();
+		lock (_writeLock)
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = """
+				INSERT OR IGNORE INTO beats (ts, rr_ms, hr_bpm, artifact)
+				VALUES ($ts, $rr, $hr, $artifact)
+				""";
+			cmd.Parameters.AddWithValue("$ts", beat.Timestamp.ToUnixTimeMilliseconds());
+			cmd.Parameters.AddWithValue("$rr", beat.RrMs);
+			cmd.Parameters.AddWithValue("$hr", beat.HeartRateBpm);
+			cmd.Parameters.AddWithValue("$artifact", beat.IsArtifact ? 1 : 0);
+			cmd.ExecuteNonQuery();
+		}
+	}
+
+	public void InsertBattery(BatteryReading reading)
+	{
+		lock (_writeLock)
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = """
+				INSERT OR REPLACE INTO battery (ts, percent)
+				VALUES ($ts, $percent)
+				""";
+			cmd.Parameters.AddWithValue("$ts", reading.Timestamp.ToUnixTimeMilliseconds());
+			cmd.Parameters.AddWithValue("$percent", reading.Percent);
+			cmd.ExecuteNonQuery();
+		}
 	}
 
 	public void InsertHrvSample(HrvSample sample)
 	{
-		using var cmd = _connection.CreateCommand();
-		cmd.CommandText = """
-			INSERT OR IGNORE INTO hrv_samples (
-				ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state,
-				lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn)
-			VALUES (
-				$ts, $rmssd, $pnn50, $mean_hr, $baseline_rmssd, $baseline_hr, $state,
-				$lf, $hf, $lf_hf, $sd1, $sd2, $sd1_sd2, $sdnn)
-			""";
-		cmd.Parameters.AddWithValue("$ts", sample.Timestamp.ToUnixTimeMilliseconds());
-		cmd.Parameters.AddWithValue("$rmssd", sample.Rmssd);
-		cmd.Parameters.AddWithValue("$pnn50", sample.Pnn50);
-		cmd.Parameters.AddWithValue("$mean_hr", sample.MeanHr);
-		cmd.Parameters.AddWithValue("$baseline_rmssd", sample.BaselineRmssd);
-		cmd.Parameters.AddWithValue("$baseline_hr", sample.BaselineHr);
-		cmd.Parameters.AddWithValue("$state", sample.State.ToString());
+		lock (_writeLock)
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = """
+				INSERT OR IGNORE INTO hrv_samples (
+					ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state,
+					lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn)
+				VALUES (
+					$ts, $rmssd, $pnn50, $mean_hr, $baseline_rmssd, $baseline_hr, $state,
+					$lf, $hf, $lf_hf, $sd1, $sd2, $sd1_sd2, $sdnn)
+				""";
+			cmd.Parameters.AddWithValue("$ts", sample.Timestamp.ToUnixTimeMilliseconds());
+			cmd.Parameters.AddWithValue("$rmssd", sample.Rmssd);
+			cmd.Parameters.AddWithValue("$pnn50", sample.Pnn50);
+			cmd.Parameters.AddWithValue("$mean_hr", sample.MeanHr);
+			cmd.Parameters.AddWithValue("$baseline_rmssd", sample.BaselineRmssd);
+			cmd.Parameters.AddWithValue("$baseline_hr", sample.BaselineHr);
+			cmd.Parameters.AddWithValue("$state", sample.State.ToString());
 
-		ExtendedHrvMetrics? ext = sample.Extended;
-		cmd.Parameters.AddWithValue("$lf",     ext is not null ? ext.LfPowerMs2  : DBNull.Value);
-		cmd.Parameters.AddWithValue("$hf",     ext is not null ? ext.HfPowerMs2  : DBNull.Value);
-		cmd.Parameters.AddWithValue("$lf_hf",  ext is not null ? ext.LfHfRatio   : DBNull.Value);
-		cmd.Parameters.AddWithValue("$sd1",    ext is not null ? ext.SD1          : DBNull.Value);
-		cmd.Parameters.AddWithValue("$sd2",    ext is not null ? ext.SD2          : DBNull.Value);
-		cmd.Parameters.AddWithValue("$sd1_sd2",ext is not null ? ext.SD1SD2Ratio  : DBNull.Value);
-		cmd.Parameters.AddWithValue("$sdnn",   ext is not null ? ext.Sdnn         : DBNull.Value);
+			ExtendedHrvMetrics? ext = sample.Extended;
+			cmd.Parameters.AddWithValue("$lf",     ext is not null ? ext.LfPowerMs2  : DBNull.Value);
+			cmd.Parameters.AddWithValue("$hf",     ext is not null ? ext.HfPowerMs2  : DBNull.Value);
+			cmd.Parameters.AddWithValue("$lf_hf",  ext is not null ? ext.LfHfRatio   : DBNull.Value);
+			cmd.Parameters.AddWithValue("$sd1",    ext is not null ? ext.SD1          : DBNull.Value);
+			cmd.Parameters.AddWithValue("$sd2",    ext is not null ? ext.SD2          : DBNull.Value);
+			cmd.Parameters.AddWithValue("$sd1_sd2",ext is not null ? ext.SD1SD2Ratio  : DBNull.Value);
+			cmd.Parameters.AddWithValue("$sdnn",   ext is not null ? ext.Sdnn         : DBNull.Value);
 
-		cmd.ExecuteNonQuery();
+			cmd.ExecuteNonQuery();
+		}
 	}
 
 	public void InsertAlert(AlertPayload alert)
 	{
-		using var cmd = _connection.CreateCommand();
-		cmd.CommandText = """
-			INSERT OR IGNORE INTO alerts (ts, trigger_reason, rmssd_at_trigger, baseline_at_trigger)
-			VALUES ($ts, $reason, $rmssd, $baseline)
-			""";
-		cmd.Parameters.AddWithValue("$ts", alert.Timestamp.ToUnixTimeMilliseconds());
-		cmd.Parameters.AddWithValue("$reason", alert.TriggerReason);
-		cmd.Parameters.AddWithValue("$rmssd", alert.RmssdAtTrigger);
-		cmd.Parameters.AddWithValue("$baseline", alert.BaselineAtTrigger);
-		cmd.ExecuteNonQuery();
+		lock (_writeLock)
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = """
+				INSERT OR IGNORE INTO alerts (ts, trigger_reason, rmssd_at_trigger, baseline_at_trigger)
+				VALUES ($ts, $reason, $rmssd, $baseline)
+				""";
+			cmd.Parameters.AddWithValue("$ts", alert.Timestamp.ToUnixTimeMilliseconds());
+			cmd.Parameters.AddWithValue("$reason", alert.TriggerReason);
+			cmd.Parameters.AddWithValue("$rmssd", alert.RmssdAtTrigger);
+			cmd.Parameters.AddWithValue("$baseline", alert.BaselineAtTrigger);
+			cmd.ExecuteNonQuery();
+		}
 	}
 
 	public void InsertAnnotation(DateTimeOffset timestamp, AnnotationLabel label, string? notes = null)
 	{
-		using var cmd = _connection.CreateCommand();
-		cmd.CommandText = """
-			INSERT OR REPLACE INTO annotations (ts, label, notes)
-			VALUES ($ts, $label, $notes)
-			""";
-		cmd.Parameters.AddWithValue("$ts", timestamp.ToUnixTimeMilliseconds());
-		cmd.Parameters.AddWithValue("$label", label.ToString().ToLowerInvariant());
-		cmd.Parameters.AddWithValue("$notes", notes ?? (object)DBNull.Value);
-		cmd.ExecuteNonQuery();
+		lock (_writeLock)
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = """
+				INSERT OR REPLACE INTO annotations (ts, label, notes)
+				VALUES ($ts, $label, $notes)
+				""";
+			cmd.Parameters.AddWithValue("$ts", timestamp.ToUnixTimeMilliseconds());
+			cmd.Parameters.AddWithValue("$label", label.ToString().ToLowerInvariant());
+			cmd.Parameters.AddWithValue("$notes", notes ?? (object)DBNull.Value);
+			cmd.ExecuteNonQuery();
+		}
 	}
 
 	/// <summary>
@@ -280,50 +316,53 @@ public class MeltdownRepository : IDisposable
 
 	public IReadOnlyList<HrvSample> GetHrvSamples(DateTimeOffset from, DateTimeOffset to)
 	{
-		using var cmd = _connection.CreateCommand();
-		cmd.CommandText = """
-			SELECT ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state,
-			       lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn
-			FROM hrv_samples
-			WHERE ts >= $from AND ts <= $to
-			ORDER BY ts
-			""";
-		cmd.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
-		cmd.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
-
-		var results = new List<HrvSample>();
-		using var reader = cmd.ExecuteReader();
-		while (reader.Read())
+		lock (_writeLock)
 		{
-			var ts = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0));
-			var state = Enum.Parse<DetectorState>(reader.GetString(6));
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = """
+				SELECT ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state,
+				       lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn
+				FROM hrv_samples
+				WHERE ts >= $from AND ts <= $to
+				ORDER BY ts
+				""";
+			cmd.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+			cmd.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
 
-			ExtendedHrvMetrics? ext = null;
-			if (!reader.IsDBNull(7))
+			var results = new List<HrvSample>();
+			using var reader = cmd.ExecuteReader();
+			while (reader.Read())
 			{
-				ext = new ExtendedHrvMetrics(
-					reader.GetDouble(7),
-					reader.GetDouble(8),
-					reader.GetDouble(9),
-					reader.GetDouble(10),
-					reader.GetDouble(11),
-					reader.GetDouble(12),
-					reader.GetDouble(13));
+				var ts = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0));
+				var state = Enum.Parse<DetectorState>(reader.GetString(6));
+
+				ExtendedHrvMetrics? ext = null;
+				if (!reader.IsDBNull(7))
+				{
+					ext = new ExtendedHrvMetrics(
+						reader.GetDouble(7),
+						reader.GetDouble(8),
+						reader.GetDouble(9),
+						reader.GetDouble(10),
+						reader.GetDouble(11),
+						reader.GetDouble(12),
+						reader.GetDouble(13));
+				}
+
+				results.Add(new HrvSample(ts,
+					reader.GetDouble(1),
+					reader.GetDouble(2),
+					reader.GetDouble(3),
+					reader.GetDouble(4),
+					reader.GetDouble(5),
+					state)
+				{
+					Extended = ext,
+				});
 			}
 
-			results.Add(new HrvSample(ts,
-				reader.GetDouble(1),
-				reader.GetDouble(2),
-				reader.GetDouble(3),
-				reader.GetDouble(4),
-				reader.GetDouble(5),
-				state)
-			{
-				Extended = ext,
-			});
+			return results;
 		}
-
-		return results;
 	}
 
 	/// <summary>
@@ -375,6 +414,36 @@ public class MeltdownRepository : IDisposable
 			{
 				Extended = ext,
 			});
+		}
+
+		return results;
+	}
+
+	/// <summary>
+	/// Reads battery-level readings in the window via a short-lived read-only
+	/// connection, mirroring <see cref="ReadHistory"/>. Tolerates databases
+	/// created before the <c>battery</c> table existed by returning an empty list.
+	/// </summary>
+	public static IReadOnlyList<BatteryReading> ReadBatteryHistory(string databasePath, DateTimeOffset from, DateTimeOffset to)
+	{
+		using var conn = new SqliteConnection($"Data Source={databasePath};Mode=ReadOnly");
+		conn.Open();
+		using var cmd = conn.CreateCommand();
+		cmd.CommandText = """
+			SELECT ts, percent
+			FROM battery
+			WHERE ts >= $from AND ts <= $to
+			ORDER BY ts
+			""";
+		cmd.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+		cmd.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+
+		var results = new List<BatteryReading>();
+		using var reader = cmd.ExecuteReader();
+		while (reader.Read())
+		{
+			var ts = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0));
+			results.Add(new BatteryReading(ts, reader.GetInt32(1)));
 		}
 
 		return results;

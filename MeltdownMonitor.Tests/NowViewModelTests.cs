@@ -1,3 +1,4 @@
+using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 using MeltdownMonitor.Core.Persistence;
@@ -122,6 +123,26 @@ public class NowViewModelTests
 		CollectionAssert.AreEquivalent(
 			Enum.GetValues<AnnotationLabel>(),
 			vm.AnnotationLabels.ToArray());
+	}
+
+	[TestMethod]
+	public void BatteryText_IsPlaceholderUntilAReadingArrives()
+	{
+		var vm = new NowViewModel();
+
+		Assert.IsNull(vm.BatteryPercent);
+		StringAssert.Contains(vm.BatteryText, "—", StringComparison.Ordinal);
+	}
+
+	[TestMethod]
+	public void OnBatteryUpdated_SetsPercentAndText()
+	{
+		var vm = new NowViewModel();
+
+		vm.OnBatteryUpdated(new BatteryReading(DateTimeOffset.UtcNow, 73));
+
+		Assert.AreEqual(73, vm.BatteryPercent);
+		StringAssert.Contains(vm.BatteryText, "73%", StringComparison.Ordinal);
 	}
 
 	[TestMethod]

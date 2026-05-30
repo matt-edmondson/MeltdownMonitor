@@ -28,12 +28,19 @@ public sealed class Pipeline : IDisposable
 	public HrvSample? LatestSample { get; private set; }
 	public BaselineHrvTracker Baseline => _baseline;
 
+	/// <summary>Latest sensor battery level (0–100), or null until the device reports one.</summary>
+	public int? LatestBatteryPercent { get; private set; }
+
 	/// <summary>Latest arousal-vs-baseline reading driving the Regulation Field overlay.</summary>
 	public RegulationReading LatestReading { get; private set; } = new(0.0, 1.0, 0.0, 0.5, 0.0);
 
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<Beat>? BeatReceived;
+
+	/// <summary>Fires when the sensor reports a fresh battery level via the BLE
+	/// Battery Service (0x180F). Raised only when the source supports it.</summary>
+	public event Action<BatteryReading>? BatteryUpdated;
 
 	public Pipeline(AppSettings settings, MeltdownRepository repository)
 	{
@@ -115,6 +122,12 @@ public sealed class Pipeline : IDisposable
 	{
 		var source = new PolarHrSource(_settings.DeviceType);
 
+		// Battery is an optional source capability — wire it only when supported.
+		if (source is IBatterySource batterySource)
+		{
+			batterySource.BatteryLevelChanged += OnBatteryLevelChanged;
+		}
+
 		await foreach (var beat in source.GetBeatsAsync(cancellationToken))
 		{
 			if (IsPaused())
@@ -176,6 +189,15 @@ public sealed class Pipeline : IDisposable
 	{
 		_repository.InsertAlert(payload);
 		AlertFired?.Invoke(payload);
+	}
+
+	// Battery notifications arrive on a background BLE thread; the repository
+	// serialises the write internally, so we just persist and fan out.
+	private void OnBatteryLevelChanged(BatteryReading reading)
+	{
+		LatestBatteryPercent = reading.Percent;
+		_repository.InsertBattery(reading);
+		BatteryUpdated?.Invoke(reading);
 	}
 
 	public void Dispose()

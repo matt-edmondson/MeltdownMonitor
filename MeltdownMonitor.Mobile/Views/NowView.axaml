@@ -58,6 +58,10 @@
                 <TextBlock Text="{Binding BaselineText}"
                            Foreground="#8A8F98"
                            HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding BatteryText}"
+                           Foreground="#8A8F98"
+                           FontSize="12"
+                           HorizontalAlignment="Center" />
                 <TextBlock Text="{Binding TimeSinceStateChange}"
                            Foreground="#8A8F98"
                            FontSize="12"
