@@ -1,8 +1,10 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
+using Avalonia.Threading;
 using MeltdownMonitor.Core.Regulation;
 
 namespace MeltdownMonitor.Mobile.Controls;
@@ -18,14 +20,25 @@ namespace MeltdownMonitor.Mobile.Controls;
 /// Renders through Avalonia's <see cref="DrawingContext"/> (Skia under the hood),
 /// reusing the pure, unit-tested <see cref="LemniscateGeometry"/> and
 /// <see cref="RegulationFieldCalculator"/> from Core verbatim — the same maths
-/// the desktop view is specified against. There is no per-frame animation loop on
-/// mobile: the control re-renders when a new <see cref="Reading"/> arrives
-/// (~every few seconds), so the desktop's breathing/jitter flourishes are
-/// intentionally omitted for v1.
+/// the desktop view is specified against. While attached to the visual tree a
+/// render-tick timer drives the desktop's breathing/jitter flourishes through a
+/// pure <see cref="RegulationFieldAnimator"/>: the marker eases between the
+/// multi-second samples, its halo breathes at the current HR cadence, and the
+/// trace carries variability jitter. The timer stops when the control detaches
+/// (the Now tab tears down while backgrounded) so it costs nothing off-screen.
 /// </summary>
 public sealed class RegulationField : Control
 {
 	private const int LobeSegments = 96;
+
+	// ~30 fps: enough for a smooth breathe/jitter without churning the battery
+	// the way a 60 fps loop would on a phone that stays on this screen.
+	private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(33);
+
+	private readonly RegulationFieldAnimator _animator = new();
+	private readonly Stopwatch _clock = new();
+	private DispatcherTimer? _timer;
+	private TimeSpan _lastFrame;
 
 	public static readonly StyledProperty<RegulationReading> ReadingProperty =
 		AvaloniaProperty.Register<RegulationField, RegulationReading>(
@@ -37,6 +50,9 @@ public sealed class RegulationField : Control
 	public static readonly StyledProperty<Color> StateColorProperty =
 		AvaloniaProperty.Register<RegulationField, Color>(
 			nameof(StateColor), Color.FromRgb(0x29, 0x80, 0xD8));
+
+	public static readonly StyledProperty<double> HeartRateProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(HeartRate));
 
 	// Catppuccin Macchiato — the field's distinctive palette, single-sourced here
 	// to match the desktop renderer's MacchiatoPalette.
@@ -77,6 +93,41 @@ public sealed class RegulationField : Control
 		set => SetValue(StateColorProperty, value);
 	}
 
+	/// <summary>Current heart rate (bpm); sets the breathing cadence of the
+	/// marker halo. Zero/absent falls back to a gentle resting breath.</summary>
+	public double HeartRate
+	{
+		get => GetValue(HeartRateProperty);
+		set => SetValue(HeartRateProperty, value);
+	}
+
+	protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+	{
+		base.OnAttachedToVisualTree(e);
+		_clock.Restart();
+		_lastFrame = _clock.Elapsed;
+		_timer = new DispatcherTimer(FrameInterval, DispatcherPriority.Render, OnFrame);
+		_timer.Start();
+	}
+
+	protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+	{
+		_timer?.Stop();
+		_timer = null;
+		_clock.Stop();
+		base.OnDetachedFromVisualTree(e);
+	}
+
+	private void OnFrame(object? sender, EventArgs e)
+	{
+		var now = _clock.Elapsed;
+		double dt = (now - _lastFrame).TotalSeconds;
+		_lastFrame = now;
+
+		_animator.Step(dt, Reading.Index, HeartRate);
+		InvalidateVisual();
+	}
+
 	public override void Render(DrawingContext context)
 	{
 		double w = Bounds.Width;
@@ -100,7 +151,7 @@ public sealed class RegulationField : Control
 		var ghost = LemniscateGeometry.Polyline(centreV, halfWidth, lobeHeight, LobeSegments);
 		DrawTrace(context, ghost, centreV, halfWidth, reading, confidence);
 		DrawTrail(context, centreV, halfWidth, confidence);
-		DrawMarker(context, centreV, halfWidth, reading, confidence);
+		DrawMarker(context, centreV, halfWidth, confidence);
 
 		// Crossover node at the centre of the figure-8.
 		context.DrawEllipse(Brush(Lavender, confidence), null, centre, 6, 6);
@@ -148,8 +199,12 @@ public sealed class RegulationField : Control
 				? Lerp(Peach, Maroon, depth)
 				: Lerp(Sky, Sapphire, depth);
 
+			// Animated variability jitter on the outer half of each lobe: the
+			// healthier the variability, the more the line "breathes" sideways.
+			Vector2 n = Normal(a, b) * (float)_animator.JitterOffset(i, quality, depth);
+
 			double thick = baseThick * (warm ? warmSwell : coolSwell);
-			context.DrawLine(new Pen(Brush(c, confidence), thick), P(a), P(b));
+			context.DrawLine(new Pen(Brush(c, confidence), thick), P(a + n), P(b + n));
 		}
 	}
 
@@ -171,13 +226,16 @@ public sealed class RegulationField : Control
 		}
 	}
 
-	private void DrawMarker(DrawingContext context, Vector2 centre, float halfWidth, RegulationReading r, double confidence)
+	private void DrawMarker(DrawingContext context, Vector2 centre, float halfWidth, double confidence)
 	{
-		Vector2 p = LemniscateGeometry.MarkerPoint((float)r.Index, centre, halfWidth);
+		// Eased position glides between the multi-second samples; the halo
+		// breathes at the current HR cadence (RegulationFieldAnimator).
+		Vector2 p = LemniscateGeometry.MarkerPoint((float)_animator.MarkerPos, centre, halfWidth);
 		var at = P(p);
-		context.DrawEllipse(Brush(StateColor, 0.18 * confidence), null, at, 14, 14); // halo
-		context.DrawEllipse(Brush(StateColor, confidence), null, at, 6, 6);          // core
-		context.DrawEllipse(Brush(Base, confidence), null, at, 2.5, 2.5);            // pupil
+		double halo = 14 * _animator.HaloPulse;
+		context.DrawEllipse(Brush(StateColor, 0.18 * confidence), null, at, halo, halo); // halo
+		context.DrawEllipse(Brush(StateColor, confidence), null, at, 6, 6);              // core
+		context.DrawEllipse(Brush(Base, confidence), null, at, 2.5, 2.5);                // pupil
 	}
 
 	private static void DrawLabels(DrawingContext context, Point centre, float halfWidth, float lobeHeight)
@@ -202,6 +260,15 @@ public sealed class RegulationField : Control
 	}
 
 	private static Point P(Vector2 v) => new(v.X, v.Y);
+
+	/// <summary>Unit normal to the segment a→b, used to push the jittered trace
+	/// sideways off the ghost baseline.</summary>
+	private static Vector2 Normal(Vector2 a, Vector2 b)
+	{
+		Vector2 d = b - a;
+		float len = d.Length();
+		return len < 1e-4f ? Vector2.Zero : new Vector2(-d.Y, d.X) / len;
+	}
 
 	private static IBrush Brush(Color c, double opacity) =>
 		new SolidColorBrush(c, Math.Clamp(opacity, 0.0, 1.0));
