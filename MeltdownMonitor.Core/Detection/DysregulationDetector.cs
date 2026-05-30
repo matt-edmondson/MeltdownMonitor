@@ -14,6 +14,8 @@ public class DysregulationDetector
 	private DateTimeOffset _stateEnteredAt = DateTimeOffset.MinValue;
 	private DateTimeOffset _warningConditionsMetAt = DateTimeOffset.MinValue;
 	private bool _warningConditionsActive;
+	private DateTimeOffset _recoveryHeldSince = DateTimeOffset.MinValue;
+	private bool _recoveryActive;
 
 	private DetectionThresholds _thresholds => _thresholdsProvider();
 
@@ -75,7 +77,7 @@ public class DysregulationDetector
 		if (IsSevereDropping(sample))
 		{
 			FireAlert(sample, "Immediate: RMSSD dropped ≥50% below baseline");
-			Transition(DetectorState.Cooldown, sample.Timestamp);
+			Transition(DetectorState.Alerting, sample.Timestamp);
 			return;
 		}
 
@@ -104,7 +106,7 @@ public class DysregulationDetector
 		if (IsSevereDropping(sample))
 		{
 			FireAlert(sample, "Severe: RMSSD dropped ≥50% below baseline during Warning");
-			Transition(DetectorState.Cooldown, sample.Timestamp);
+			Transition(DetectorState.Alerting, sample.Timestamp);
 			return;
 		}
 
@@ -121,15 +123,34 @@ public class DysregulationDetector
 		if ((sample.Timestamp - _stateEnteredAt) >= _thresholds.AlertingEscalationDuration)
 		{
 			FireAlert(sample, "Sustained: Warning conditions held for escalation window");
-			Transition(DetectorState.Cooldown, sample.Timestamp);
+			Transition(DetectorState.Alerting, sample.Timestamp);
 		}
 	}
 
 	private void ProcessAlerting(HrvSample sample)
 	{
-		// Alerting transitions immediately to Cooldown in FireAlert; this branch
-		// should not normally be reached, but guard against it.
-		Transition(DetectorState.Cooldown, sample.Timestamp);
+		// Hold the Alerting state until the body has *physiologically recovered*,
+		// which is distinct from merely returning toward baseline. A single sample
+		// dipping back below the Warning trigger is not recovery — recovery requires
+		// a genuine vagal rebound (RMSSD restored near baseline, HR settled) that is
+		// sustained for RecoveryHoldDuration. Transient blips reset the streak.
+		bool recovering = IsPhysiologicallyRecovered(sample);
+
+		if (recovering && !_recoveryActive)
+		{
+			_recoveryActive = true;
+			_recoveryHeldSince = sample.Timestamp;
+		}
+		else if (!recovering)
+		{
+			_recoveryActive = false;
+		}
+
+		if (_recoveryActive &&
+			(sample.Timestamp - _recoveryHeldSince) >= _thresholds.RecoveryHoldDuration)
+		{
+			Transition(DetectorState.Cooldown, sample.Timestamp);
+		}
 	}
 
 	private void ProcessCooldown(HrvSample sample)
@@ -172,6 +193,27 @@ public class DysregulationDetector
 		return true;
 	}
 
+	/// <summary>
+	/// True when the sample shows a genuine return of autonomic regulation rather
+	/// than a transient excursion back toward baseline: parasympathetic tone (RMSSD)
+	/// has climbed back near baseline AND sympathetic drive (HR) has settled. The
+	/// caller additionally requires this to persist (see <see cref="ProcessAlerting"/>)
+	/// before treating it as physiological recovery.
+	/// </summary>
+	private bool IsPhysiologicallyRecovered(HrvSample sample)
+	{
+		if (sample.BaselineRmssd <= 0 || sample.BaselineHr <= 0)
+		{
+			return false;
+		}
+
+		double rmssdDrop = (sample.BaselineRmssd - sample.Rmssd) / sample.BaselineRmssd;
+		double hrRise = (sample.MeanHr - sample.BaselineHr) / sample.BaselineHr;
+
+		return rmssdDrop <= _thresholds.RmssdRecoveryDropFraction
+			&& hrRise <= _thresholds.HrRecoveryRiseFraction;
+	}
+
 	private bool IsSevereDropping(HrvSample sample)
 	{
 		if (sample.BaselineRmssd <= 0)
@@ -197,6 +239,8 @@ public class DysregulationDetector
 	{
 		_state = newState;
 		_stateEnteredAt = timestamp;
+		// Recovery is tracked per alert episode; never carry a streak across states.
+		_recoveryActive = false;
 		StateChanged?.Invoke(newState);
 	}
 }

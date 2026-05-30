@@ -1,6 +1,8 @@
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 using MeltdownMonitor.Core.Persistence;
+using MeltdownMonitor.Core.Regulation;
+using MeltdownMonitor.Mobile;
 using MeltdownMonitor.Mobile.ViewModels;
 
 namespace MeltdownMonitor.Tests;
@@ -120,6 +122,63 @@ public class NowViewModelTests
 		CollectionAssert.AreEquivalent(
 			Enum.GetValues<AnnotationLabel>(),
 			vm.AnnotationLabels.ToArray());
+	}
+
+	[TestMethod]
+	public void OnReadingUpdated_SetsReadingAndAppendsToTrail()
+	{
+		var vm = new NowViewModel();
+		Assert.AreEqual(0, vm.RegulationTrail.Count);
+
+		var reading = new RegulationReading(Index: 0.42, VariabilityQuality: 0.7, Confidence: 1.0);
+		vm.OnReadingUpdated(reading);
+
+		Assert.AreEqual(0.42, vm.Reading.Index, 0.001);
+		Assert.AreEqual(1, vm.RegulationTrail.Count);
+		Assert.AreEqual(0.42, vm.RegulationTrail[^1].Index, 0.001);
+	}
+
+	[TestMethod]
+	public void OnReadingUpdated_TrailIsBoundedAndKeepsTheNewest()
+	{
+		var vm = new NowViewModel();
+
+		// Push well past the trail cap; the oldest readings should fall off.
+		for (int i = 0; i < 200; i++)
+		{
+			vm.OnReadingUpdated(new RegulationReading(Index: i / 200.0, VariabilityQuality: 1, Confidence: 1));
+		}
+
+		Assert.IsTrue(vm.RegulationTrail.Count is > 0 and <= 48,
+			$"trail should be capped at 48, was {vm.RegulationTrail.Count}");
+		// Newest reading is retained at the end of the trail.
+		Assert.AreEqual(199 / 200.0, vm.RegulationTrail[^1].Index, 0.001);
+		// Oldest retained entry is newer than the very first push (which fell off).
+		Assert.IsTrue(vm.RegulationTrail[0].Index > 0.0, "the oldest readings should have been trimmed");
+	}
+
+	[TestMethod]
+	public void OnReadingUpdated_HandsControlAFreshTrailInstance()
+	{
+		var vm = new NowViewModel();
+
+		vm.OnReadingUpdated(new RegulationReading(0.1, 1, 1));
+		var first = vm.RegulationTrail;
+		vm.OnReadingUpdated(new RegulationReading(0.2, 1, 1));
+		var second = vm.RegulationTrail;
+
+		Assert.AreNotSame(first, second, "a new list instance must be published so AffectsRender fires");
+	}
+
+	[TestMethod]
+	public void RegulationStateColor_TracksStateAndPause()
+	{
+		var vm = new NowViewModel();
+		vm.OnStateChanged(DetectorState.Warning);
+		Assert.AreEqual(StateColors.ColorFor(DetectorState.Warning), vm.RegulationStateColor);
+
+		vm.IsPaused = true;
+		Assert.AreEqual(StateColors.ColorFor(DetectorState.Warning, isPaused: true), vm.RegulationStateColor);
 	}
 
 	private static HrvSample Sample(double rmssd, double meanHr, double baseline, DetectorState state) =>

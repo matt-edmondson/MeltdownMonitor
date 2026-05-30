@@ -3,6 +3,7 @@ using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 using MeltdownMonitor.Core.Persistence;
+using MeltdownMonitor.Core.Regulation;
 using MeltdownMonitor.Mobile.Services;
 
 namespace MeltdownMonitor.Mobile;
@@ -28,9 +29,23 @@ public sealed class Pipeline : IDisposable
 	public DetectorState CurrentState => _detector.State;
 	public HrvSample? LatestSample { get; private set; }
 
+	/// <summary>The thresholds the detector is currently using — the same value
+	/// the Regulation Field needs to scale arousal-vs-baseline. Mirrors the
+	/// desktop pipeline's accessor.</summary>
+	public DetectionThresholds LatestThresholds => _settings.Thresholds;
+
+	/// <summary>Latest arousal-vs-baseline reading for the Regulation Field
+	/// (design doc §6). Neutral until the first sample arrives.</summary>
+	public RegulationReading LatestReading { get; private set; } = new(0.0, 1.0, 0.0);
+
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<DetectorState>? StateChanged;
+
+	/// <summary>Fires after <see cref="SampleUpdated"/> with the Regulation Field
+	/// reading derived from the same sample, so the Now screen can drive the
+	/// field without recomputing the calculator inputs itself.</summary>
+	public event Action<RegulationReading>? ReadingUpdated;
 
 	public Pipeline(MobileSettings settings, MeltdownRepository repository, IBeatSource source)
 	{
@@ -150,6 +165,14 @@ public sealed class Pipeline : IDisposable
 			_repository.InsertHrvSample(finalSample);
 			LatestSample = finalSample;
 			SampleUpdated?.Invoke(finalSample);
+
+			var reading = RegulationFieldCalculator.Compute(
+				finalSample,
+				_settings.Thresholds,
+				_baseline.WarmUpProgress,
+				_baseline.IsWarm);
+			LatestReading = reading;
+			ReadingUpdated?.Invoke(reading);
 		}
 	}
 

@@ -14,6 +14,9 @@ public class DetectionStateMachineTests
 		AlertingEscalationDuration = TimeSpan.FromSeconds(60),
 		RmssdAlertingDropFraction = 0.50,
 		CooldownDuration = TimeSpan.FromSeconds(10),
+		RmssdRecoveryDropFraction = 0.10,
+		HrRecoveryRiseFraction = 0.05,
+		RecoveryHoldDuration = TimeSpan.FromSeconds(10),
 	};
 
 	private static HrvSample NormalSample(
@@ -138,7 +141,7 @@ public class DetectionStateMachineTests
 	}
 
 	[TestMethod]
-	public void SevereDrop_FromWatching_FiresAlertAndEntersCooldown()
+	public void SevereDrop_FromWatching_FiresAlertAndEntersAlerting()
 	{
 		var detector = new DysregulationDetector(FastThresholds);
 		var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
@@ -150,7 +153,66 @@ public class DetectionStateMachineTests
 		detector.Process(SeverelySample(start.AddSeconds(5)), baselineIsWarm: true);
 
 		Assert.IsNotNull(firedAlert);
-		Assert.AreEqual(DetectorState.Cooldown, detector.State);
+		Assert.AreEqual(DetectorState.Alerting, detector.State);
+	}
+
+	[TestMethod]
+	public void Alerting_HoldsWhileDysregulationPersists()
+	{
+		var detector = new DysregulationDetector(FastThresholds);
+		var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+		detector.Process(NormalSample(start), baselineIsWarm: true);
+		detector.Process(SeverelySample(start.AddSeconds(5)), baselineIsWarm: true);
+		Assert.AreEqual(DetectorState.Alerting, detector.State);
+
+		// Continued severe samples must keep the detector in Alerting.
+		for (int i = 2; i <= 10; i++)
+		{
+			detector.Process(SeverelySample(start.AddSeconds(i * 5)), baselineIsWarm: true);
+		}
+
+		Assert.AreEqual(DetectorState.Alerting, detector.State);
+	}
+
+	[TestMethod]
+	public void Alerting_SustainedRecovery_TransitionsToCooldown()
+	{
+		var detector = new DysregulationDetector(FastThresholds);
+		var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+		detector.Process(NormalSample(start), baselineIsWarm: true);
+		detector.Process(SeverelySample(start.AddSeconds(5)), baselineIsWarm: true);
+		Assert.AreEqual(DetectorState.Alerting, detector.State);
+
+		// Physiological recovery must be *sustained* (RecoveryHoldDuration = 10s).
+		// First recovered sample at 10s, held through 20s → steps down to Cooldown.
+		DetectorState? state = null;
+		for (int i = 2; i <= 4; i++)
+		{
+			state = detector.Process(NormalSample(start.AddSeconds(i * 5)), baselineIsWarm: true);
+		}
+
+		Assert.AreEqual(DetectorState.Cooldown, state);
+	}
+
+	[TestMethod]
+	public void Alerting_TransientReturnToBaseline_DoesNotEndAlert()
+	{
+		var detector = new DysregulationDetector(FastThresholds);
+		var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+		detector.Process(NormalSample(start), baselineIsWarm: true);
+		detector.Process(SeverelySample(start.AddSeconds(5)), baselineIsWarm: true);
+		Assert.AreEqual(DetectorState.Alerting, detector.State);
+
+		// A lone sample flicks back to baseline, then dysregulation resumes before
+		// the recovery hold elapses. This is "returning to baseline", not recovery —
+		// the detector must stay in Alerting.
+		detector.Process(NormalSample(start.AddSeconds(10)), baselineIsWarm: true);
+		var resumed = detector.Process(SeverelySample(start.AddSeconds(15)), baselineIsWarm: true);
+
+		Assert.AreEqual(DetectorState.Alerting, resumed);
 	}
 
 	[TestMethod]
@@ -161,11 +223,18 @@ public class DetectionStateMachineTests
 
 		detector.Process(NormalSample(start), baselineIsWarm: true);
 		detector.Process(SeverelySample(start.AddSeconds(5)), baselineIsWarm: true);
+		Assert.AreEqual(DetectorState.Alerting, detector.State);
+
+		// Sustained recovery so the detector leaves Alerting and enters Cooldown.
+		for (int i = 2; i <= 4; i++)
+		{
+			detector.Process(NormalSample(start.AddSeconds(i * 5)), baselineIsWarm: true);
+		}
 		Assert.AreEqual(DetectorState.Cooldown, detector.State);
 
-		// Feed a sample after cooldown period (10s) has elapsed
+		// Feed a sample after the cooldown period (10s) has elapsed.
 		var afterCooldown = detector.Process(
-			NormalSample(start.AddSeconds(20)), baselineIsWarm: true);
+			NormalSample(start.AddSeconds(35)), baselineIsWarm: true);
 
 		Assert.AreEqual(DetectorState.Watching, afterCooldown);
 	}
@@ -191,7 +260,9 @@ public class DetectionStateMachineTests
 
 		Assert.AreEqual(DetectorState.Warning, detector.State);
 
-		// Continue stressed for another 65s — alert fires, then cooldown (10s) may also expire
+		// Continue stressed for another 65s — the sustained Warning escalates and the
+		// alert fires, entering Alerting. With dysregulation ongoing there is no
+		// physiological recovery, so it holds in Alerting (does not skip to Cooldown).
 		var warningStart = start.AddSeconds(40);
 		for (int i = 1; i <= 14; i++)
 		{
@@ -199,8 +270,10 @@ public class DetectionStateMachineTests
 		}
 
 		Assert.IsNotNull(firedAlert, "Alert should have fired after 60s in Warning");
-		// Cooldown (10s) may have already expired within the loop, so check state history
-		Assert.IsTrue(stateHistory.Contains(DetectorState.Cooldown), "Should have entered Cooldown");
+		Assert.IsTrue(stateHistory.Contains(DetectorState.Alerting), "Should have entered Alerting");
+		Assert.IsFalse(stateHistory.Contains(DetectorState.Cooldown),
+			"Must not reach Cooldown while dysregulation persists");
+		Assert.AreEqual(DetectorState.Alerting, detector.State);
 		StringAssert.Contains(firedAlert.TriggerReason, "Sustained");
 	}
 
