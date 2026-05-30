@@ -31,6 +31,9 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Latest sensor battery level (0–100), or null until the device reports one.</summary>
 	public int? LatestBatteryPercent { get; private set; }
 
+	/// <summary>Latest skin / electrode contact state from the sensor.</summary>
+	public SensorContactStatus LatestContact { get; private set; } = SensorContactStatus.NotSupported;
+
 	/// <summary>Latest arousal-vs-baseline reading driving the Regulation Field overlay.</summary>
 	public RegulationReading LatestReading { get; private set; } = new(0.0, 1.0, 0.0);
 
@@ -41,6 +44,10 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Fires when the sensor reports a fresh battery level via the BLE
 	/// Battery Service (0x180F). Raised only when the source supports it.</summary>
 	public event Action<BatteryReading>? BatteryUpdated;
+
+	/// <summary>Fires when the sensor's skin / electrode contact state changes.
+	/// Raised only when the source supports it.</summary>
+	public event Action<SensorContactStatus>? ContactChanged;
 
 	public Pipeline(AppSettings settings, MeltdownRepository repository)
 	{
@@ -122,10 +129,15 @@ public sealed class Pipeline : IDisposable
 	{
 		var source = new PolarHrSource(_settings.DeviceType);
 
-		// Battery is an optional source capability — wire it only when supported.
+		// Battery and contact are optional source capabilities — wire each only when supported.
 		if (source is IBatterySource batterySource)
 		{
 			batterySource.BatteryLevelChanged += OnBatteryLevelChanged;
+		}
+
+		if (source is IContactSource contactSource)
+		{
+			contactSource.SensorContactChanged += OnSensorContactChanged;
 		}
 
 		await foreach (var beat in source.GetBeatsAsync(cancellationToken))
@@ -198,6 +210,13 @@ public sealed class Pipeline : IDisposable
 		LatestBatteryPercent = reading.Percent;
 		_repository.InsertBattery(reading);
 		BatteryUpdated?.Invoke(reading);
+	}
+
+	// Contact is a live quality signal, not persisted — just track and fan out.
+	private void OnSensorContactChanged(SensorContactStatus status)
+	{
+		LatestContact = status;
+		ContactChanged?.Invoke(status);
 	}
 
 	public void Dispose()

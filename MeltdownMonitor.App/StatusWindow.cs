@@ -486,7 +486,8 @@ public sealed class StatusWindow : IDisposable
 			_pipeline.LatestSample,
 			_pipeline.Baseline.WarmUpProgress,
 			_pipeline.LatestReading,
-			_pipeline.LatestBatteryPercent);
+			_pipeline.LatestBatteryPercent,
+			_pipeline.LatestContact);
 
 		if (ov.Metrics.Count == 0)
 		{
@@ -592,6 +593,13 @@ public sealed class StatusWindow : IDisposable
 		{
 			ImGui.SameLine();
 			ImGui.TextDisabled($"   Battery {battery}%");
+		}
+
+		// Flag lost skin/electrode contact — RR data is unreliable until it returns.
+		if (_pipeline.LatestContact == SensorContactStatus.NotDetected)
+		{
+			ImGui.SameLine();
+			ImGui.TextColored(StateColors.For(DetectorState.Warning), "   No sensor contact");
 		}
 	}
 
