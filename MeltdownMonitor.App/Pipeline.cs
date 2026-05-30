@@ -35,9 +35,6 @@ public sealed class Pipeline : IDisposable
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<Beat>? BeatReceived;
 
-	/// <summary>Fires after <see cref="SampleUpdated"/> with the recomputed Regulation Field reading.</summary>
-	public event Action<RegulationReading>? ReadingUpdated;
-
 	public Pipeline(AppSettings settings, MeltdownRepository repository)
 	{
 		_settings = settings;
@@ -150,13 +147,11 @@ public sealed class Pipeline : IDisposable
 			LatestSample = finalSample;
 			SampleUpdated?.Invoke(finalSample);
 
-			var reading = RegulationFieldCalculator.Compute(
+			LatestReading = RegulationFieldCalculator.Compute(
 				finalSample,
 				_settings.Thresholds,
 				_baseline.WarmUpProgress,
 				_baseline.IsWarm);
-			LatestReading = reading;
-			ReadingUpdated?.Invoke(reading);
 		}
 	}
 
