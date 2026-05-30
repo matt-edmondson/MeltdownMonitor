@@ -21,7 +21,6 @@ public sealed class RegulationFieldView : IDisposable
 	private const int RrBufferLength = 160;      // recent RR intervals for the live trace texture
 	private const int MinRrForJitter = 8;        // below this, draw a smooth (flat) trace
 	private const int LobeSegments = 96;
-	private const float MarkerEaseRate = 6f;     // exponential-smoothing rate for the marker glide
 	private const float LobeSwellFactor = 1.4f;  // how much a lobe thickens at full index
 	private const float MaxJitterPx = 18f;       // peak trace deflection from the real RR signal
 	private const float RrDevScaleMs = 30f;      // beat-to-beat difference that maps to full deflection
@@ -36,9 +35,18 @@ public sealed class RegulationFieldView : IDisposable
 	private readonly double[] _rr = new double[RrBufferLength];
 	private int _rrCount;
 
+	// Interpolation state: render one sample behind, holding from→to and lerping the whole
+	// reading across the measured inter-sample interval so reading-derived visuals move
+	// smoothly, arriving as the next sample lands. Guarded by _lock (_display is written on the
+	// UI thread and read on the sample thread to seed the next segment).
+	private RegulationReading _from = new(0, 1, 0, 0.5, 0);
+	private RegulationReading _to = new(0, 1, 0, 0.5, 0);
+	private RegulationReading _display = new(0, 1, 0, 0.5, 0);
+	private DateTimeOffset _segStart;
+	private DateTimeOffset _lastArrival;
+	private double _segDuration = 5.0;
+
 	// Animation state (UI thread only).
-	private float _markerPos;       // eased toward the latest index (X)
-	private float _markerY;         // eased toward the vagal-tone offset (Y)
 	private float _breathPhase;
 	private float _animTime;
 
@@ -63,7 +71,17 @@ public sealed class RegulationFieldView : IDisposable
 
 		lock (_lock)
 		{
-			var point = new TrailPoint(DateTimeOffset.UtcNow, reading);
+			var now = DateTimeOffset.UtcNow;
+
+			// Start a new interpolation segment from the currently displayed state to this
+			// reading, spanning the measured time since the previous sample.
+			_segDuration = _lastArrival == default ? 5.0 : Math.Clamp((now - _lastArrival).TotalSeconds, 0.5, 30.0);
+			_from = _display;
+			_to = reading;
+			_segStart = now;
+			_lastArrival = now;
+
+			var point = new TrailPoint(now, reading);
 			if (_trailCount < TrailLength)
 			{
 				_trail[_trailCount++] = point;
@@ -97,7 +115,7 @@ public sealed class RegulationFieldView : IDisposable
 		}
 	}
 
-	private (RegulationReading latest, RegulationReading[] trail, double[] rr) Snapshot()
+	private (RegulationReading from, RegulationReading to, DateTimeOffset segStart, double segDuration, RegulationReading[] trail, double[] rr) Snapshot()
 	{
 		lock (_lock)
 		{
@@ -110,16 +128,26 @@ public sealed class RegulationFieldView : IDisposable
 			var rr = new double[_rrCount];
 			Array.Copy(_rr, rr, _rrCount);
 
-			RegulationReading latest = _trailCount > 0 ? _trail[_trailCount - 1].Reading : new RegulationReading(0, 1, 0, 0.5, 0);
-			return (latest, trail, rr);
+			return (_from, _to, _segStart, _segDuration, trail, rr);
 		}
 	}
 
 	public void Draw()
 	{
-		var (latest, trail, rr) = Snapshot();
+		var (from, to, segStart, segDuration, trail, rr) = Snapshot();
 		float dt = ImGui.GetIO().DeltaTime;
 		_animTime += dt;
+
+		// Render one sample behind: lerp the whole reading from the previous sample to the
+		// latest across the measured interval (smoothstep), so every reading-derived visual
+		// moves continuously and arrives just as the next sample lands.
+		double prog = segDuration > 0 ? Math.Clamp((DateTimeOffset.UtcNow - segStart).TotalSeconds / segDuration, 0.0, 1.0) : 1.0;
+		float k = (float)(prog * prog * (3.0 - (2.0 * prog)));
+		RegulationReading disp = LerpReading(from, to, k);
+		lock (_lock)
+		{
+			_display = disp; // seeds the next segment's "from"
+		}
 
 		// Reserve a wide panel and centre the instrument in it.
 		Vector2 avail = ImGui.GetContentRegionAvail();
@@ -134,26 +162,21 @@ public sealed class RegulationFieldView : IDisposable
 		float baseLobeHeight = MathF.Min(height * 0.28f, halfWidth * 0.62f);
 
 		// Poincaré SD1/SD2 ratio shapes the live lobe height; the ghost stays at base height.
-		float roundness = (float)latest.LobeRoundness;
+		float roundness = (float)disp.LobeRoundness;
 		float liveLobeHeight = baseLobeHeight * (LobeHeightMin + ((LobeHeightMax - LobeHeightMin) * roundness));
 		float labelClearHeight = baseLobeHeight * LobeHeightMax; // keep labels clear of the tallest lobe
 
-		float confidence = (float)latest.Confidence;
-
-		// Ease the marker toward its target each frame so it glides between 5 s readings.
-		_markerPos += ((float)latest.Index - _markerPos) * (1f - MathF.Exp(-dt * MarkerEaseRate));
-		float yTarget = ((float)latest.VariabilityQuality - 0.5f) * liveLobeHeight * MarkerYSpan;
-		_markerY += (yTarget - _markerY) * (1f - MathF.Exp(-dt * MarkerEaseRate));
+		float confidence = (float)disp.Confidence;
 
 		double hr = _pipeline.LatestSample?.MeanHr ?? 60.0;
 		_breathPhase += dt * (float)(Math.Max(40.0, hr) / 60.0) * MathF.Tau;
 
-		DrawLfHfHalo(draw, centre, halfWidth, latest, confidence);
+		DrawLfHfHalo(draw, centre, halfWidth, disp, confidence);
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
-		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, latest, rr, confidence);
+		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, confidence);
 		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, confidence);
 		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, confidence);
-		DrawMarker(draw, centre, halfWidth, liveLobeHeight, confidence);
+		DrawMarker(draw, centre, halfWidth, liveLobeHeight, disp, confidence);
 		DrawCrossover(draw, centre, confidence);
 		DrawLabelsAndLock(draw, origin, centre, halfWidth, labelClearHeight);
 		DrawReadout(origin, height);
@@ -337,6 +360,14 @@ public sealed class RegulationFieldView : IDisposable
 			+ ((-p0 + (3f * p1) - (3f * p2) + p3) * t3));
 	}
 
+	// Field-wise linear interpolation between two readings.
+	private static RegulationReading LerpReading(RegulationReading a, RegulationReading b, float t) => new(
+		a.Index + ((b.Index - a.Index) * t),
+		a.VariabilityQuality + ((b.VariabilityQuality - a.VariabilityQuality) * t),
+		a.Confidence + ((b.Confidence - a.Confidence) * t),
+		a.LobeRoundness + ((b.LobeRoundness - a.LobeRoundness) * t),
+		a.LfHfBalance + ((b.LfHfBalance - a.LfHfBalance) * t));
+
 	// During an active alert, mark where the arousal marker must fall back below to clear the
 	// Warning condition (the warm-side warning boundary). Recovery also needs the cooldown
 	// timer, so this is the metric target — "which way, and how far", not the whole story.
@@ -367,11 +398,12 @@ public sealed class RegulationFieldView : IDisposable
 
 	// Marker: X = arousal index (eased), Y = vagal tone (eased) — grounded/low when HRV is
 	// healthy, lifted when it collapses. Breathing halo pulses at the current heart rate.
-	private void DrawMarker(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, float confidence)
+	private void DrawMarker(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp, float confidence)
 	{
-		Vector2 p = LemniscateGeometry.MarkerPoint(_markerPos, centre, halfWidth);
+		Vector2 p = LemniscateGeometry.MarkerPoint((float)disp.Index, centre, halfWidth);
 		float clamp = liveLobeHeight * MarkerYSpan;
-		p.Y += Math.Clamp(_markerY, -clamp, clamp);
+		float yOff = ((float)disp.VariabilityQuality - 0.5f) * liveLobeHeight * MarkerYSpan;
+		p.Y += Math.Clamp(yOff, -clamp, clamp);
 
 		Vector4 stateCol = MacchiatoPalette.State(_pipeline.CurrentState);
 		float pulse = 1f + (0.18f * MathF.Sin(_breathPhase));
