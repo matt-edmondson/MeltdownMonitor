@@ -29,7 +29,7 @@ public sealed class Pipeline : IDisposable
 	public BaselineHrvTracker Baseline => _baseline;
 
 	/// <summary>Latest arousal-vs-baseline reading driving the Regulation Field overlay.</summary>
-	public RegulationReading LatestReading { get; private set; } = new(0.0, 1.0, 0.0);
+	public RegulationReading LatestReading { get; private set; } = new(0.0, 1.0, 0.0, 0.5, 0.0);
 
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
