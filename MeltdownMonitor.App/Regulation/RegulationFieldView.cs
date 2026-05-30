@@ -256,7 +256,9 @@ public sealed class RegulationFieldView : IDisposable
 				c = MacchiatoPalette.WithAlpha(c, confidence);
 
 				float thick = baseThick * (warm ? warmSwell : coolSwell);
-				draw.AddLine(prev, cur, Col(c), thick);
+				uint col = Col(c);
+				draw.AddLine(prev, cur, col, thick);
+				draw.AddCircleFilled(cur, thick * 0.5f, col); // round join — fills butt-cap notches at bends
 				prev = cur;
 			}
 		}
