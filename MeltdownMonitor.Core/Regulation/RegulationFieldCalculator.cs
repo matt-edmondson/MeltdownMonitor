@@ -15,9 +15,14 @@ public static class RegulationFieldCalculator
 	private const double RmssdWeight = 0.6;
 	private const double HrWeight = 0.4;
 
-	// A combined deviation equal to 1.0 (both metrics at their Warning thresholds)
-	// maps to this index magnitude, leaving head-room toward the saturating ±1.
-	private const double WarningIndex = 0.6;
+	/// <summary>
+	/// The index magnitude a combined deviation of 1.0 maps to — i.e. both RMSSD-drop and
+	/// HR-rise exactly at their Warning thresholds. This is therefore the boundary the
+	/// marker must fall back below to clear the Warning condition; the Regulation Field uses
+	/// it to draw the recovery target. Constant regardless of the configured thresholds,
+	/// because the index normalises by them. Leaves head-room toward the saturating ±1.
+	/// </summary>
+	public const double WarningBoundaryIndex = 0.6;
 
 	public static RegulationReading Compute(
 		HrvSample sample,
@@ -46,7 +51,7 @@ public static class RegulationFieldCalculator
 		// Positive combined = activation toward the warm lobe; negative = calmer than baseline.
 		double combined = (RmssdWeight * rmssdDrop / warnR)
 						+ (HrWeight * hrRise / warnH);
-		double index = Math.Clamp(combined * WarningIndex, -1.0, 1.0);
+		double index = Math.Clamp(combined * WarningBoundaryIndex, -1.0, 1.0);
 
 		double quality = Math.Clamp(sample.Rmssd / sample.BaselineRmssd, 0.0, 1.0);
 

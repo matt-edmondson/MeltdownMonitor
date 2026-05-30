@@ -102,6 +102,7 @@ public sealed class RegulationFieldView : IDisposable
 		DrawWindowOfTolerance(draw, centre, halfWidth, lobeHeight, confidence);
 		DrawLemniscate(draw, centre, halfWidth, lobeHeight, latest, confidence);
 		DrawTrail(draw, centre, halfWidth, trail, confidence);
+		DrawRecoveryTarget(draw, centre, halfWidth, lobeHeight, confidence);
 		DrawMarker(draw, centre, halfWidth, confidence);
 		DrawCrossover(draw, centre, confidence);
 		DrawLabelsAndLock(draw, origin, centre, halfWidth, lobeHeight);
@@ -174,6 +175,37 @@ public sealed class RegulationFieldView : IDisposable
 		}
 	}
 
+	// During an active alert, mark where the arousal marker must fall back below to clear
+	// the Warning condition (the warm-side warning boundary). A calm green target the marker
+	// should return toward. Recovery also requires the cooldown timer, so this is the metric
+	// target, not the whole story — but it answers "which way, and how far, to get out".
+	private void DrawRecoveryTarget(ImDrawListPtr draw, Vector2 centre, float halfWidth, float lobeHeight, float confidence)
+	{
+		if (_pipeline.CurrentState is not (DetectorState.Warning or DetectorState.Alerting))
+		{
+			return;
+		}
+
+		Vector2 gate = LemniscateGeometry.MarkerPoint((float)RegulationFieldCalculator.WarningBoundaryIndex, centre, halfWidth);
+		uint goal = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Green, confidence));
+		uint goalDim = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Green, 0.45f * confidence));
+
+		// Pulsing target ring on the track at the recovery boundary.
+		float ring = 11f + (2f * MathF.Sin(_animTime * 3f));
+		draw.AddCircle(gate, ring, goal, 24, 2f);
+		draw.AddCircleFilled(gate, 2.5f, goal);
+
+		// Chevron pointing inward (toward the centre / regulated zone) — the way back.
+		float ay = gate.Y - (lobeHeight * 0.5f) - 6f;
+		draw.AddTriangleFilled(
+			new Vector2(gate.X - 11f, ay),
+			new Vector2(gate.X - 3f, ay - 5f),
+			new Vector2(gate.X - 3f, ay + 5f), goal);
+
+		Vector2 lbl = ImGui.CalcTextSize("RECOVER");
+		draw.AddText(new Vector2(gate.X - (lbl.X * 0.5f), ay - ImGui.GetTextLineHeight() - 3f), goalDim, "RECOVER");
+	}
+
 	private void DrawMarker(ImDrawListPtr draw, Vector2 centre, float halfWidth, float confidence)
 	{
 		Vector2 p = LemniscateGeometry.MarkerPoint(_markerPos, centre, halfWidth);
@@ -196,9 +228,20 @@ public sealed class RegulationFieldView : IDisposable
 		uint rest = Col(MacchiatoPalette.Sapphire);
 		uint melt = Col(MacchiatoPalette.Peach);
 		uint dim = Col(MacchiatoPalette.Subtext0);
-		draw.AddText(new Vector2(centre.X - halfWidth - 6f, centre.Y - 6f), rest, "REST");
-		draw.AddText(new Vector2(centre.X + halfWidth - 30f, centre.Y - 6f), melt, "MELTDOWN");
-		draw.AddText(new Vector2(centre.X - 56f, centre.Y - lobeHeight - 20f), dim, "WINDOW OF TOLERANCE");
+
+		// Pole labels sit clear of the lobe tips: REST right-aligned just left of the cool
+		// tip, MELTDOWN just right of the warm tip, both vertically centred on the tip line.
+		// WINDOW OF TOLERANCE is horizontally centred above the lobes.
+		float lineH = ImGui.GetTextLineHeight();
+		float midY = centre.Y - (lineH * 0.5f);
+		const float poleGap = 16f;
+
+		Vector2 restSize = ImGui.CalcTextSize("REST");
+		draw.AddText(new Vector2(centre.X - halfWidth - poleGap - restSize.X, midY), rest, "REST");
+		draw.AddText(new Vector2(centre.X + halfWidth + poleGap, midY), melt, "MELTDOWN");
+
+		Vector2 wotSize = ImGui.CalcTextSize("WINDOW OF TOLERANCE");
+		draw.AddText(new Vector2(centre.X - (wotSize.X * 0.5f), centre.Y - lobeHeight - lineH - 10f), dim, "WINDOW OF TOLERANCE");
 
 		var state = _pipeline.CurrentState;
 		if (state is DetectorState.Warning or DetectorState.Alerting)
@@ -218,7 +261,10 @@ public sealed class RegulationFieldView : IDisposable
 		}
 
 		double drop = s.BaselineRmssd > 0 ? (s.BaselineRmssd - s.Rmssd) / s.BaselineRmssd : 0;
-		ImGui.Text($"HR {s.MeanHr:F0} bpm    RMSSD {s.Rmssd:F0} ms ({drop * 100:+0;-0;0}% vs base)    {_pipeline.CurrentState}");
+		string rel = drop >= 0
+			? $"{drop * 100:F0}% below base"
+			: $"{-drop * 100:F0}% above base";
+		ImGui.Text($"HR {s.MeanHr:F0} bpm    RMSSD {s.Rmssd:F0} ms ({rel})    {_pipeline.CurrentState}");
 	}
 
 	private static void DrawCalibratingOverlay(ImDrawListPtr draw, Vector2 centre, float confidence)
