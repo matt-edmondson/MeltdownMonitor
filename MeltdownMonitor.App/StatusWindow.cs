@@ -677,8 +677,15 @@ public sealed class StatusWindow : IDisposable
 			new("Poincaré (RR[i] vs RR[i+1])", rr, null, IsScatter: true),
 		];
 
+		// Fit as many columns as the preferred width allows, then stretch the cells to fill
+		// the row exactly (no trailing gap); height scales with the cell width.
+		float availX = ImGui.GetContentRegionAvail().X;
+		float gridSpacing = ImGui.GetStyle().ItemSpacing.X;
+		int cols = Math.Max(1, (int)MathF.Floor((availX + gridSpacing) / (OverviewChartWidth + gridSpacing)));
+		float cellW = (availX - (gridSpacing * (cols - 1))) / cols;
+		float cellH = cellW * 0.55f;
 		ImGuiWidgets.RowMajorGrid("overview-charts", charts,
-			_ => new Vector2(OverviewChartWidth, PlotHeight),
+			_ => new Vector2(cellW, cellH),
 			static (chart, cellSize, itemSize) => DrawOverviewChart(chart, itemSize));
 	}
 
@@ -724,16 +731,15 @@ public sealed class StatusWindow : IDisposable
 			rrsD = SnapshotD(_recentRr);
 		}
 
-		PlotPair("Heart rate vs baseline (bpm)", "HR", hr, "Baseline HR", baseHr);
-
-		ImGui.Separator();
 		float[] rrs = new float[rrsD.Length];
 		for (int i = 0; i < rrsD.Length; i++)
 		{
 			rrs[i] = (float)rrsD[i];
 		}
 
-		PlotRow(PlotHeight, ("RR intervals (ms, last received beats)", rrs));
+		float h = FillRowHeight(2);
+		PlotPair(h, "Heart rate vs baseline (bpm)", "HR", hr, "Baseline HR", baseHr);
+		PlotRow(h, ("RR intervals (ms, last received beats)", rrs));
 	}
 
 	private void DrawTimeDomainTab()
@@ -747,8 +753,9 @@ public sealed class StatusWindow : IDisposable
 			sdnn = SnapshotF(_sdnn);
 		}
 
-		PlotPair("RMSSD (ms)", "RMSSD", rmssd, "Baseline", baseRmssd);
-		PlotRow(PlotHeight, ("pNN50 (%)", pnn50), ("SDNN (ms)", sdnn));
+		float h = FillRowHeight(2);
+		PlotPair(h, "RMSSD (ms)", "RMSSD", rmssd, "Baseline", baseRmssd);
+		PlotRow(h, ("pNN50 (%)", pnn50), ("SDNN (ms)", sdnn));
 	}
 
 	private void DrawFrequencyTab()
@@ -762,8 +769,9 @@ public sealed class StatusWindow : IDisposable
 			baseRatio = SnapshotF(_baselineLfHf);
 		}
 
-		PlotPair("LF/HF ratio (sympathovagal balance)", "LF/HF", ratio, "Baseline LF/HF", baseRatio);
-		PlotRow(PlotHeight,
+		float h = FillRowHeight(2, ImGui.GetTextLineHeightWithSpacing());
+		PlotPair(h, "LF/HF ratio (sympathovagal balance)", "LF/HF", ratio, "Baseline LF/HF", baseRatio);
+		PlotRow(h,
 			("LF power (ms², 0.04–0.15 Hz)", lf),
 			("HF power (ms², 0.15–0.40 Hz)", hf));
 
@@ -790,20 +798,21 @@ public sealed class StatusWindow : IDisposable
 			rrs[i] = (float)rrsD[i];
 		}
 
-		DrawPoincareScatter(rrs);
+		float h = FillRowHeight(3);
+		DrawPoincareScatter(rrs, h);
 
-		PlotRow(PlotHeight,
+		PlotRow(h,
 			("SD1 (short-term variability, ms)", sd1),
 			("SD2 (long-term variability, ms)", sd2));
-		PlotRow(PlotHeight, ("SD1/SD2 ratio (parasympathetic index)", ratio));
+		PlotRow(h, ("SD1/SD2 ratio (parasympathetic index)", ratio));
 	}
 
-	private void DrawPoincareScatter(float[] rrs)
+	private static void DrawPoincareScatter(float[] rrs, float maxSide)
 	{
 		// Keep the scatter square and centred — Equal axes plus a wide region would
-		// otherwise spread the cloud thin and unreadable.
+		// otherwise spread the cloud thin and unreadable. Sized to the row height.
 		float avail = ImGui.GetContentRegionAvail().X;
-		float side = MathF.Min(avail, PoincareMaxSide);
+		float side = MathF.Min(avail, maxSide);
 		Indent((avail - side) * 0.5f);
 		DrawScatterPlot("Poincaré (RR[i] vs RR[i+1])", rrs, new Vector2(side, side));
 	}
@@ -1364,9 +1373,9 @@ public sealed class StatusWindow : IDisposable
 
 	// One comparison chart (a series plus its baseline) sharing a single auto-fit
 	// Y axis, capped to MaxPlotAspect and centred in the available width.
-	private void PlotPair(string title, string aLabel, float[] a, string bLabel, float[] b)
+	private void PlotPair(float height, string title, string aLabel, float[] a, string bLabel, float[] b)
 	{
-		(Vector2 size, float indent) = CenteredCell(ImGui.GetContentRegionAvail().X, PlotHeight);
+		(Vector2 size, float indent) = CenteredCell(ImGui.GetContentRegionAvail().X, height);
 		Indent(indent);
 
 		if (ImPlot.BeginPlot(title, size, ImPlotFlags.NoMouseText))
@@ -1412,6 +1421,16 @@ public sealed class StatusWindow : IDisposable
 				ImGui.SameLine();
 			}
 		}
+	}
+
+	// Height for each of `rows` stacked chart rows so they fill the remaining tab height
+	// (small safety margin so a fractional pixel never spawns a scrollbar).
+	private static float FillRowHeight(int rows, float reservePx = 0f)
+	{
+		float avail = ImGui.GetContentRegionAvail().Y;
+		float sp = ImGui.GetStyle().ItemSpacing.Y;
+		float h = (avail - (sp * (rows - 1)) - reservePx - 4f) / rows;
+		return MathF.Max(80f, h);
 	}
 
 	// Width capped to MaxPlotAspect, plus the horizontal slack to centre it.
