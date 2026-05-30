@@ -9,7 +9,7 @@ namespace MeltdownMonitor.App;
 /// <summary>
 /// Themes the status window with Catppuccin Macchiato (via ktsu.ThemeProvider) and re-tints
 /// the interactive accent colours to reflect the current <see cref="DetectorState"/>: a neutral
-/// grey when idle, green while watching, peach on warning, red on alert, blue during cooldown.
+/// grey when idle, green while watching, peach on warning, red on alert, sapphire during cooldown.
 /// The Macchiato surface/background/text palette stays constant across states so only the
 /// "mood" of the controls shifts — the window never stops looking like Macchiato.
 /// </summary>
@@ -20,7 +20,7 @@ internal sealed class StatusTheme
 	private static readonly Vector4 Green = FromHex(0xA6, 0xDA, 0x95);    // watching
 	private static readonly Vector4 Peach = FromHex(0xF5, 0xA9, 0x7F);    // warning
 	private static readonly Vector4 Red = FromHex(0xED, 0x87, 0x96);      // alerting
-	private static readonly Vector4 Blue = FromHex(0x8A, 0xAD, 0xF4);     // cooldown
+	private static readonly Vector4 Sapphire = FromHex(0x7D, 0xC4, 0xE4); // cooldown
 
 	// The full Macchiato → ImGui colour mapping, computed once. Re-applied wholesale on every
 	// state change so a new tint cleanly replaces the previous one rather than layering on it.
@@ -60,7 +60,7 @@ internal sealed class StatusTheme
 		DetectorState.Watching => Green,
 		DetectorState.Warning => Peach,
 		DetectorState.Alerting => Red,
-		DetectorState.Cooldown => Blue,
+		DetectorState.Cooldown => Sapphire,
 		_ => Overlay0,
 	};
 
