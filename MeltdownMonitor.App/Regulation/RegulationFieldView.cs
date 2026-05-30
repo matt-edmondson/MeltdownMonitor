@@ -23,8 +23,8 @@ public sealed class RegulationFieldView : IDisposable
 	private const int LobeSegments = 96;
 	private const float MarkerEaseRate = 6f;     // exponential-smoothing rate for the marker glide
 	private const float LobeSwellFactor = 1.4f;  // how much a lobe thickens at full index
-	private const float MaxJitterPx = 6f;        // peak trace deflection from the real RR signal
-	private const float RrDevScaleMs = 50f;      // beat-to-beat difference that maps to full deflection
+	private const float MaxJitterPx = 18f;       // peak trace deflection from the real RR signal
+	private const float RrDevScaleMs = 30f;      // beat-to-beat difference that maps to full deflection
 	private const float LobeHeightMin = 0.7f;    // live lobe height factor at lowest Poincaré roundness
 	private const float LobeHeightMax = 1.18f;   // ...and at highest
 	private const float MarkerYSpan = 0.8f;      // vagal-tone vertical travel, as a fraction of lobe height
