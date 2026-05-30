@@ -1,4 +1,5 @@
 using System.Linq;
+using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 
@@ -62,11 +63,27 @@ public class BaselineHrvTracker
 		}
 	}
 
-	public void Update(HrvSample sample)
+	/// <param name="sample">The latest HRV sample.</param>
+	/// <param name="contact">
+	/// The sensor's skin / electrode contact state. When <see cref="SensorContactStatus.NotDetected"/>
+	/// the update is skipped: RR data from an off-body sensor is unreliable and would otherwise drag
+	/// the baseline toward garbage. The default (<see cref="SensorContactStatus.NotSupported"/>) and
+	/// <see cref="SensorContactStatus.Detected"/> both proceed — sensors that don't report contact
+	/// are never gated.
+	/// </param>
+	public void Update(HrvSample sample, SensorContactStatus contact = SensorContactStatus.NotSupported)
 	{
 		// Do not update during dysregulated states — prevents baseline from
 		// chasing a sustained episode and blinding the detector.
 		if (sample.State is DetectorState.Warning or DetectorState.Alerting)
+		{
+			return;
+		}
+
+		// Do not update while the sensor is off-body — the same reasoning the
+		// detector uses (RR data is untrustworthy), applied to the baseline so a
+		// dropout can't quietly re-normalise it.
+		if (contact == SensorContactStatus.NotDetected)
 		{
 			return;
 		}
