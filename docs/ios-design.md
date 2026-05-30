@@ -631,20 +631,28 @@ Done:
   fatness), fading comet trail, the state-coloured marker, REST / MELTDOWN /
   WINDOW OF TOLERANCE labels, and a "Calibrating baseline… N%" dimming overlay
   while the baseline is cold. It uses the Catppuccin Macchiato palette to match
-  the desktop renderer. There is no per-frame animation loop on mobile (the
-  control re-renders on each new reading), so the desktop's breathing/jitter
-  flourishes are intentionally deferred.
+  the desktop renderer.
+- While attached to the visual tree the control runs a ~30 fps render-tick timer
+  (`DispatcherTimer`, stopped on detach so it costs nothing when the Now tab is
+  torn down) that drives the desktop's breathing/jitter flourishes through a
+  pure `RegulationFieldAnimator`: the marker eases between the multi-second
+  samples, its halo breathes at the current HR cadence (`HeartRate` bound from
+  `NowViewModel`, floored at 40 bpm), and the trace carries variability jitter
+  scaling with quality and lobe depth. The easing/cadence maths live in the
+  animator (not the control) so they unit-test without a render surface.
 - `NowViewModel` consumes `ReadingUpdated`, keeps a bounded comet trail, and
   exposes `Reading` / `RegulationTrail` / `RegulationStateColor`. `NowView.axaml`
   promotes the field to the hero of the Now card with the RMSSD sparkline
   retained beneath it as a secondary strip.
-- Tests (`NowViewModelTests`): reading set + trail append, trail bounded to 48
-  keeping the newest, a fresh trail instance published per update (so the
-  control's `AffectsRender` binding fires), and `RegulationStateColor` tracking
-  state + pause.
+- Tests: `NowViewModelTests` (reading set + trail append, trail bounded to 48
+  keeping the newest, a fresh trail instance published per update so the
+  control's `AffectsRender` binding fires, `RegulationStateColor` tracking
+  state + pause) and `RegulationFieldAnimatorTests` (marker easing/convergence,
+  long-gap clamp, non-finite guards, HR-paced breath wrap + halo band, and
+  jitter scaling with quality/depth).
 
-Deferred (fast-follow): on-device breathing/jitter animation (needs a render
-tick), and annotation dots on the trail (the desktop plan flagged the same gap).
+Deferred (fast-follow): annotation dots on the trail (the desktop plan flagged
+the same gap).
 
 ### Out of scope for v1 (logged for v1.1+)
 
