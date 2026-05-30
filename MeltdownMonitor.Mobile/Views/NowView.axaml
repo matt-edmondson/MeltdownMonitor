@@ -62,6 +62,12 @@
                            Foreground="#8A8F98"
                            FontSize="12"
                            HorizontalAlignment="Center" />
+                <TextBlock Text="Sensor contact lost — readings paused"
+                           IsVisible="{Binding IsContactLost}"
+                           Foreground="#E5C07B"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           HorizontalAlignment="Center" />
                 <TextBlock Text="{Binding TimeSinceStateChange}"
                            Foreground="#8A8F98"
                            FontSize="12"

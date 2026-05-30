@@ -146,6 +146,27 @@ public class NowViewModelTests
 	}
 
 	[TestMethod]
+	public void Contact_DefaultsToNotSupportedAndNotLost()
+	{
+		var vm = new NowViewModel();
+
+		Assert.AreEqual(SensorContactStatus.NotSupported, vm.Contact);
+		Assert.IsFalse(vm.IsContactLost);
+	}
+
+	[TestMethod]
+	public void OnContactChanged_LostThenRegained_TogglesWarning()
+	{
+		var vm = new NowViewModel();
+
+		vm.OnContactChanged(SensorContactStatus.NotDetected);
+		Assert.IsTrue(vm.IsContactLost, "A supported-but-absent contact should raise the warning.");
+
+		vm.OnContactChanged(SensorContactStatus.Detected);
+		Assert.IsFalse(vm.IsContactLost, "Regaining contact clears the warning.");
+	}
+
+	[TestMethod]
 	public void OnReadingUpdated_SetsReadingAndAppendsToTrail()
 	{
 		var vm = new NowViewModel();

@@ -12,7 +12,7 @@ namespace MeltdownMonitor.Ble.Windows;
 /// set <see cref="PolarDeviceType.Auto"/> to connect to whichever is found first.
 /// Reconnects automatically with exponential backoff on disconnect.
 /// </summary>
-public sealed class PolarHrSource : IBeatSource, IBatterySource, IDisposable
+public sealed class PolarHrSource : IBeatSource, IBatterySource, IContactSource, IDisposable
 {
 	private static readonly Guid HeartRateServiceUuid = new("0000180d-0000-1000-8000-00805f9b34fb");
 	private static readonly Guid HrMeasurementCharUuid = new("00002a37-0000-1000-8000-00805f9b34fb");
@@ -23,6 +23,9 @@ public sealed class PolarHrSource : IBeatSource, IBatterySource, IDisposable
 
 	/// <inheritdoc />
 	public event Action<BatteryReading>? BatteryLevelChanged;
+
+	/// <inheritdoc />
+	public event Action<SensorContactStatus>? SensorContactChanged;
 
 	/// <summary>
 	/// BLE advertisement name prefixes for each known device type.
@@ -160,6 +163,10 @@ public sealed class PolarHrSource : IBeatSource, IBatterySource, IDisposable
 
 			var measurement = HrMeasurementParser.Parse(bytes);
 			var now = DateTimeOffset.UtcNow;
+
+			// Surface contact on every notification — it's the only signal that
+			// survives contact loss, when RR intervals (and beats) dry up.
+			SensorContactChanged?.Invoke(measurement.SensorContact);
 
 			foreach (double rrMs in measurement.RrIntervals)
 			{
