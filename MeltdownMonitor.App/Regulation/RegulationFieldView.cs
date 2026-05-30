@@ -231,21 +231,34 @@ public sealed class RegulationFieldView : IDisposable
 			pts[i] = v + (normal * jitter);
 		}
 
+		// Draw a closed Catmull-Rom spline through the jittered vertices: smooth flowing
+		// undulations rather than faceted spikes. The continuous chain leaves no segment
+		// gaps. Colour/thickness come from each sub-point's side of the crossover.
+		const int sub = 4;
 		for (int i = 0; i < n; i++)
 		{
-			// Colour and thickness from the base curve (stable), geometry from the jittered points.
-			float midX = (live[i].X + live[(i + 1) % n].X) * 0.5f;
-			bool warm = midX >= centre.X;
-			float depth = MathF.Min(1f, MathF.Abs(midX - centre.X) / halfWidth);
+			Vector2 p0 = pts[(i - 1 + n) % n];
+			Vector2 p1 = pts[i];
+			Vector2 p2 = pts[(i + 1) % n];
+			Vector2 p3 = pts[(i + 2) % n];
 
-			Vector4 c = warm
-				? MacchiatoPalette.Lerp(MacchiatoPalette.Peach, MacchiatoPalette.Maroon, depth)
-				: MacchiatoPalette.Lerp(MacchiatoPalette.Sky, MacchiatoPalette.Sapphire, depth);
-			c = MacchiatoPalette.WithAlpha(c, confidence);
+			Vector2 prev = p1;
+			for (int s = 1; s <= sub; s++)
+			{
+				Vector2 cur = CatmullRom(p0, p1, p2, p3, s / (float)sub);
+				float midX = (prev.X + cur.X) * 0.5f;
+				bool warm = midX >= centre.X;
+				float depth = MathF.Min(1f, MathF.Abs(midX - centre.X) / halfWidth);
 
-			float thick = baseThick * (warm ? warmSwell : coolSwell);
-			draw.AddLine(pts[i], pts[(i + 1) % n], Col(c), thick);
-			draw.AddCircleFilled(pts[i], thick * 0.5f, Col(c)); // round join — fills the gap at the vertex
+				Vector4 c = warm
+					? MacchiatoPalette.Lerp(MacchiatoPalette.Peach, MacchiatoPalette.Maroon, depth)
+					: MacchiatoPalette.Lerp(MacchiatoPalette.Sky, MacchiatoPalette.Sapphire, depth);
+				c = MacchiatoPalette.WithAlpha(c, confidence);
+
+				float thick = baseThick * (warm ? warmSwell : coolSwell);
+				draw.AddLine(prev, cur, Col(c), thick);
+				prev = cur;
+			}
 		}
 	}
 
