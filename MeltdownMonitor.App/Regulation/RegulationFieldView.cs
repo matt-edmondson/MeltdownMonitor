@@ -50,8 +50,9 @@ public sealed class RegulationFieldView : IDisposable
 	// Animation state (UI thread only).
 	private float _breathPhase;
 	private float _animTime;
-	private float _hrDisplay = 60f;   // eased HR for a smooth breathing cadence
-	private float _scroll;            // continuous RR-texture scroll position (advances with HR)
+	private float _hrDisplay = 60f;          // eased HR for a smooth breathing cadence
+	private DateTimeOffset _lastBeatTime;    // arrival time of the most recent beat
+	private double _lastRrMs = 1000.0;       // most recent RR interval (expected beat period)
 
 	private readonly record struct TrailPoint(DateTimeOffset Time, RegulationReading Reading);
 
@@ -123,9 +124,10 @@ public sealed class RegulationFieldView : IDisposable
 				_rr[^1] = beat.RrMs;
 			}
 
-			// A new sample arrived: consume one unit of scroll so the texture's continuous
-			// time-advance stays aligned to the data (net forward flow, no runaway/cycling).
-			_scroll = MathF.Max(0f, _scroll - 1f);
+			// Record beat timing so the texture advances a smooth fractional phase between beats;
+			// the phase resets to 0 here exactly as the data shifts forward by one — continuous.
+			_lastBeatTime = DateTimeOffset.UtcNow;
+			_lastRrMs = beat.RrMs;
 		}
 	}
 
@@ -188,14 +190,20 @@ public sealed class RegulationFieldView : IDisposable
 		_hrDisplay += (hrTarget - _hrDisplay) * (1f - MathF.Exp(-dt * 1.5f));
 		_breathPhase += dt * (MathF.Max(40f, _hrDisplay) / 60f) * MathF.Tau;
 
-		// Advance the RR-texture scroll with time (consumed one-per-beat in OnBeatReceived),
-		// so the trace flows continuously and stays aligned to the incoming samples.
-		float scroll;
+		// RR-texture phase: smooth fractional progress (0→1) through the current beat, tied to
+		// the real last RR interval. It resets to 0 on each beat exactly as the buffer shifts
+		// forward by one, so the two cancel and the texture flows continuously without stutter.
+		DateTimeOffset lastBeat;
+		double lastRr;
 		lock (_lock)
 		{
-			_scroll = MathF.Min(2f, _scroll + (dt * (MathF.Max(40f, _hrDisplay) / 60f)));
-			scroll = _scroll;
+			lastBeat = _lastBeatTime;
+			lastRr = _lastRrMs;
 		}
+		float beatSec = (float)Math.Max(0.3, lastRr / 1000.0);
+		float scroll = lastBeat == default
+			? 0f
+			: Math.Clamp((float)(DateTimeOffset.UtcNow - lastBeat).TotalSeconds / beatSec, 0f, 1f);
 
 		DrawLfHfHalo(draw, centre, halfWidth, disp, confidence);
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
