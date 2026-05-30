@@ -58,6 +58,10 @@ public sealed class StatusWindow : IDisposable
 	private readonly RingBuffer<float> _sd1Sd2 = new(InitialSparklineCapacity);
 	private readonly RingBuffer<double> _recentRr = new(InitialSparklineCapacity);
 
+	// Battery is updated on its own slow cadence (a read on connect plus occasional
+	// notifications), so it lives outside AllSparklines and isn't resampled with them.
+	private readonly RingBuffer<float> _battery = new(InitialSparklineCapacity);
+
 	private RingBuffer<float>[] AllSparklines => [
 		_rmssd, _baselineRmssd, _pnn50, _sdnn,
 		_meanHr, _baselineHr,
@@ -73,6 +77,7 @@ public sealed class StatusWindow : IDisposable
 
 		_pipeline.SampleUpdated += OnSampleUpdated;
 		_pipeline.BeatReceived += OnBeatReceived;
+		_pipeline.BatteryUpdated += OnBatteryUpdated;
 
 		_regulationField = new Regulation.RegulationFieldView(_pipeline);
 
@@ -255,6 +260,14 @@ public sealed class StatusWindow : IDisposable
 		}
 	}
 
+	private void OnBatteryUpdated(BatteryReading reading)
+	{
+		lock (_historyLock)
+		{
+			_battery.PushBack(reading.Percent);
+		}
+	}
+
 	private void BackfillFromRepository()
 	{
 		var to = DateTimeOffset.UtcNow;
@@ -268,6 +281,16 @@ public sealed class StatusWindow : IDisposable
 		catch
 		{
 			return;
+		}
+
+		IReadOnlyList<BatteryReading> batteries;
+		try
+		{
+			batteries = MeltdownRepository.ReadBatteryHistory(_settings.DatabasePath, from, to);
+		}
+		catch
+		{
+			batteries = [];
 		}
 
 		lock (_historyLock)
@@ -298,6 +321,12 @@ public sealed class StatusWindow : IDisposable
 					_sd2.PushBack((float)ext.SD2);
 					_sd1Sd2.PushBack((float)ext.SD1SD2Ratio);
 				}
+			}
+
+			_battery.Resize(desired);
+			foreach (var b in batteries.TakeLast(desired))
+			{
+				_battery.PushBack(b.Percent);
 			}
 		}
 	}
@@ -456,7 +485,8 @@ public sealed class StatusWindow : IDisposable
 			_pipeline.CurrentState,
 			_pipeline.LatestSample,
 			_pipeline.Baseline.WarmUpProgress,
-			_pipeline.LatestReading);
+			_pipeline.LatestReading,
+			_pipeline.LatestBatteryPercent);
 
 		if (ov.Metrics.Count == 0)
 		{
@@ -557,6 +587,12 @@ public sealed class StatusWindow : IDisposable
 				ImGui.Text($"   LF/HF {ext.LfHfRatio:F2}");
 			}
 		}
+
+		if (_pipeline.LatestBatteryPercent is { } battery)
+		{
+			ImGui.SameLine();
+			ImGui.TextDisabled($"   Battery {battery}%");
+		}
 	}
 
 	private void DrawOverviewTab()
@@ -586,7 +622,7 @@ public sealed class StatusWindow : IDisposable
 
 		ImGui.Separator();
 
-		float[] rmssd, baseRmssd, pnn50, sdnn, hr, baseHr, lf, hf, lfhf, baseLfhf, sd1, sd2, sd1sd2;
+		float[] rmssd, baseRmssd, pnn50, sdnn, hr, baseHr, lf, hf, lfhf, baseLfhf, sd1, sd2, sd1sd2, battery;
 		double[] rrsD;
 		lock (_historyLock)
 		{
@@ -603,6 +639,7 @@ public sealed class StatusWindow : IDisposable
 			sd1 = SnapshotF(_sd1);
 			sd2 = SnapshotF(_sd2);
 			sd1sd2 = SnapshotF(_sd1Sd2);
+			battery = SnapshotF(_battery);
 			rrsD = SnapshotD(_recentRr);
 		}
 
@@ -628,6 +665,7 @@ public sealed class StatusWindow : IDisposable
 			new("SD2 (ms)", sd2, null),
 			new("SD1/SD2 ratio (parasympathetic index)", sd1sd2, null),
 			new("RR intervals (ms)", rr, null),
+			new("Battery (%)", battery, null),
 			new("Poincaré (RR[i] vs RR[i+1])", rr, null, IsScatter: true),
 		];
 
@@ -1397,6 +1435,7 @@ public sealed class StatusWindow : IDisposable
 
 		_pipeline.SampleUpdated -= OnSampleUpdated;
 		_pipeline.BeatReceived -= OnBeatReceived;
+		_pipeline.BatteryUpdated -= OnBatteryUpdated;
 		_historyRefreshAction.Stop();
 	}
 

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
+using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 using MeltdownMonitor.Core.Persistence;
@@ -34,6 +35,7 @@ public sealed class NowViewModel : ViewModelBase
 	private double _heartRate;
 	private double _rmssd;
 	private double _baselineRmssd;
+	private int? _batteryPercent;
 	private DateTimeOffset _stateChangedAt = DateTimeOffset.UtcNow;
 	private ConnectionState _connection = ConnectionState.Disconnected;
 	private RegulationReading _reading = new(0.0, 1.0, 0.0);
@@ -154,6 +156,21 @@ public sealed class NowViewModel : ViewModelBase
 	public string BaselineText =>
 		_baselineRmssd > 0 ? $"Baseline {_baselineRmssd:F1} ms" : "Baseline warming up…";
 
+	public int? BatteryPercent
+	{
+		get => _batteryPercent;
+		private set
+		{
+			if (SetField(ref _batteryPercent, value))
+			{
+				Raise(nameof(BatteryText));
+			}
+		}
+	}
+
+	public string BatteryText =>
+		_batteryPercent is { } percent ? $"Battery {percent}%" : "Battery —";
+
 	public string TimeSinceStateChange
 	{
 		get
@@ -249,7 +266,14 @@ public sealed class NowViewModel : ViewModelBase
 		pipeline.SampleUpdated += OnSampleUpdated;
 		pipeline.StateChanged += OnStateChanged;
 		pipeline.ReadingUpdated += OnReadingUpdated;
+		pipeline.BatteryUpdated += OnBatteryUpdated;
 		OnStateChanged(pipeline.CurrentState);
+
+		// Reflect a battery level the source may have already reported before we subscribed.
+		if (pipeline.LatestBatteryPercent is { } percent)
+		{
+			OnBatteryUpdated(new BatteryReading(DateTimeOffset.UtcNow, percent));
+		}
 	}
 
 	/// <summary>
@@ -281,6 +305,13 @@ public sealed class NowViewModel : ViewModelBase
 	/// independently of <see cref="OnSampleUpdated"/>.
 	/// </summary>
 	public void OnStateChanged(DetectorState state) => RunOnUi(() => State = state);
+
+	/// <summary>
+	/// Push a fresh sensor battery level into the VM. Wired to
+	/// <see cref="Pipeline.BatteryUpdated"/> and marshalled to the UI thread like
+	/// the other handlers. Public so tests can drive it without a live pipeline.
+	/// </summary>
+	public void OnBatteryUpdated(BatteryReading reading) => RunOnUi(() => BatteryPercent = reading.Percent);
 
 	/// <summary>
 	/// Push a fresh Regulation Field reading into the VM, appending it to the

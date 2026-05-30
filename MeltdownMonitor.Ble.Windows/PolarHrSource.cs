@@ -12,10 +12,17 @@ namespace MeltdownMonitor.Ble.Windows;
 /// set <see cref="PolarDeviceType.Auto"/> to connect to whichever is found first.
 /// Reconnects automatically with exponential backoff on disconnect.
 /// </summary>
-public sealed class PolarHrSource : IBeatSource, IDisposable
+public sealed class PolarHrSource : IBeatSource, IBatterySource, IDisposable
 {
 	private static readonly Guid HeartRateServiceUuid = new("0000180d-0000-1000-8000-00805f9b34fb");
 	private static readonly Guid HrMeasurementCharUuid = new("00002a37-0000-1000-8000-00805f9b34fb");
+
+	// Standard GATT Battery Service / Battery Level characteristic.
+	private static readonly Guid BatteryServiceUuid = new("0000180f-0000-1000-8000-00805f9b34fb");
+	private static readonly Guid BatteryLevelCharUuid = new("00002a19-0000-1000-8000-00805f9b34fb");
+
+	/// <inheritdoc />
+	public event Action<BatteryReading>? BatteryLevelChanged;
 
 	/// <summary>
 	/// BLE advertisement name prefixes for each known device type.
@@ -180,6 +187,9 @@ public sealed class PolarHrSource : IBeatSource, IDisposable
 			}
 		};
 
+		// Best-effort: surface the battery level without ever blocking the beat stream.
+		await TrySubscribeBatteryAsync(_device).ConfigureAwait(false);
+
 		try
 		{
 			await foreach (var beat in channel.Reader.ReadAllAsync(cancellationToken))
@@ -193,6 +203,63 @@ public sealed class PolarHrSource : IBeatSource, IDisposable
 			await characteristic.WriteClientCharacteristicConfigurationDescriptorAsync(
 				GattClientCharacteristicConfigurationDescriptorValue.None);
 		}
+	}
+
+	// Reads the Battery Level characteristic once and, if the device supports it,
+	// subscribes to change notifications. Entirely best-effort: a device without a
+	// Battery Service (or a transient GATT error) just means no battery readings.
+	private async Task TrySubscribeBatteryAsync(BluetoothLEDevice device)
+	{
+		try
+		{
+			var serviceResult = await device.GetGattServicesForUuidAsync(BatteryServiceUuid);
+			if (serviceResult.Status != GattCommunicationStatus.Success || serviceResult.Services.Count == 0)
+			{
+				return;
+			}
+
+			var service = serviceResult.Services[0];
+			var charResult = await service.GetCharacteristicsForUuidAsync(BatteryLevelCharUuid);
+			if (charResult.Status != GattCommunicationStatus.Success || charResult.Characteristics.Count == 0)
+			{
+				return;
+			}
+
+			var characteristic = charResult.Characteristics[0];
+
+			var read = await characteristic.ReadValueAsync();
+			if (read.Status == GattCommunicationStatus.Success)
+			{
+				EmitBattery(read.Value);
+			}
+
+			if (characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Notify))
+			{
+				characteristic.ValueChanged += (_, args) => EmitBattery(args.CharacteristicValue);
+				await characteristic.WriteClientCharacteristicConfigurationDescriptorAsync(
+					GattClientCharacteristicConfigurationDescriptorValue.Notify);
+			}
+		}
+		catch
+		{
+			// Battery monitoring must never interrupt the beat stream.
+		}
+	}
+
+	private void EmitBattery(global::Windows.Storage.Streams.IBuffer buffer)
+	{
+		if (buffer.Length == 0)
+		{
+			return;
+		}
+
+		var reader = global::Windows.Storage.Streams.DataReader.FromBuffer(buffer);
+		var bytes = new byte[buffer.Length];
+		reader.ReadBytes(bytes);
+
+		// Battery Level is a single uint8 percentage (0–100).
+		int percent = Math.Clamp(bytes[0], (byte)0, (byte)100);
+		BatteryLevelChanged?.Invoke(new BatteryReading(DateTimeOffset.UtcNow, percent));
 	}
 
 	public void Dispose()

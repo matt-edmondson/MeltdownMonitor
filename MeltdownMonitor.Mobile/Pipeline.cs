@@ -29,6 +29,9 @@ public sealed class Pipeline : IDisposable
 	public DetectorState CurrentState => _detector.State;
 	public HrvSample? LatestSample { get; private set; }
 
+	/// <summary>Latest sensor battery level (0–100), or null until the source reports one.</summary>
+	public int? LatestBatteryPercent { get; private set; }
+
 	/// <summary>The thresholds the detector is currently using — the same value
 	/// the Regulation Field needs to scale arousal-vs-baseline. Mirrors the
 	/// desktop pipeline's accessor.</summary>
@@ -41,6 +44,11 @@ public sealed class Pipeline : IDisposable
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<DetectorState>? StateChanged;
+
+	/// <summary>Fires when the sensor reports a fresh battery level (design: BLE
+	/// Battery Service 0x180F). Only ever raised when the injected source
+	/// implements <see cref="IBatterySource"/>.</summary>
+	public event Action<BatteryReading>? BatteryUpdated;
 
 	/// <summary>Fires after <see cref="SampleUpdated"/> with the Regulation Field
 	/// reading derived from the same sample, so the Now screen can drive the
@@ -55,6 +63,21 @@ public sealed class Pipeline : IDisposable
 		_detector = new DysregulationDetector(settings.Thresholds);
 		_detector.AlertFired += OnAlertFired;
 		_detector.StateChanged += OnStateChanged;
+
+		// Battery is an optional source capability — wire it only when supported.
+		if (source is IBatterySource batterySource)
+		{
+			batterySource.BatteryLevelChanged += OnBatteryLevelChanged;
+		}
+	}
+
+	// Battery notifications arrive on a background BLE thread; the repository
+	// serialises the write internally, so we just persist and fan out.
+	private void OnBatteryLevelChanged(BatteryReading reading)
+	{
+		LatestBatteryPercent = reading.Percent;
+		_repository.InsertBattery(reading);
+		BatteryUpdated?.Invoke(reading);
 	}
 
 	public void Start()
