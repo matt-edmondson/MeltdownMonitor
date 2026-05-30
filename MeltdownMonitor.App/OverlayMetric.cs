@@ -22,6 +22,7 @@ public enum OverlayMetric
 	Sd2,
 	Sd1Sd2Ratio,
 	BaselineWarmUp,
+	Battery,
 }
 
 /// <summary>Immutable snapshot of the pipeline state the overlay reads each frame.</summary>
@@ -29,7 +30,8 @@ public readonly record struct OverlaySample(
 	DetectorState State,
 	HrvSample? Latest,
 	double WarmUpProgress,
-	RegulationReading Reading);
+	RegulationReading Reading,
+	int? BatteryPercent = null);
 
 /// <summary>
 /// Labels and value formatting for each <see cref="OverlayMetric"/>. Pure (no ImGui or
@@ -61,6 +63,7 @@ public static class OverlayMetrics
 		OverlayMetric.Sd2             => "SD2",
 		OverlayMetric.Sd1Sd2Ratio     => "SD1/SD2",
 		OverlayMetric.BaselineWarmUp  => "Warm-up",
+		OverlayMetric.Battery         => "Battery",
 		_                             => metric.ToString(),
 	};
 
@@ -76,6 +79,8 @@ public static class OverlayMetrics
 				return $"{sample.Reading.Index:+0.00;-0.00;0.00}";
 			case OverlayMetric.BaselineWarmUp:
 				return $"{sample.WarmUpProgress * 100:F0}%";
+			case OverlayMetric.Battery:
+				return sample.BatteryPercent is { } pct ? $"{pct}%" : Unavailable;
 		}
 
 		if (sample.Latest is not { } latest)

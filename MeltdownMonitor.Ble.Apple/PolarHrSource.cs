@@ -19,12 +19,19 @@ namespace MeltdownMonitor.Ble.Apple;
 /// <see cref="WillRestoreState"/> rehydrates the connected peripheral after
 /// iOS relaunches the app.
 /// </summary>
-public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource
+public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource
 {
 	public const string DefaultRestoreIdentifier = "com.thethreethousands.meltdownmonitor.central";
 
 	private static readonly CBUUID HeartRateServiceUuid = CBUUID.FromString("180D");
 	private static readonly CBUUID HrMeasurementCharUuid = CBUUID.FromString("2A37");
+
+	// Standard GATT Battery Service / Battery Level characteristic.
+	private static readonly CBUUID BatteryServiceUuid = CBUUID.FromString("180F");
+	private static readonly CBUUID BatteryLevelCharUuid = CBUUID.FromString("2A19");
+
+	/// <inheritdoc />
+	public event Action<BatteryReading>? BatteryLevelChanged;
 
 	/// <summary>
 	/// BLE advertisement name prefixes for each known device type.
@@ -65,6 +72,8 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource
 
 	internal CBUUID ServiceUuid => HeartRateServiceUuid;
 	internal CBUUID CharacteristicUuid => HrMeasurementCharUuid;
+	internal CBUUID BatteryService => BatteryServiceUuid;
+	internal CBUUID BatteryCharacteristic => BatteryLevelCharUuid;
 
 	public async IAsyncEnumerable<Beat> GetBeatsAsync(
 		[EnumeratorCancellation] CancellationToken cancellationToken)
@@ -130,7 +139,7 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource
 		}
 
 		_artifactFilter.Reset();
-		peripheral.DiscoverServices(new[] { HeartRateServiceUuid });
+		peripheral.DiscoverServices(new[] { HeartRateServiceUuid, BatteryServiceUuid });
 	}
 
 	public override void DisconnectedPeripheral(
@@ -169,7 +178,7 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource
 
 		if (peripheral.State == CBPeripheralState.Connected)
 		{
-			peripheral.DiscoverServices(new[] { HeartRateServiceUuid });
+			peripheral.DiscoverServices(new[] { HeartRateServiceUuid, BatteryServiceUuid });
 		}
 		else
 		{
@@ -198,6 +207,10 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource
 		}
 	}
 
+	// Battery Level is a single uint8 percentage (0–100).
+	internal void OnBatteryByte(byte percent)
+		=> BatteryLevelChanged?.Invoke(new BatteryReading(DateTimeOffset.UtcNow, Math.Clamp((int)percent, 0, 100)));
+
 	private sealed class PeripheralObserver : CBPeripheralDelegate
 	{
 		private PolarHrSource? _owner;
@@ -219,6 +232,10 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource
 				{
 					peripheral.DiscoverCharacteristics(new[] { _owner.CharacteristicUuid }, service);
 				}
+				else if (service.UUID.Equals(_owner.BatteryService))
+				{
+					peripheral.DiscoverCharacteristics(new[] { _owner.BatteryCharacteristic }, service);
+				}
 			}
 		}
 
@@ -235,6 +252,12 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource
 				{
 					peripheral.SetNotifyValue(true, characteristic);
 				}
+				else if (characteristic.UUID.Equals(_owner.BatteryCharacteristic))
+				{
+					// One immediate read, plus notifications for later changes.
+					peripheral.ReadValue(characteristic);
+					peripheral.SetNotifyValue(true, characteristic);
+				}
 			}
 		}
 
@@ -248,7 +271,9 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource
 				return;
 			}
 
-			if (!characteristic.UUID.Equals(_owner.CharacteristicUuid))
+			bool isHr = characteristic.UUID.Equals(_owner.CharacteristicUuid);
+			bool isBattery = characteristic.UUID.Equals(_owner.BatteryCharacteristic);
+			if (!isHr && !isBattery)
 			{
 				return;
 			}
@@ -261,7 +286,15 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource
 
 			byte[] bytes = new byte[value.Length];
 			System.Runtime.InteropServices.Marshal.Copy(value.Bytes, bytes, 0, bytes.Length);
-			_owner.OnMeasurementBytes(bytes);
+
+			if (isHr)
+			{
+				_owner.OnMeasurementBytes(bytes);
+			}
+			else
+			{
+				_owner.OnBatteryByte(bytes[0]);
+			}
 		}
 	}
 }
