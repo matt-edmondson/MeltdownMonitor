@@ -628,6 +628,17 @@ public sealed class StatusWindow : IDisposable
 		}
 		ImGui.EndGroup();
 
+		if (_pipeline.LatestDeviceInfo is { } device)
+		{
+			ImGui.Spacing();
+			ImGui.TextDisabled($"Device: {device.Summary}");
+			if (!string.IsNullOrWhiteSpace(device.SerialNumber))
+			{
+				ImGui.SameLine();
+				ImGui.TextDisabled($"· SN {device.SerialNumber}");
+			}
+		}
+
 		ImGui.Separator();
 
 		float[] rmssd, baseRmssd, pnn50, sdnn, hr, baseHr, lf, hf, lfhf, baseLfhf, sd1, sd2, sd1sd2, battery;

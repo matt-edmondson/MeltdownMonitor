@@ -12,7 +12,7 @@ namespace MeltdownMonitor.Ble.Windows;
 /// set <see cref="PolarDeviceType.Auto"/> to connect to whichever is found first.
 /// Reconnects automatically with exponential backoff on disconnect.
 /// </summary>
-public sealed class PolarHrSource : IBeatSource, IBatterySource, IContactSource, IDisposable
+public sealed class PolarHrSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IDisposable
 {
 	private static readonly Guid HeartRateServiceUuid = new("0000180d-0000-1000-8000-00805f9b34fb");
 	private static readonly Guid HrMeasurementCharUuid = new("00002a37-0000-1000-8000-00805f9b34fb");
@@ -21,11 +21,23 @@ public sealed class PolarHrSource : IBeatSource, IBatterySource, IContactSource,
 	private static readonly Guid BatteryServiceUuid = new("0000180f-0000-1000-8000-00805f9b34fb");
 	private static readonly Guid BatteryLevelCharUuid = new("00002a19-0000-1000-8000-00805f9b34fb");
 
+	// Standard GATT Device Information Service and its string characteristics.
+	private static readonly Guid DeviceInfoServiceUuid = new("0000180a-0000-1000-8000-00805f9b34fb");
+	private static readonly Guid ManufacturerNameCharUuid = new("00002a29-0000-1000-8000-00805f9b34fb");
+	private static readonly Guid ModelNumberCharUuid = new("00002a24-0000-1000-8000-00805f9b34fb");
+	private static readonly Guid SerialNumberCharUuid = new("00002a25-0000-1000-8000-00805f9b34fb");
+	private static readonly Guid FirmwareRevisionCharUuid = new("00002a26-0000-1000-8000-00805f9b34fb");
+	private static readonly Guid HardwareRevisionCharUuid = new("00002a27-0000-1000-8000-00805f9b34fb");
+	private static readonly Guid SoftwareRevisionCharUuid = new("00002a28-0000-1000-8000-00805f9b34fb");
+
 	/// <inheritdoc />
 	public event Action<BatteryReading>? BatteryLevelChanged;
 
 	/// <inheritdoc />
 	public event Action<SensorContactStatus>? SensorContactChanged;
+
+	/// <inheritdoc />
+	public event Action<DeviceInformation>? DeviceInformationChanged;
 
 	/// <summary>
 	/// BLE advertisement name prefixes for each known device type.
@@ -194,8 +206,10 @@ public sealed class PolarHrSource : IBeatSource, IBatterySource, IContactSource,
 			}
 		};
 
-		// Best-effort: surface the battery level without ever blocking the beat stream.
+		// Best-effort: surface the battery level and device identity without ever
+		// blocking the beat stream.
 		await TrySubscribeBatteryAsync(_device).ConfigureAwait(false);
+		await TryReadDeviceInfoAsync(_device).ConfigureAwait(false);
 
 		try
 		{
@@ -267,6 +281,60 @@ public sealed class PolarHrSource : IBeatSource, IBatterySource, IContactSource,
 		// Battery Level is a single uint8 percentage (0–100).
 		int percent = Math.Clamp(bytes[0], (byte)0, (byte)100);
 		BatteryLevelChanged?.Invoke(new BatteryReading(DateTimeOffset.UtcNow, percent));
+	}
+
+	// Reads the Device Information Service once on connect. Every characteristic is
+	// optional, so missing ones simply stay null. Best-effort: a device without the
+	// service (or a transient error) just means no identity is reported.
+	private async Task TryReadDeviceInfoAsync(BluetoothLEDevice device)
+	{
+		try
+		{
+			var serviceResult = await device.GetGattServicesForUuidAsync(DeviceInfoServiceUuid);
+			if (serviceResult.Status != GattCommunicationStatus.Success || serviceResult.Services.Count == 0)
+			{
+				return;
+			}
+
+			using var service = serviceResult.Services[0];
+
+			var info = new DeviceInformation(
+				ManufacturerName: await ReadStringAsync(service, ManufacturerNameCharUuid),
+				ModelNumber: await ReadStringAsync(service, ModelNumberCharUuid),
+				SerialNumber: await ReadStringAsync(service, SerialNumberCharUuid),
+				FirmwareRevision: await ReadStringAsync(service, FirmwareRevisionCharUuid),
+				HardwareRevision: await ReadStringAsync(service, HardwareRevisionCharUuid),
+				SoftwareRevision: await ReadStringAsync(service, SoftwareRevisionCharUuid));
+
+			DeviceInformationChanged?.Invoke(info);
+		}
+		catch
+		{
+			// Device-info reads must never interrupt the beat stream.
+		}
+	}
+
+	private static async Task<string?> ReadStringAsync(GattDeviceService service, Guid characteristicUuid)
+	{
+		var charResult = await service.GetCharacteristicsForUuidAsync(characteristicUuid);
+		if (charResult.Status != GattCommunicationStatus.Success || charResult.Characteristics.Count == 0)
+		{
+			return null;
+		}
+
+		var read = await charResult.Characteristics[0].ReadValueAsync();
+		if (read.Status != GattCommunicationStatus.Success || read.Value.Length == 0)
+		{
+			return null;
+		}
+
+		var reader = global::Windows.Storage.Streams.DataReader.FromBuffer(read.Value);
+		var bytes = new byte[read.Value.Length];
+		reader.ReadBytes(bytes);
+
+		// DIS string characteristics are UTF-8; trim any trailing NUL padding.
+		string value = System.Text.Encoding.UTF8.GetString(bytes).TrimEnd('\0').Trim();
+		return value.Length > 0 ? value : null;
 	}
 
 	public void Dispose()
