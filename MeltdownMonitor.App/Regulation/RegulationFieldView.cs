@@ -34,6 +34,7 @@ public sealed class RegulationFieldView : IDisposable
 	private int _trailCount;
 	private readonly double[] _rr = new double[RrBufferLength];
 	private int _rrCount;
+	private long _beatsAppended;   // total non-artifact beats ever appended; the absolute timeline the texture scrolls along
 
 	// Interpolation state: render one sample behind, holding from→to and lerping the whole
 	// reading across the measured inter-sample interval so reading-derived visuals move
@@ -51,8 +52,7 @@ public sealed class RegulationFieldView : IDisposable
 	private float _breathPhase;
 	private float _animTime;
 	private float _hrDisplay = 60f;          // eased HR for a smooth breathing cadence
-	private DateTimeOffset _lastBeatTime;    // arrival time of the most recent beat
-	private double _lastRrMs = 1000.0;       // most recent RR interval (expected beat period)
+	private RrTexturePlayhead _playhead;     // free-running smooth scroll for the live RR texture
 
 	private readonly record struct TrailPoint(DateTimeOffset Time, RegulationReading Reading);
 
@@ -124,14 +124,14 @@ public sealed class RegulationFieldView : IDisposable
 				_rr[^1] = beat.RrMs;
 			}
 
-			// Record beat timing so the texture advances a smooth fractional phase between beats;
-			// the phase resets to 0 here exactly as the data shifts forward by one — continuous.
-			_lastBeatTime = DateTimeOffset.UtcNow;
-			_lastRrMs = beat.RrMs;
+			// Advance the absolute beat timeline. The texture playhead scrolls along this; it
+			// advances smoothly by frame time (not by beat arrival), so the texture stays fluid
+			// even though beats land in irregular BLE batches.
+			_beatsAppended++;
 		}
 	}
 
-	private (RegulationReading from, RegulationReading to, DateTimeOffset segStart, double segDuration, RegulationReading[] trail, double[] rr) Snapshot()
+	private (RegulationReading from, RegulationReading to, DateTimeOffset segStart, double segDuration, RegulationReading[] trail, double[] rr, long beatsAppended) Snapshot()
 	{
 		lock (_lock)
 		{
@@ -144,13 +144,15 @@ public sealed class RegulationFieldView : IDisposable
 			var rr = new double[_rrCount];
 			Array.Copy(_rr, rr, _rrCount);
 
-			return (_from, _to, _segStart, _segDuration, trail, rr);
+			// Sample the beat count under the same lock as rr so the two stay consistent — the
+			// texture maps the lobe using both, and an off-by-one between them would jolt it.
+			return (_from, _to, _segStart, _segDuration, trail, rr, _beatsAppended);
 		}
 	}
 
 	public void Draw()
 	{
-		var (from, to, segStart, segDuration, trail, rr) = Snapshot();
+		var (from, to, segStart, segDuration, trail, rr, beatsAppended) = Snapshot();
 		float dt = ImGui.GetIO().DeltaTime;
 		_animTime += dt;
 
@@ -190,25 +192,16 @@ public sealed class RegulationFieldView : IDisposable
 		_hrDisplay += (hrTarget - _hrDisplay) * (1f - MathF.Exp(-dt * 1.5f));
 		_breathPhase += dt * (MathF.Max(40f, _hrDisplay) / 60f) * MathF.Tau;
 
-		// RR-texture phase: smooth fractional progress (0→1) through the current beat, tied to
-		// the real last RR interval. It resets to 0 on each beat exactly as the buffer shifts
-		// forward by one, so the two cancel and the texture flows continuously without stutter.
-		DateTimeOffset lastBeat;
-		double lastRr;
-		lock (_lock)
-		{
-			lastBeat = _lastBeatTime;
-			lastRr = _lastRrMs;
-		}
-		float beatSec = (float)Math.Max(0.3, lastRr / 1000.0);
-		float scroll = lastBeat == default
-			? 0f
-			: Math.Clamp((float)(DateTimeOffset.UtcNow - lastBeat).TotalSeconds / beatSec, 0f, 1f);
+		// RR-texture scroll: a free-running playhead over the absolute beat timeline. It dead-reckons
+		// forward at the real beat rate (constant velocity → flows like the breathing pulse) and is
+		// gently corrected toward the newest sample, decoupling the visual from the irregular, batched
+		// arrival of beats over BLE. Driven purely by frame time — never reset or clamped per beat.
+		_playhead.Advance(dt, MathF.Max(40f, _hrDisplay) / 60f, beatsAppended - 1);
 
 		DrawLfHfHalo(draw, centre, halfWidth, disp, confidence);
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
 		DrawVagalAxis(draw, centre, markerYClamp, confidence);
-		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, scroll, confidence);
+		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, _playhead.Position, beatsAppended, confidence);
 		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, disp, confidence);
 		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, confidence);
 		DrawMarker(draw, centre, halfWidth, liveLobeHeight, disp, confidence);
@@ -258,7 +251,7 @@ public sealed class RegulationFieldView : IDisposable
 		draw.AddEllipseFilled(centre, new Vector2(halfWidth * 0.32f, lobeHeight * 0.7f), Col(zone));
 	}
 
-	private void DrawLemniscate(ImDrawListPtr draw, Vector2 centre, float halfWidth, float baseLobeHeight, float liveLobeHeight, RegulationReading r, double[] rr, float scroll, float confidence)
+	private void DrawLemniscate(ImDrawListPtr draw, Vector2 centre, float halfWidth, float baseLobeHeight, float liveLobeHeight, RegulationReading r, double[] rr, double playhead, long beatsAppended, float confidence)
 	{
 		// Ghost baseline (symmetric resting frame) at the base height.
 		var ghost = LemniscateGeometry.Polyline(centre, halfWidth, baseLobeHeight, LobeSegments);
@@ -279,13 +272,15 @@ public sealed class RegulationFieldView : IDisposable
 		// Jitter each VERTEX once (along the smoothed vertex normal) so adjacent segments
 		// share an endpoint and the trace stays continuous. The trace IS the live beat-to-beat
 		// signal: jagged when HRV is healthy, flat when it collapses; tapers to nothing at the crossover.
-		// Map the lobe ONCE onto the most-recent RR window (no tiling → no spatial repeat),
-		// rotating so the oldest↔newest seam lands on a crossover (depth≈0, hidden). `scroll`
-		// is a fractional position advanced by time and consumed one-per-beat, giving
-		// continuous flow that stays aligned to the incoming samples.
+		// Map the lobe ONCE onto a window of the RR signal (no tiling → no spatial repeat),
+		// rotating so the oldest↔newest seam lands on a crossover (depth≈0, hidden). The window's
+		// leading edge is the smooth `playhead` (in absolute beat-index units); converting it to a
+		// buffer index lets the texture flow continuously without snapping to beat arrivals.
 		int devLen = dev.Length;
 		int quarter = n / 4;
-		float span = MathF.Min(devLen - 1, n - 1);
+		double span = Math.Min(devLen - 1, n - 1);
+		// Absolute beat index → buffer index: the newest buffer sample (devLen-1) is absolute (beatsAppended-1).
+		double bufOffset = devLen - beatsAppended;
 		var pts = new Vector2[n];
 		for (int i = 0; i < n; i++)
 		{
@@ -295,11 +290,11 @@ public sealed class RegulationFieldView : IDisposable
 			if (devLen > 1)
 			{
 				int seg = (((i - quarter) % n) + n) % n;
-				float pos = (devLen - 1 - span) + ((seg / (float)(n - 1)) * span) + scroll;
-				pos = Math.Clamp(pos, 0f, devLen - 1);
-				int i0 = (int)MathF.Floor(pos);
+				double posAbs = (playhead - span) + ((seg / (double)(n - 1)) * span);
+				double posBuf = Math.Clamp(posAbs + bufOffset, 0.0, devLen - 1);
+				int i0 = (int)Math.Floor(posBuf);
 				int i1 = Math.Min(i0 + 1, devLen - 1);
-				float d = dev[i0] + ((dev[i1] - dev[i0]) * (pos - i0));
+				float d = dev[i0] + ((float)(dev[i1] - dev[i0]) * (float)(posBuf - i0));
 				jitter = d * MaxJitterPx * depth;
 			}
 			Vector2 normal = Normal(live[(i - 1 + n) % n], live[(i + 1) % n]);
