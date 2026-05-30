@@ -9,12 +9,14 @@ namespace MeltdownMonitor.App.Regulation;
 /// <summary>
 /// Signature visualization: the Regulation Field. Draws the lemniscate instrument
 /// with a live marker (arousal-vs-baseline), comet trail, ghost baseline, and a
-/// monospace readout. Custom ImGui draw-list rendering — not ImPlot.
+/// live readout. Custom ImGui draw-list rendering — not ImPlot.
 /// </summary>
 public sealed class RegulationFieldView : IDisposable
 {
 	private const int TrailLength = 48;     // ~last few minutes at the emit cadence
 	private const int LobeSegments = 96;
+	private const float MarkerEaseRate = 6f;     // exponential-smoothing rate for the marker glide
+	private const float LobeSwellFactor = 1.4f;  // how much a lobe thickens at full index
 
 	private readonly Pipeline _pipeline;
 	private readonly object _lock = new();
@@ -77,7 +79,7 @@ public sealed class RegulationFieldView : IDisposable
 
 		// Ease the marker toward the latest index so it glides between 5 s samples.
 		float target = (float)latest.Index;
-		_markerPos += (target - _markerPos) * (1f - MathF.Exp(-dt * 6f));
+		_markerPos += (target - _markerPos) * (1f - MathF.Exp(-dt * MarkerEaseRate));
 
 		// Breathing cadence from current HR (fallback 60 bpm).
 		double hr = _pipeline.LatestSample?.MeanHr ?? 60.0;
@@ -99,10 +101,10 @@ public sealed class RegulationFieldView : IDisposable
 
 		DrawWindowOfTolerance(draw, centre, halfWidth, lobeHeight, confidence);
 		DrawLemniscate(draw, centre, halfWidth, lobeHeight, latest, confidence);
-		DrawTrail(draw, centre, halfWidth, trail, latest, confidence);
-		DrawMarker(draw, centre, halfWidth, latest, confidence);
+		DrawTrail(draw, centre, halfWidth, trail, confidence);
+		DrawMarker(draw, centre, halfWidth, confidence);
 		DrawCrossover(draw, centre, confidence);
-		DrawLabelsAndLock(draw, origin, centre, halfWidth, lobeHeight, latest);
+		DrawLabelsAndLock(draw, origin, centre, halfWidth, lobeHeight);
 		DrawReadout(origin, height);
 
 		if (confidence < 0.999f)
@@ -129,8 +131,8 @@ public sealed class RegulationFieldView : IDisposable
 			draw.AddLine(ghost[i], ghost[(i + 1) % ghost.Count], ghostCol, 2f);
 		}
 
-		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * 1.4f);
-		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * 1.4f);
+		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * LobeSwellFactor);
+		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * LobeSwellFactor);
 		float quality = (float)r.VariabilityQuality;
 		float baseThick = 4f + (6f * quality);
 
@@ -155,7 +157,7 @@ public sealed class RegulationFieldView : IDisposable
 		}
 	}
 
-	private void DrawTrail(ImDrawListPtr draw, Vector2 centre, float halfWidth, RegulationReading[] trail, RegulationReading latest, float confidence)
+	private void DrawTrail(ImDrawListPtr draw, Vector2 centre, float halfWidth, RegulationReading[] trail, float confidence)
 	{
 		if (trail.Length < 2)
 		{
@@ -172,7 +174,7 @@ public sealed class RegulationFieldView : IDisposable
 		}
 	}
 
-	private void DrawMarker(ImDrawListPtr draw, Vector2 centre, float halfWidth, RegulationReading r, float confidence)
+	private void DrawMarker(ImDrawListPtr draw, Vector2 centre, float halfWidth, float confidence)
 	{
 		Vector2 p = LemniscateGeometry.MarkerPoint(_markerPos, centre, halfWidth);
 		Vector4 stateCol = MacchiatoPalette.State(_pipeline.CurrentState);
@@ -189,9 +191,8 @@ public sealed class RegulationFieldView : IDisposable
 		draw.AddCircleFilled(centre, 3f, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Text, confidence)));
 	}
 
-	private void DrawLabelsAndLock(ImDrawListPtr draw, Vector2 origin, Vector2 centre, float halfWidth, float lobeHeight, RegulationReading r)
+	private void DrawLabelsAndLock(ImDrawListPtr draw, Vector2 origin, Vector2 centre, float halfWidth, float lobeHeight)
 	{
-		_ = r;
 		uint rest = Col(MacchiatoPalette.Sapphire);
 		uint melt = Col(MacchiatoPalette.Peach);
 		uint dim = Col(MacchiatoPalette.Subtext0);
