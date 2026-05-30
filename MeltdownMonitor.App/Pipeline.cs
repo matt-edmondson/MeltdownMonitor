@@ -159,7 +159,7 @@ public sealed class Pipeline : IDisposable
 
 			_baseline.Update(sample);
 
-			var state = _detector.Process(sample, _baseline.IsWarm);
+			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact);
 
 			var finalSample = sample with
 			{
