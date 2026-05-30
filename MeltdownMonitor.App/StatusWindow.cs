@@ -34,6 +34,7 @@ public sealed class StatusWindow : IDisposable
 	private readonly AppSettings _settings;
 	private readonly IntervalAction _historyRefreshAction;
 	private readonly ImGuiWidgets.TabPanel _tabs;
+	private readonly StatusTheme _theme = new();
 	private Thread? _uiThread;
 	private int _appliedCapacity = InitialSparklineCapacity;
 	private int _subscriptionsReleased;
@@ -319,6 +320,10 @@ public sealed class StatusWindow : IDisposable
 
 	private void OnRender(float deltaSeconds)
 	{
+		// Re-tint the Catppuccin Macchiato theme to match the live detection state.
+		// Applied before any widgets so the accent change takes effect this frame.
+		_theme.Apply(_pipeline.CurrentState);
+
 		// Pad the auto-fit so series don't hug the plot edges (fraction of the
 		// data range on each axis). Persisted in the ImPlot context; set each
 		// frame to stay robust against any style reset.
