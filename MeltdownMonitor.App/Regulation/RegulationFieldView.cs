@@ -49,6 +49,8 @@ public sealed class RegulationFieldView : IDisposable
 	// Animation state (UI thread only).
 	private float _breathPhase;
 	private float _animTime;
+	private float _hrDisplay = 60f;                              // eased HR for a smooth breathing cadence
+	private readonly float[] _jitter = new float[LobeSegments];  // eased per-vertex RR deflection
 
 	private readonly record struct TrailPoint(DateTimeOffset Time, RegulationReading Reading);
 
@@ -149,32 +151,36 @@ public sealed class RegulationFieldView : IDisposable
 			_display = disp; // seeds the next segment's "from"
 		}
 
-		// Reserve a wide panel and centre the instrument in it.
+		// Fill the available window space.
 		Vector2 avail = ImGui.GetContentRegionAvail();
-		float height = MathF.Min(avail.Y - 8f, 360f);
+		float height = MathF.Max(120f, avail.Y - 8f);
 		float width = avail.X;
 		Vector2 origin = ImGui.GetCursorScreenPos();
 		ImGui.Dummy(new Vector2(width, height)); // reserve layout space
 
 		var draw = ImGui.GetWindowDrawList();
 		Vector2 centre = origin + new Vector2(width * 0.5f, height * 0.46f);
-		float halfWidth = MathF.Min(width * 0.34f, 260f);
+		float halfWidth = width * 0.34f;
 		float baseLobeHeight = MathF.Min(height * 0.28f, halfWidth * 0.62f);
 
 		// Poincaré SD1/SD2 ratio shapes the live lobe height; the ghost stays at base height.
 		float roundness = (float)disp.LobeRoundness;
 		float liveLobeHeight = baseLobeHeight * (LobeHeightMin + ((LobeHeightMax - LobeHeightMin) * roundness));
 		float labelClearHeight = baseLobeHeight * LobeHeightMax; // keep labels clear of the tallest lobe
+		float markerYClamp = liveLobeHeight * MarkerYSpan;
 
 		float confidence = (float)disp.Confidence;
 
-		double hr = _pipeline.LatestSample?.MeanHr ?? 60.0;
-		_breathPhase += dt * (float)(Math.Max(40.0, hr) / 60.0) * MathF.Tau;
+		// Ease displayed HR so the breathing pulse rate doesn't step every sample.
+		float hrTarget = (float)(_pipeline.LatestSample?.MeanHr ?? 60.0);
+		_hrDisplay += (hrTarget - _hrDisplay) * (1f - MathF.Exp(-dt * 1.5f));
+		_breathPhase += dt * (MathF.Max(40f, _hrDisplay) / 60f) * MathF.Tau;
 
 		DrawLfHfHalo(draw, centre, halfWidth, disp, confidence);
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
-		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, confidence);
-		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, confidence);
+		DrawVagalAxis(draw, centre, markerYClamp, confidence);
+		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, dt, confidence);
+		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, disp, confidence);
 		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, confidence);
 		DrawMarker(draw, centre, halfWidth, liveLobeHeight, disp, confidence);
 		DrawCrossover(draw, centre, confidence);
@@ -223,7 +229,7 @@ public sealed class RegulationFieldView : IDisposable
 		draw.AddEllipseFilled(centre, new Vector2(halfWidth * 0.32f, lobeHeight * 0.7f), Col(zone));
 	}
 
-	private void DrawLemniscate(ImDrawListPtr draw, Vector2 centre, float halfWidth, float baseLobeHeight, float liveLobeHeight, RegulationReading r, double[] rr, float confidence)
+	private void DrawLemniscate(ImDrawListPtr draw, Vector2 centre, float halfWidth, float baseLobeHeight, float liveLobeHeight, RegulationReading r, double[] rr, float dt, float confidence)
 	{
 		// Ghost baseline (symmetric resting frame) at the base height.
 		var ghost = LemniscateGeometry.Polyline(centre, halfWidth, baseLobeHeight, LobeSegments);
@@ -244,14 +250,18 @@ public sealed class RegulationFieldView : IDisposable
 		// Jitter each VERTEX once (along the smoothed vertex normal) so adjacent segments
 		// share an endpoint and the trace stays continuous. The trace IS the live beat-to-beat
 		// signal: jagged when HRV is healthy, flat when it collapses; tapers to nothing at the crossover.
+		// Ease each vertex's deflection toward its RR target so the texture morphs smoothly
+		// between per-beat updates instead of popping.
+		float jitterK = 1f - MathF.Exp(-dt * 8f);
 		var pts = new Vector2[n];
 		for (int i = 0; i < n; i++)
 		{
 			Vector2 v = live[i];
 			float depth = MathF.Min(1f, MathF.Abs(v.X - centre.X) / halfWidth);
-			float jitter = dev.Length > 0 ? dev[i % dev.Length] * MaxJitterPx * depth : 0f;
+			float target = dev.Length > 0 ? dev[i % dev.Length] * MaxJitterPx * depth : 0f;
+			_jitter[i] += (target - _jitter[i]) * jitterK;
 			Vector2 normal = Normal(live[(i - 1 + n) % n], live[(i + 1) % n]);
-			pts[i] = v + (normal * jitter);
+			pts[i] = v + (normal * _jitter[i]);
 		}
 
 		// Draw a closed Catmull-Rom spline through the jittered vertices: smooth flowing
@@ -305,7 +315,7 @@ public sealed class RegulationFieldView : IDisposable
 		return dev;
 	}
 
-	private void DrawTrail(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading[] trail, float confidence)
+	private void DrawTrail(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading[] trail, RegulationReading disp, float confidence)
 	{
 		if (trail.Length < 2)
 		{
@@ -324,6 +334,13 @@ public sealed class RegulationFieldView : IDisposable
 			p.Y += Math.Clamp(yOff, -clamp, clamp);
 			pts[i] = p;
 		}
+
+		// The head of the tail is the interpolated marker position, not the latest raw sample,
+		// so the last segment lands exactly on the marker.
+		Vector2 head = LemniscateGeometry.MarkerPoint((float)disp.Index, centre, halfWidth);
+		float headY = ((float)disp.VariabilityQuality - 0.5f) * liveLobeHeight * MarkerYSpan;
+		head.Y += Math.Clamp(headY, -clamp, clamp);
+		pts[^1] = head;
 
 		// Join the points into one smooth comet tail with a Catmull-Rom spline through them:
 		// oldest faint → newest bright, thickening toward the head.
@@ -416,6 +433,22 @@ public sealed class RegulationFieldView : IDisposable
 	{
 		draw.AddCircleFilled(centre, 7f, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Lavender, confidence)));
 		draw.AddCircleFilled(centre, 3f, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Text, confidence)));
+	}
+
+	// Vertical-axis legend for the marker's Y dimension (vagal tone / HRV amount): the marker
+	// rides low when HRV is healthy (steady) and lifts as it collapses (fragile).
+	private static void DrawVagalAxis(ImDrawListPtr draw, Vector2 centre, float yClamp, float confidence)
+	{
+		uint axis = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Overlay1, 0.22f * confidence));
+		uint label = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Subtext0, 0.8f * confidence));
+		float lineH = ImGui.GetTextLineHeight();
+
+		draw.AddLine(new Vector2(centre.X, centre.Y - yClamp), new Vector2(centre.X, centre.Y + yClamp), axis, 1f);
+
+		Vector2 fr = ImGui.CalcTextSize("FRAGILE");
+		Vector2 st = ImGui.CalcTextSize("STEADY");
+		draw.AddText(new Vector2(centre.X - (fr.X * 0.5f), centre.Y - yClamp - lineH - 2f), label, "FRAGILE");
+		draw.AddText(new Vector2(centre.X - (st.X * 0.5f), centre.Y + yClamp + 2f), label, "STEADY");
 	}
 
 	private void DrawLabelsAndLock(ImDrawListPtr draw, Vector2 origin, Vector2 centre, float halfWidth, float lobeClearHeight)
