@@ -151,7 +151,7 @@ public sealed class RegulationFieldView : IDisposable
 		DrawLfHfHalo(draw, centre, halfWidth, latest, confidence);
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
 		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, latest, rr, confidence);
-		DrawTrail(draw, centre, halfWidth, trail, confidence);
+		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, confidence);
 		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, confidence);
 		DrawMarker(draw, centre, halfWidth, liveLobeHeight, confidence);
 		DrawCrossover(draw, centre, confidence);
@@ -258,18 +258,24 @@ public sealed class RegulationFieldView : IDisposable
 		return dev;
 	}
 
-	private void DrawTrail(ImDrawListPtr draw, Vector2 centre, float halfWidth, RegulationReading[] trail, float confidence)
+	private void DrawTrail(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading[] trail, float confidence)
 	{
 		if (trail.Length < 2)
 		{
 			return;
 		}
 
+		// Each dot uses the same 2D mapping as the live marker — X = arousal index,
+		// Y = vagal tone — so the trail traces the real path through the field, not a
+		// horizontal smear.
+		float clamp = liveLobeHeight * MarkerYSpan;
 		Vector4 stateCol = MacchiatoPalette.State(_pipeline.CurrentState);
 		for (int i = 0; i < trail.Length - 1; i++)
 		{
 			float frac = i / (float)(trail.Length - 1);
 			Vector2 p = LemniscateGeometry.MarkerPoint((float)trail[i].Index, centre, halfWidth);
+			float yOff = ((float)trail[i].VariabilityQuality - 0.5f) * liveLobeHeight * MarkerYSpan;
+			p.Y += Math.Clamp(yOff, -clamp, clamp);
 			float radius = 1.5f + (3f * frac);
 			draw.AddCircleFilled(p, radius, Col(MacchiatoPalette.WithAlpha(stateCol, 0.5f * frac * confidence)));
 		}
