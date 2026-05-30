@@ -34,6 +34,9 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Latest skin / electrode contact state from the sensor.</summary>
 	public SensorContactStatus LatestContact { get; private set; } = SensorContactStatus.NotSupported;
 
+	/// <summary>Sensor identity from the Device Information Service, or null until read.</summary>
+	public DeviceInformation? LatestDeviceInfo { get; private set; }
+
 	/// <summary>Latest arousal-vs-baseline reading driving the Regulation Field overlay.</summary>
 	public RegulationReading LatestReading { get; private set; } = new(0.0, 1.0, 0.0, 0.5, 0.0);
 
@@ -48,6 +51,10 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Fires when the sensor's skin / electrode contact state changes.
 	/// Raised only when the source supports it.</summary>
 	public event Action<SensorContactStatus>? ContactChanged;
+
+	/// <summary>Fires when the sensor's Device Information is read (typically once on
+	/// connect). Raised only when the source supports it.</summary>
+	public event Action<DeviceInformation>? DeviceInfoUpdated;
 
 	public Pipeline(AppSettings settings, MeltdownRepository repository)
 	{
@@ -140,6 +147,11 @@ public sealed class Pipeline : IDisposable
 			contactSource.SensorContactChanged += OnSensorContactChanged;
 		}
 
+		if (source is IDeviceInfoSource deviceInfoSource)
+		{
+			deviceInfoSource.DeviceInformationChanged += OnDeviceInfoChanged;
+		}
+
 		await foreach (var beat in source.GetBeatsAsync(cancellationToken))
 		{
 			if (IsPaused())
@@ -217,6 +229,13 @@ public sealed class Pipeline : IDisposable
 	{
 		LatestContact = status;
 		ContactChanged?.Invoke(status);
+	}
+
+	// Static identity, read once on connect — track and fan out, not persisted.
+	private void OnDeviceInfoChanged(DeviceInformation info)
+	{
+		LatestDeviceInfo = info;
+		DeviceInfoUpdated?.Invoke(info);
 	}
 
 	public void Dispose()

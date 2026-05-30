@@ -146,6 +146,26 @@ public class NowViewModelTests
 	}
 
 	[TestMethod]
+	public void DeviceInfo_DefaultsToHidden()
+	{
+		var vm = new NowViewModel();
+
+		Assert.IsFalse(vm.HasDeviceInfo);
+		Assert.IsNull(vm.DeviceInfoText);
+	}
+
+	[TestMethod]
+	public void OnDeviceInfoUpdated_ExposesSummary()
+	{
+		var vm = new NowViewModel();
+
+		vm.OnDeviceInfoUpdated(new DeviceInformation(ModelNumber: "Polar H10", FirmwareRevision: "3.1.1"));
+
+		Assert.IsTrue(vm.HasDeviceInfo);
+		Assert.AreEqual("Polar H10 · fw 3.1.1", vm.DeviceInfoText);
+	}
+
+	[TestMethod]
 	public void Contact_DefaultsToNotSupportedAndNotLost()
 	{
 		var vm = new NowViewModel();

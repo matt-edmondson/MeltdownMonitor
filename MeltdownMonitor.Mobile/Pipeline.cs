@@ -35,6 +35,9 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Latest skin / electrode contact state from the sensor.</summary>
 	public SensorContactStatus LatestContact { get; private set; } = SensorContactStatus.NotSupported;
 
+	/// <summary>Sensor identity from the Device Information Service, or null until read.</summary>
+	public DeviceInformation? LatestDeviceInfo { get; private set; }
+
 	/// <summary>The thresholds the detector is currently using — the same value
 	/// the Regulation Field needs to scale arousal-vs-baseline. Mirrors the
 	/// desktop pipeline's accessor.</summary>
@@ -56,6 +59,10 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Fires when the sensor's skin / electrode contact state changes.
 	/// Only ever raised when the injected source implements <see cref="IContactSource"/>.</summary>
 	public event Action<SensorContactStatus>? ContactChanged;
+
+	/// <summary>Fires when the sensor's Device Information is read (typically once on
+	/// connect). Only ever raised when the injected source implements <see cref="IDeviceInfoSource"/>.</summary>
+	public event Action<DeviceInformation>? DeviceInfoUpdated;
 
 	/// <summary>Fires after <see cref="SampleUpdated"/> with the Regulation Field
 	/// reading derived from the same sample, so the Now screen can drive the
@@ -81,6 +88,11 @@ public sealed class Pipeline : IDisposable
 		{
 			contactSource.SensorContactChanged += OnSensorContactChanged;
 		}
+
+		if (source is IDeviceInfoSource deviceInfoSource)
+		{
+			deviceInfoSource.DeviceInformationChanged += OnDeviceInfoChanged;
+		}
 	}
 
 	// Battery notifications arrive on a background BLE thread; the repository
@@ -97,6 +109,13 @@ public sealed class Pipeline : IDisposable
 	{
 		LatestContact = status;
 		ContactChanged?.Invoke(status);
+	}
+
+	// Static identity, read once on connect — track and fan out, not persisted.
+	private void OnDeviceInfoChanged(DeviceInformation info)
+	{
+		LatestDeviceInfo = info;
+		DeviceInfoUpdated?.Invoke(info);
 	}
 
 	public void Start()

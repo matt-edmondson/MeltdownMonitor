@@ -37,6 +37,7 @@ public sealed class NowViewModel : ViewModelBase
 	private double _baselineRmssd;
 	private int? _batteryPercent;
 	private SensorContactStatus _contact = SensorContactStatus.NotSupported;
+	private DeviceInformation? _deviceInfo;
 	private DateTimeOffset _stateChangedAt = DateTimeOffset.UtcNow;
 	private ConnectionState _connection = ConnectionState.Disconnected;
 	private RegulationReading _reading = new(0.0, 1.0, 0.0, 0.5, 0.0);
@@ -189,6 +190,26 @@ public sealed class NowViewModel : ViewModelBase
 	/// out of contact — the cue to warn that readings are unreliable.</summary>
 	public bool IsContactLost => _contact == SensorContactStatus.NotDetected;
 
+	/// <summary>Sensor identity (model / firmware) once read from the device, else null.</summary>
+	public DeviceInformation? DeviceInfo
+	{
+		get => _deviceInfo;
+		private set
+		{
+			if (SetField(ref _deviceInfo, value))
+			{
+				Raise(nameof(DeviceInfoText));
+				Raise(nameof(HasDeviceInfo));
+			}
+		}
+	}
+
+	/// <summary>One-line device summary for display, or null before it's read.</summary>
+	public string? DeviceInfoText => _deviceInfo?.Summary;
+
+	/// <summary>Whether device identity is available to show.</summary>
+	public bool HasDeviceInfo => _deviceInfo is not null;
+
 	public string TimeSinceStateChange
 	{
 		get
@@ -286,6 +307,7 @@ public sealed class NowViewModel : ViewModelBase
 		pipeline.ReadingUpdated += OnReadingUpdated;
 		pipeline.BatteryUpdated += OnBatteryUpdated;
 		pipeline.ContactChanged += OnContactChanged;
+		pipeline.DeviceInfoUpdated += OnDeviceInfoUpdated;
 		OnStateChanged(pipeline.CurrentState);
 		OnContactChanged(pipeline.LatestContact);
 
@@ -293,6 +315,12 @@ public sealed class NowViewModel : ViewModelBase
 		if (pipeline.LatestBatteryPercent is { } percent)
 		{
 			OnBatteryUpdated(new BatteryReading(DateTimeOffset.UtcNow, percent));
+		}
+
+		// Reflect device identity if it was already read before we subscribed.
+		if (pipeline.LatestDeviceInfo is { } info)
+		{
+			OnDeviceInfoUpdated(info);
 		}
 	}
 
@@ -339,6 +367,12 @@ public sealed class NowViewModel : ViewModelBase
 	/// the other handlers. Public so tests can drive it without a live pipeline.
 	/// </summary>
 	public void OnContactChanged(SensorContactStatus status) => RunOnUi(() => Contact = status);
+
+	/// <summary>
+	/// Push device identity into the VM. Wired to <see cref="Pipeline.DeviceInfoUpdated"/>
+	/// and marshalled to the UI thread. Public so tests can drive it without a live pipeline.
+	/// </summary>
+	public void OnDeviceInfoUpdated(DeviceInformation info) => RunOnUi(() => DeviceInfo = info);
 
 	/// <summary>
 	/// Push a fresh Regulation Field reading into the VM, appending it to the
