@@ -33,6 +33,7 @@ public sealed class StatusWindow : IDisposable
 	private readonly MeltdownRepository _repository;
 	private readonly AppSettings _settings;
 	private readonly IntervalAction _historyRefreshAction;
+	private readonly Regulation.RegulationFieldView _regulationField;
 	private readonly ImGuiWidgets.TabPanel _tabs;
 	private readonly StatusTheme _theme = new();
 	private Thread? _uiThread;
@@ -71,7 +72,10 @@ public sealed class StatusWindow : IDisposable
 		_pipeline.SampleUpdated += OnSampleUpdated;
 		_pipeline.BeatReceived += OnBeatReceived;
 
+		_regulationField = new Regulation.RegulationFieldView(_pipeline);
+
 		_tabs = new ImGuiWidgets.TabPanel("status-tabs");
+		_tabs.AddTab("Regulation Field", _regulationField.Draw);
 		_tabs.AddTab("Overview", DrawOverviewTab);
 		_tabs.AddTab("Heart Rate", DrawHeartRateTab);
 		_tabs.AddTab("Time-Domain HRV", DrawTimeDomainTab);
@@ -1091,5 +1095,6 @@ public sealed class StatusWindow : IDisposable
 	{
 		Close();
 		ReleaseSubscriptions();
+		_regulationField.Dispose();
 	}
 }
