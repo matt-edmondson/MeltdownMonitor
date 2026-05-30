@@ -175,16 +175,24 @@ app's whole reason to exist.
 
 ### Conceptual frame: window of tolerance
 
-Both lobes are *poles of dysregulation*; the centre is regulation:
+The crossover centre is regulation; the lobes are *directions of departure from
+your baseline*:
 
-- **Cool lobe (far)** — parasympathetic extreme → **shutdown** / freeze
-  (low-arousal dysregulation).
-- **Warm lobe (far)** — sympathetic extreme → **meltdown** (high-arousal
-  dysregulation).
-- **Crossover centre** — the **window of tolerance**, the regulated zone.
+- **Warm lobe** — sympathetic activation → toward **meltdown** (high-arousal).
+  This is the validated signal: RMSSD dropping and HR rising relative to baseline.
+- **Cool lobe** — calmer than baseline → **rest / recovery** (normally healthy).
+- **Crossover centre** — the **window of tolerance**, at baseline.
 
-This is language the trauma / autistic community already uses, so the instrument
-is meaningful on sight to its actual users.
+**Honest-signal note:** RMSSD/HR-vs-baseline distinguishes only *above-* vs
+*below-baseline arousal*. It cannot detect dorsal-vagal **shutdown** (which often
+presents with low HRV *and* low arousal, so it does not sit cleanly at the cool
+extreme). True shutdown detection is **deferred** — it needs signals this app does
+not yet have (e.g. movement/posture, EDA). v1's cool lobe therefore means rest,
+not shutdown. The marker position is a continuous reading; the detector **state**
+(colour) is the confirmed call, and position will sometimes *lead* state — that
+early-warning lead is the point. "Window of tolerance" remains language the
+trauma / autistic community already uses, so the instrument reads meaningfully on
+sight.
 
 ### State → encoding contract
 
@@ -297,9 +305,16 @@ direct reductions of the Regulation Field:
 
 ## 10. Open questions / for the implementation plan
 
+Still open:
+
 - Exact gradient stops and jitter amplitude tuning for the full-detail mark
   (needs visual iteration once a master SVG exists).
-- Whether the Regulation Field hero replaces or sits above the current ImPlot
-  layout in the Windows status window.
 - Final humanist typeface pick (Inter vs Outfit) — both satisfy the brief.
-```
+
+Decided (see `docs/superpowers/plans/2026-05-29-regulation-field.md`):
+
+- **Placement** — the Regulation Field is the **first tab** of the Windows status
+  window. It does **not** replace the ImPlot sparklines, which remain as
+  drill-down tabs (Overview, Heart Rate, Time-Domain, etc.).
+- **Cool-lobe semantics** — cool = rest/recovery (honest arousal-vs-baseline);
+  true shutdown detection deferred (see §7's honest-signal note).
