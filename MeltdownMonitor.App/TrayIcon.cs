@@ -14,6 +14,7 @@ public sealed class TrayIcon : IDisposable
 	private readonly MeltdownRepository _repository;
 	private readonly AppSettings _settings;
 	private readonly Action _toggleStatusWindow;
+	private readonly Action _toggleOverlay;
 	private readonly Action _quit;
 	private readonly Dictionary<DetectorState, Icon> _stateIcons;
 
@@ -33,12 +34,14 @@ public sealed class TrayIcon : IDisposable
 		MeltdownRepository repository,
 		AppSettings settings,
 		Action toggleStatusWindow,
+		Action toggleOverlay,
 		Action quit)
 	{
 		_pipeline = pipeline;
 		_repository = repository;
 		_settings = settings;
 		_toggleStatusWindow = toggleStatusWindow;
+		_toggleOverlay = toggleOverlay;
 		_quit = quit;
 
 		_stateIcons = StateIconResources.ToDictionary(
@@ -88,6 +91,7 @@ public sealed class TrayIcon : IDisposable
 		menu.Items.Add("Log how I'm feeling...", null, OnLogFeeling);
 		menu.Items.Add("Pause for 1 hour", null, OnPause);
 		menu.Items.Add("Show/hide status window", null, (_, _) => _toggleStatusWindow());
+		menu.Items.Add("Show/hide metrics overlay", null, (_, _) => _toggleOverlay());
 		menu.Items.Add("Open log folder", null, OnOpenLogFolder);
 		menu.Items.Add(new ToolStripSeparator());
 		menu.Items.Add("Quit", null, (_, _) => _quit());

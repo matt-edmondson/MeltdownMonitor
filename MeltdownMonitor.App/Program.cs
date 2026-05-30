@@ -30,7 +30,7 @@ pipeline.Start();
 Application.EnableVisualStyles();
 Application.SetCompatibleTextRenderingDefault(false);
 
-using var tray = new TrayIcon(pipeline, repository, settings, statusWindow.ToggleVisibility, Application.Exit);
+using var tray = new TrayIcon(pipeline, repository, settings, statusWindow.ToggleVisibility, statusWindow.ToggleOverlay, Application.Exit);
 
 Application.Run();
 
