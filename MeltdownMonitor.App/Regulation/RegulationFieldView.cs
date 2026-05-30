@@ -216,12 +216,25 @@ public sealed class RegulationFieldView : IDisposable
 		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * LobeSwellFactor);
 		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * LobeSwellFactor);
 		float baseThick = 4f + (6f * (float)r.VariabilityQuality);
+		int n = live.Count;
 
-		for (int i = 0; i < live.Count; i++)
+		// Jitter each VERTEX once (along the smoothed vertex normal) so adjacent segments
+		// share an endpoint and the trace stays continuous. The trace IS the live beat-to-beat
+		// signal: jagged when HRV is healthy, flat when it collapses; tapers to nothing at the crossover.
+		var pts = new Vector2[n];
+		for (int i = 0; i < n; i++)
 		{
-			Vector2 a = live[i];
-			Vector2 b = live[(i + 1) % live.Count];
-			float midX = (a.X + b.X) * 0.5f;
+			Vector2 v = live[i];
+			float depth = MathF.Min(1f, MathF.Abs(v.X - centre.X) / halfWidth);
+			float jitter = dev.Length > 0 ? dev[i % dev.Length] * MaxJitterPx * depth : 0f;
+			Vector2 normal = Normal(live[(i - 1 + n) % n], live[(i + 1) % n]);
+			pts[i] = v + (normal * jitter);
+		}
+
+		for (int i = 0; i < n; i++)
+		{
+			// Colour and thickness from the base curve (stable), geometry from the jittered points.
+			float midX = (live[i].X + live[(i + 1) % n].X) * 0.5f;
 			bool warm = midX >= centre.X;
 			float depth = MathF.Min(1f, MathF.Abs(midX - centre.X) / halfWidth);
 
@@ -230,13 +243,9 @@ public sealed class RegulationFieldView : IDisposable
 				: MacchiatoPalette.Lerp(MacchiatoPalette.Sky, MacchiatoPalette.Sapphire, depth);
 			c = MacchiatoPalette.WithAlpha(c, confidence);
 
-			// The trace IS the live beat-to-beat signal: jagged when HRV is healthy, flat when
-			// it collapses. Tapers to nothing at the crossover.
-			float jitter = dev.Length > 0 ? dev[i % dev.Length] * MaxJitterPx * depth : 0f;
-			Vector2 n = Normal(a, b) * jitter;
-
 			float thick = baseThick * (warm ? warmSwell : coolSwell);
-			draw.AddLine(a + n, b + n, Col(c), thick);
+			draw.AddLine(pts[i], pts[(i + 1) % n], Col(c), thick);
+			draw.AddCircleFilled(pts[i], thick * 0.5f, Col(c)); // round join — fills the gap at the vertex
 		}
 	}
 
@@ -265,20 +274,52 @@ public sealed class RegulationFieldView : IDisposable
 			return;
 		}
 
-		// Each dot uses the same 2D mapping as the live marker — X = arousal index,
-		// Y = vagal tone — so the trail traces the real path through the field, not a
-		// horizontal smear.
+		// Map every trail reading to its 2D field position, using the same X = arousal index,
+		// Y = vagal tone mapping as the live marker.
 		float clamp = liveLobeHeight * MarkerYSpan;
 		Vector4 stateCol = MacchiatoPalette.State(_pipeline.CurrentState);
-		for (int i = 0; i < trail.Length - 1; i++)
+		var pts = new Vector2[trail.Length];
+		for (int i = 0; i < trail.Length; i++)
 		{
-			float frac = i / (float)(trail.Length - 1);
 			Vector2 p = LemniscateGeometry.MarkerPoint((float)trail[i].Index, centre, halfWidth);
 			float yOff = ((float)trail[i].VariabilityQuality - 0.5f) * liveLobeHeight * MarkerYSpan;
 			p.Y += Math.Clamp(yOff, -clamp, clamp);
-			float radius = 1.5f + (3f * frac);
-			draw.AddCircleFilled(p, radius, Col(MacchiatoPalette.WithAlpha(stateCol, 0.5f * frac * confidence)));
+			pts[i] = p;
 		}
+
+		// Join the points into one smooth comet tail with a Catmull-Rom spline through them:
+		// oldest faint → newest bright, thickening toward the head.
+		const int sub = 8;
+		int count = pts.Length;
+		for (int i = 0; i < count - 1; i++)
+		{
+			Vector2 p0 = pts[Math.Max(0, i - 1)];
+			Vector2 p1 = pts[i];
+			Vector2 p2 = pts[i + 1];
+			Vector2 p3 = pts[Math.Min(count - 1, i + 2)];
+
+			Vector2 prev = p1;
+			for (int s = 1; s <= sub; s++)
+			{
+				float t = s / (float)sub;
+				Vector2 cur = CatmullRom(p0, p1, p2, p3, t);
+				float frac = (i + t) / (count - 1);
+				float width = 1f + (2.5f * frac);
+				draw.AddLine(prev, cur, Col(MacchiatoPalette.WithAlpha(stateCol, 0.55f * frac * confidence)), width);
+				prev = cur;
+			}
+		}
+	}
+
+	// Uniform Catmull-Rom interpolation between p1 and p2 (p0/p3 are the neighbouring points).
+	private static Vector2 CatmullRom(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
+	{
+		float t2 = t * t;
+		float t3 = t2 * t;
+		return 0.5f * ((2f * p1)
+			+ ((-p0 + p2) * t)
+			+ (((2f * p0) - (5f * p1) + (4f * p2) - p3) * t2)
+			+ ((-p0 + (3f * p1) - (3f * p2) + p3) * t3));
 	}
 
 	// During an active alert, mark where the arousal marker must fall back below to clear the
