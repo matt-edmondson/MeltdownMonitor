@@ -45,6 +45,7 @@ public sealed class RegulationFieldView : IDisposable
 	private DateTimeOffset _segStart;
 	private DateTimeOffset _lastArrival;
 	private double _segDuration = 5.0;
+	private double _intervalEwma = 5.0;   // running-average inter-sample interval
 
 	// Animation state (UI thread only).
 	private float _breathPhase;
@@ -76,8 +77,15 @@ public sealed class RegulationFieldView : IDisposable
 			var now = DateTimeOffset.UtcNow;
 
 			// Start a new interpolation segment from the currently displayed state to this
-			// reading, spanning the measured time since the previous sample.
-			_segDuration = _lastArrival == default ? 5.0 : Math.Clamp((now - _lastArrival).TotalSeconds, 0.5, 30.0);
+			// reading. Span slightly longer than the running-average interval so the motion is
+			// still in flight (not finished and waiting) when the next sample lands; the
+			// from=_display handoff keeps it seamless if the previous segment hadn't completed.
+			if (_lastArrival != default)
+			{
+				double interval = Math.Clamp((now - _lastArrival).TotalSeconds, 0.5, 30.0);
+				_intervalEwma = (_intervalEwma * 0.7) + (interval * 0.3);
+			}
+			_segDuration = _intervalEwma * 1.15;
 			_from = _display;
 			_to = reading;
 			_segStart = now;
