@@ -34,6 +34,7 @@ public sealed class StatusWindow : IDisposable
 	private readonly AppSettings _settings;
 	private readonly IntervalAction _historyRefreshAction;
 	private readonly ImGuiWidgets.TabPanel _tabs;
+	private readonly MetricsOverlay _overlay = new();
 	private readonly StatusTheme _theme = new();
 	private Thread? _uiThread;
 	private int _appliedCapacity = InitialSparklineCapacity;
@@ -332,6 +333,40 @@ public sealed class StatusWindow : IDisposable
 		DrawStatusHeader();
 		ImGui.Separator();
 		_tabs.Draw();
+
+		// Drawn last so it floats above the tab content. Persist context-menu changes,
+		// deferring the disk write while a menu interaction is in flight.
+		var overlaySample = new OverlaySample(
+			_pipeline.CurrentState,
+			_pipeline.LatestSample,
+			_pipeline.Baseline.WarmUpProgress);
+		if (_overlay.Draw(overlaySample, _settings.Overlay))
+		{
+			_settingsDirty = true;
+		}
+
+		if (_settingsDirty && !ImGui.IsAnyItemActive())
+		{
+			_settings.Save();
+			_settingsDirty = false;
+		}
+	}
+
+	/// <summary>
+	/// Shows or hides the transparent metrics overlay. The overlay is drawn inside the
+	/// status window, so enabling it also reveals the window if it was hidden. Safe to
+	/// call from any thread.
+	/// </summary>
+	public void ToggleOverlay()
+	{
+		bool enabled = !_settings.Overlay.Enabled;
+		_settings.Overlay.Enabled = enabled;
+		_settings.Save();
+
+		if (enabled && !ImGuiApp.IsVisible)
+		{
+			ImGuiApp.Show();
+		}
 	}
 
 	private void DrawStatusHeader()
@@ -896,6 +931,68 @@ public sealed class StatusWindow : IDisposable
 
 		_settings.ChartTuning = ct;
 
+		// ── Metrics overlay ──────────────────────────────────────────────
+		ImGui.SeparatorText("Metrics overlay (applies live)");
+
+		var ov = _settings.Overlay;
+
+		bool overlayEnabled = ov.Enabled;
+		if (ImGui.Checkbox("Show transparent overlay", ref overlayEnabled))
+		{
+			ov.Enabled = overlayEnabled;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("A small, transparent heads-up panel pinned to a corner showing your chosen metrics. Right-click the panel to pick metrics, corner, and click-through.");
+
+		bool clickThrough = ov.ClickThrough;
+		if (ImGui.Checkbox("Click-through (ignore mouse)", ref clickThrough))
+		{
+			ov.ClickThrough = clickThrough;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("When on, the overlay ignores the mouse so clicks reach the charts beneath. The right-click metric menu is disabled while this is on.");
+
+		float alpha = ov.BackgroundAlpha;
+		if (ImGui.SliderFloat("Background opacity", ref alpha, 0f, 1f, "%.2f"))
+		{
+			ov.BackgroundAlpha = alpha;
+			_settingsDirty = true;
+		}
+
+		ImGui.Text("Corner:");
+		ImGui.SameLine();
+		foreach (var corner in Enum.GetValues<OverlayCorner>())
+		{
+			if (ImGui.RadioButton(corner.ToString(), ov.Corner == corner))
+			{
+				ov.Corner = corner;
+				_settingsDirty = true;
+			}
+			ImGui.SameLine();
+		}
+		ImGui.NewLine();
+
+		ImGui.TextDisabled("Metrics shown:");
+		foreach (var metric in OverlayMetrics.All)
+		{
+			bool shown = ov.Metrics.Contains(metric);
+			if (ImGui.Checkbox(OverlayMetrics.Label(metric), ref shown))
+			{
+				if (shown)
+				{
+					ov.Metrics.Add(metric);
+				}
+				else
+				{
+					ov.Metrics.Remove(metric);
+				}
+
+				_settingsDirty = true;
+			}
+		}
+
 		// ── Advanced HRV windows ─────────────────────────────────────────
 		ImGui.SeparatorText("Advanced HRV windows (changes metric definitions)");
 
@@ -1070,19 +1167,8 @@ public sealed class StatusWindow : IDisposable
 		}
 	}
 
-	private static ImColor StateColor(DetectorState state)
-	{
-		Vector4 v = state switch
-		{
-			DetectorState.Idle      => new Vector4(0.55f, 0.55f, 0.55f, 1f),
-			DetectorState.Watching  => new Vector4(0.30f, 0.75f, 0.45f, 1f),
-			DetectorState.Warning   => new Vector4(0.95f, 0.75f, 0.20f, 1f),
-			DetectorState.Alerting  => new Vector4(0.95f, 0.30f, 0.25f, 1f),
-			DetectorState.Cooldown  => new Vector4(0.45f, 0.55f, 0.85f, 1f),
-			_                       => new Vector4(0.5f, 0.5f, 0.5f, 1f),
-		};
-		return new ImColor { Value = v };
-	}
+	private static ImColor StateColor(DetectorState state) =>
+		new() { Value = StateColors.For(state) };
 
 	// Detach from the pipeline and stop the backfill timer exactly once. Safe to
 	// call from either the UI thread (loop exit) or the owner thread (Dispose).

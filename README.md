@@ -25,6 +25,7 @@ In a healthy, relaxed state the two branches are constantly negotiating, so the 
 - **Low-friction annotations** — log subjective states (Calm, Activated, Overwhelmed, Recovering) with optional notes
 - **Persistent SQLite log** — beats, HRV samples, alerts, and annotations stored append-only
 - **Dear ImGui status window** — live RMSSD-vs-baseline sparklines, current state, HR readout
+- **Transparent metrics overlay** — a borderless, corner-pinned heads-up panel with a user-selectable set of live metrics; right-click to choose metrics, corner, opacity, and click-through
 - **Single instance enforced** — one tray icon per user session
 
 ---
@@ -157,7 +158,11 @@ Settings are stored at `%APPDATA%\MeltdownMonitor\AppSettings.json` and written 
 | `PausedUntil` | _(datetime)_ | Set via tray "Pause 1 hour" menu item |
 | `DatabasePath` | `%APPDATA%\MeltdownMonitor\data.db` | SQLite database location |
 
-The tray icon right-click menu provides quick access to: log annotation, pause monitoring for 1 hour, open the status window, open the log folder, and quit.
+The tray icon right-click menu provides quick access to: log annotation, pause monitoring for 1 hour, show/hide the status window, show/hide the metrics overlay, open the log folder, and quit.
+
+### Metrics overlay
+
+The transparent overlay is a small heads-up panel pinned to a corner of the status window, showing a chosen set of live metrics (state, HR, RMSSD, RMSSD/HR deltas vs baseline, LF/HF, pNN50, SDNN, LF/HF power, Poincaré SD1/SD2, and baseline warm-up). Toggle it from the tray menu or the **Settings → Metrics overlay** section, where you can also set the corner, background opacity, click-through, and which metrics appear. Right-click the panel itself for the same metric/corner/click-through choices. Its configuration is persisted under `Overlay` in `AppSettings.json`.
 
 ---
 
