@@ -1,0 +1,17 @@
+<Project>
+
+  <!--
+    Repo-wide build defaults, imported by every project.
+
+    TargetFramework is intentionally NOT set here: it varies per project
+    (net10.0 / net10.0-windows10.0.19041.0 / net10.0-ios), so each .csproj
+    keeps its own. Nullable and ImplicitUsings are uniform across the solution
+    and centralised here; the per-project copies can be removed over time.
+  -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>
