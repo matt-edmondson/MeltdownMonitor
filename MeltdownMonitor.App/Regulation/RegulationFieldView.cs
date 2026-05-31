@@ -403,7 +403,17 @@ public sealed class RegulationFieldView : IDisposable
 				Vector2 cur = CatmullRom(p0, p1, p2, p3, t);
 				float frac = (i + t) / (count - 1);
 				float width = 1f + (2.5f * frac);
-				draw.AddLine(prev, cur, Col(MacchiatoPalette.WithAlpha(stateCol, 0.55f * frac * confidence)), width);
+				// Leading edge (newest, frac->1) brightens with speed and tints by trend so the
+				// comet visibly "leans" the way arousal is heading; the tail stays the state colour.
+				// At _arrowSpeed == 0 (steady) this reduces to the original stateCol at 0.55*frac alpha.
+				Vector4 segCol = _pipeline.LatestDynamics.Trend switch
+				{
+					RegulationTrend.Escalating => MacchiatoPalette.Lerp(stateCol, MacchiatoPalette.Peach, frac * _arrowSpeed),
+					RegulationTrend.DeEscalating => MacchiatoPalette.Lerp(stateCol, MacchiatoPalette.Sky, frac * _arrowSpeed),
+					_ => stateCol,
+				};
+				float segAlpha = (0.55f + (0.3f * _arrowSpeed)) * frac * confidence;
+				draw.AddLine(prev, cur, Col(MacchiatoPalette.WithAlpha(segCol, segAlpha)), width);
 				prev = cur;
 			}
 		}
