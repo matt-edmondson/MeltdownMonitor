@@ -144,4 +144,62 @@ public class RegulationFieldAnimatorTests
 		double weak = Math.Abs(a.JitterOffset(7, quality: 0.25, depth: 1.0));
 		Assert.IsTrue(deep > weak, "higher variability quality should jitter more");
 	}
+
+	[TestMethod]
+	public void Step_EasesDisplayedSpeedTowardTarget()
+	{
+		var a = new RegulationFieldAnimator();
+
+		a.Step(0.033, 0.0, 70, targetSpeed: 1.0);
+		Assert.IsTrue(a.DisplayedSpeed > 0.0 && a.DisplayedSpeed < 1.0,
+			$"speed should advance part-way, was {a.DisplayedSpeed}");
+
+		for (int i = 0; i < 300; i++)
+		{
+			a.Step(0.033, 0.0, 70, targetSpeed: 1.0);
+		}
+
+		Assert.AreEqual(1.0, a.DisplayedSpeed, 1e-3);
+	}
+
+	[TestMethod]
+	public void Step_DisplayedSpeedEasesBackToZero()
+	{
+		var a = new RegulationFieldAnimator();
+		for (int i = 0; i < 300; i++)
+		{
+			a.Step(0.033, 0.0, 70, targetSpeed: 1.0);
+		}
+
+		for (int i = 0; i < 300; i++)
+		{
+			a.Step(0.033, 0.0, 70, targetSpeed: 0.0);
+		}
+
+		Assert.AreEqual(0.0, a.DisplayedSpeed, 1e-3);
+	}
+
+	[TestMethod]
+	public void Step_ClampsTargetSpeedToUnitRange()
+	{
+		var a = new RegulationFieldAnimator();
+		for (int i = 0; i < 300; i++)
+		{
+			a.Step(0.033, 0.0, 70, targetSpeed: 2.0);   // over-range
+		}
+
+		Assert.AreEqual(1.0, a.DisplayedSpeed, 1e-3);
+	}
+
+	[TestMethod]
+	public void Step_NonFiniteTargetSpeed_HoldsDisplayedSpeed()
+	{
+		var a = new RegulationFieldAnimator();
+		a.Step(0.033, 0.0, 70, targetSpeed: 0.5);
+		double held = a.DisplayedSpeed;
+
+		a.Step(0.033, 0.0, 70, targetSpeed: double.NaN);
+
+		Assert.AreEqual(held, a.DisplayedSpeed, 1e-9);
+	}
 }
