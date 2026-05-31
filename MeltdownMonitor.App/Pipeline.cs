@@ -129,12 +129,23 @@ public sealed class Pipeline : IDisposable
 	public void Stop()
 	{
 		_cts.Cancel();
-		_pipelineTask?.GetAwaiter().GetResult();
+		try
+		{
+			_pipelineTask?.GetAwaiter().GetResult();
+		}
+		catch (OperationCanceledException)
+		{
+			// Expected on shutdown: cancelling the token unwinds the BLE await chain
+			// (e.g. channel ReadAllAsync / retry Task.Delay). Mirrors the mobile
+			// Pipeline.StopAsync, which also swallows this. Other faults still surface.
+		}
 	}
 
 	private async Task RunAsync(CancellationToken cancellationToken)
 	{
-		var source = new PolarHrSource(_settings.DeviceType);
+		// `using` releases the BluetoothLEDevice native handle deterministically when
+		// the loop unwinds — on both clean cancellation and an exception path.
+		using var source = new PolarHrSource(_settings.DeviceType);
 
 		// Battery and contact are optional source capabilities — wire each only when supported.
 		if (source is IBatterySource batterySource)
