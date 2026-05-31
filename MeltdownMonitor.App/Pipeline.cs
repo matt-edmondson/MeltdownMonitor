@@ -19,6 +19,7 @@ public sealed class Pipeline : IDisposable
 	private readonly ShortWindowHrvCalculator _hrv = new();
 	private readonly BaselineHrvTracker _baseline = new();
 	private readonly DysregulationDetector _detector;
+	private readonly RegulationVelocityTracker _velocity = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _pipelineTask;
@@ -39,6 +40,10 @@ public sealed class Pipeline : IDisposable
 
 	/// <summary>Latest arousal-vs-baseline reading driving the Regulation Field overlay.</summary>
 	public RegulationReading LatestReading { get; private set; } = new(0.0, 1.0, 0.0, 0.5, 0.0);
+
+	/// <summary>Latest escalation/de-escalation velocity + trend of the arousal index.
+	/// <see cref="RegulationDynamics.Steady"/> until the baseline is warm.</summary>
+	public RegulationDynamics LatestDynamics { get; private set; } = RegulationDynamics.Steady;
 
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
@@ -200,6 +205,18 @@ public sealed class Pipeline : IDisposable
 				_settings.Thresholds,
 				_baseline.WarmUpProgress,
 				_baseline.IsWarm);
+
+			// Velocity/trend of the arousal index — see the mobile pipeline for the gating rationale.
+			if (_baseline.IsWarm && LatestContact != SensorContactStatus.NotDetected)
+			{
+				_velocity.Update(LatestReading.Index, finalSample.Timestamp);
+			}
+			else
+			{
+				_velocity.Reset();
+			}
+
+			LatestDynamics = _velocity.Latest;
 		}
 	}
 
