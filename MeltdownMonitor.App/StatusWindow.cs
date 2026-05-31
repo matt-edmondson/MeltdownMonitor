@@ -34,7 +34,6 @@ public sealed class StatusWindow : IDisposable
 	private readonly IntervalAction _historyRefreshAction;
 	private readonly Regulation.RegulationFieldView _regulationField;
 	private readonly ImGuiWidgets.TabPanel _tabs;
-	private readonly OverlayWindowChrome _chrome = new();
 	private readonly StatusTheme _theme = new();
 	private Thread? _uiThread;
 	private int _appliedCapacity = InitialSparklineCapacity;
@@ -121,6 +120,13 @@ public sealed class StatusWindow : IDisposable
 					StartHidden = true,
 					HideOnClose = true,
 					OnRender = SafeRender,
+					// In overlay mode the window is always-on-top (and therefore usually
+					// unfocused), but the Regulation Field animates and the HUD shows live
+					// data — so keep it at a smooth rate instead of the unfocused throttle.
+					PerformanceSettings = new ImGuiAppPerformanceSettings
+					{
+						OverlayFps = 60.0,
+					},
 				});
 			}
 			catch (Exception ex)
@@ -369,7 +375,7 @@ public sealed class StatusWindow : IDisposable
 		else
 		{
 			// Leaving overlay mode (or never in it) restores the decorated window.
-			_chrome.Restore();
+			ImGuiApp.DisableOverlay();
 			DrawStatusHeader();
 			ImGui.Separator();
 			_tabs.Draw();
@@ -389,8 +395,8 @@ public sealed class StatusWindow : IDisposable
 	private void DrawOverlayMode()
 	{
 		var ov = _settings.Overlay;
-		_chrome.Apply(ov.ClickThrough, ov.Opacity);
-		_chrome.ApplyGeometry(ov.Corner, ov.OffsetX, ov.OffsetY, ov.Width, ov.Height);
+		ImGuiApp.EnableOverlay(ov.Opacity, ov.ClickThrough);
+		ImGuiApp.SetOverlayGeometry(MapCorner(ov.Corner), ov.OffsetX, ov.OffsetY, ov.Width, ov.Height);
 
 		DrawOverlayToolbar(ov);
 
@@ -407,6 +413,17 @@ public sealed class StatusWindow : IDisposable
 
 		DrawResizeGrip(ov);
 	}
+
+	// Map our persisted overlay corner onto ImGuiApp's canonical OverlayCorner. Both enums share
+	// the same members; the mapping keeps us decoupled from the library enum's underlying values.
+	private static ktsu.ImGui.App.OverlayCorner MapCorner(OverlayCorner corner) => corner switch
+	{
+		OverlayCorner.TopLeft => ktsu.ImGui.App.OverlayCorner.TopLeft,
+		OverlayCorner.TopRight => ktsu.ImGui.App.OverlayCorner.TopRight,
+		OverlayCorner.BottomLeft => ktsu.ImGui.App.OverlayCorner.BottomLeft,
+		OverlayCorner.BottomRight => ktsu.ImGui.App.OverlayCorner.BottomRight,
+		_ => ktsu.ImGui.App.OverlayCorner.TopRight,
+	};
 
 	// A slim control strip pinned to the top of the overlay: a drag handle that nudges the
 	// corner offset, plus expand / opacity / click-through / exit controls.
