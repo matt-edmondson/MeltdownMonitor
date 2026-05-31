@@ -22,6 +22,7 @@ public sealed class Pipeline : IDisposable
 	private readonly ShortWindowHrvCalculator _hrv = new();
 	private readonly BaselineHrvTracker _baseline = new();
 	private readonly DysregulationDetector _detector;
+	private readonly RegulationVelocityTracker _velocity = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _runTask;
@@ -47,6 +48,10 @@ public sealed class Pipeline : IDisposable
 	/// (design doc §6). Neutral until the first sample arrives.</summary>
 	public RegulationReading LatestReading { get; private set; } = new(0.0, 1.0, 0.0, 0.5, 0.0);
 
+	/// <summary>Latest escalation/de-escalation velocity + trend of the arousal index.
+	/// <see cref="RegulationDynamics.Steady"/> until the baseline is warm.</summary>
+	public RegulationDynamics LatestDynamics { get; private set; } = RegulationDynamics.Steady;
+
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<DetectorState>? StateChanged;
@@ -68,6 +73,10 @@ public sealed class Pipeline : IDisposable
 	/// reading derived from the same sample, so the Now screen can drive the
 	/// field without recomputing the calculator inputs itself.</summary>
 	public event Action<RegulationReading>? ReadingUpdated;
+
+	/// <summary>Fires after <see cref="ReadingUpdated"/> with the velocity/trend of the
+	/// arousal index, derived from the same sample. Steady while calibrating or off-contact.</summary>
+	public event Action<RegulationDynamics>? DynamicsUpdated;
 
 	public Pipeline(MobileSettings settings, MeltdownRepository repository, IBeatSource source)
 	{
@@ -234,6 +243,21 @@ public sealed class Pipeline : IDisposable
 				_baseline.IsWarm);
 			LatestReading = reading;
 			ReadingUpdated?.Invoke(reading);
+
+			// Velocity/trend of the arousal index. Only fold usable samples (baseline warm,
+			// sensor in contact) into the tracker; otherwise reset it so the resumed stream
+			// re-seeds rather than computing a spike across the gap or off the cold->warm jump.
+			if (_baseline.IsWarm && LatestContact != SensorContactStatus.NotDetected)
+			{
+				_velocity.Update(reading.Index, finalSample.Timestamp);
+			}
+			else
+			{
+				_velocity.Reset();
+			}
+
+			LatestDynamics = _velocity.Latest;
+			DynamicsUpdated?.Invoke(LatestDynamics);
 		}
 	}
 

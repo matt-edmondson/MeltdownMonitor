@@ -243,6 +243,55 @@ public class NowViewModelTests
 		Assert.AreEqual(StateColors.ColorFor(DetectorState.Warning, isPaused: true), vm.RegulationStateColor);
 	}
 
+	[TestMethod]
+	public void Dynamics_IsSteady_ByDefault()
+	{
+		var vm = new NowViewModel();
+		Assert.AreEqual(RegulationDynamics.Steady, vm.Dynamics);
+		Assert.AreEqual("Steady", vm.TrendLabel);
+		Assert.AreEqual("steady", vm.VelocityText);
+		Assert.AreEqual(0.0, vm.NormalizedSpeed, 1e-12);
+		Assert.IsFalse(vm.IsTrendVisible);
+	}
+
+	[TestMethod]
+	public void OnDynamicsUpdated_Escalating_SetsLabelVelocityAndVisibility()
+	{
+		var vm = new NowViewModel();
+		// A confident reading is required for the trend to be visible.
+		vm.OnReadingUpdated(new RegulationReading(0.2, 0.8, 1.0, 0.5, 0.0));
+
+		vm.OnDynamicsUpdated(new RegulationDynamics(0.03, RegulationTrend.Escalating, 0.6));
+
+		Assert.AreEqual("Escalating", vm.TrendLabel);
+		Assert.AreEqual("+0.03 /s", vm.VelocityText);
+		Assert.AreEqual(0.6, vm.NormalizedSpeed, 1e-9);
+		Assert.IsTrue(vm.IsTrendVisible);
+	}
+
+	[TestMethod]
+	public void OnDynamicsUpdated_DeEscalating_FormatsNegativeRate()
+	{
+		var vm = new NowViewModel();
+		vm.OnReadingUpdated(new RegulationReading(0.2, 0.8, 1.0, 0.5, 0.0));
+
+		vm.OnDynamicsUpdated(new RegulationDynamics(-0.03, RegulationTrend.DeEscalating, 0.6));
+
+		Assert.AreEqual("Easing", vm.TrendLabel);
+		Assert.AreEqual("-0.03 /s", vm.VelocityText);
+	}
+
+	[TestMethod]
+	public void IsTrendVisible_IsFalse_WhileCalibrating()
+	{
+		var vm = new NowViewModel();
+		// Low confidence (baseline still warming) hides the trend even if escalating.
+		vm.OnReadingUpdated(new RegulationReading(0.0, 1.0, 0.4, 0.5, 0.0));
+		vm.OnDynamicsUpdated(new RegulationDynamics(0.03, RegulationTrend.Escalating, 0.6));
+
+		Assert.IsFalse(vm.IsTrendVisible);
+	}
+
 	private static HrvSample Sample(double rmssd, double meanHr, double baseline, DetectorState state) =>
 		new(
 			DateTimeOffset.UtcNow,

@@ -17,7 +17,8 @@
                                          Reading="{Binding Reading}"
                                          Trail="{Binding RegulationTrail}"
                                          HeartRate="{Binding HeartRate}"
-                                         StateColor="{Binding RegulationStateColor}" />
+                                         StateColor="{Binding RegulationStateColor}"
+                                         Dynamics="{Binding Dynamics}" />
                     <ctl:Sparkline Grid.Row="1"
                                    Height="48"
                                    Margin="0,8,0,0"
@@ -62,6 +63,23 @@
                            Foreground="#8A8F98"
                            FontSize="12"
                            HorizontalAlignment="Center" />
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            Spacing="8"
+                            IsVisible="{Binding IsTrendVisible}">
+                    <TextBlock Text="{Binding TrendLabel}"
+                               Foreground="#CAD3F5"
+                               FontSize="13"
+                               FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding VelocityText}"
+                               Foreground="#8A8F98"
+                               FontSize="13" />
+                    <ProgressBar Width="60"
+                                 Minimum="0"
+                                 Maximum="1"
+                                 Value="{Binding NormalizedSpeed}"
+                                 VerticalAlignment="Center" />
+                </StackPanel>
                 <TextBlock Text="Sensor contact lost — readings paused"
                            IsVisible="{Binding IsContactLost}"
                            Foreground="#E5C07B"

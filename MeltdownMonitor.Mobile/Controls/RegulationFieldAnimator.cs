@@ -19,6 +19,7 @@ public sealed class RegulationFieldAnimator
 	// teleporting the marker the moment the timer resumes.
 	private const double MaxStepSeconds = 0.1;
 	private const double MarkerEaseRate = 6.0;     // matches the desktop's exp ease
+	private const double SpeedEaseRate = 6.0;      // matches the marker ease so the arrow grows/shrinks in step
 	private const double JitterRate = 6.0;
 	private const double JitterAmplitude = 1.5;    // px at full quality + depth
 	private const double BreathHalfAmplitude = 0.18;
@@ -27,6 +28,10 @@ public sealed class RegulationFieldAnimator
 	/// <summary>Marker position along the major axis, eased toward the latest
 	/// reading's index so it glides between the multi-second samples.</summary>
 	public double MarkerPos { get; private set; }
+
+	/// <summary>Eased magnitude of the velocity arrow, glided toward the latest
+	/// <c>RegulationDynamics.NormalizedSpeed</c> so it grows/shrinks smoothly.</summary>
+	public double DisplayedSpeed { get; private set; }
 
 	/// <summary>Breathing phase in radians (wrapped to <c>[0, 2π)</c>), advanced
 	/// at the current HR cadence; drives the marker halo's gentle pulse.</summary>
@@ -43,7 +48,7 @@ public sealed class RegulationFieldAnimator
 	/// non-finite <paramref name="dt"/> is a no-op; long gaps are clamped so the
 	/// marker never teleports.
 	/// </summary>
-	public void Step(double dt, double targetIndex, double heartRate)
+	public void Step(double dt, double targetIndex, double heartRate, double targetSpeed = 0.0)
 	{
 		if (!double.IsFinite(dt) || dt <= 0.0)
 		{
@@ -54,6 +59,9 @@ public sealed class RegulationFieldAnimator
 
 		double target = double.IsFinite(targetIndex) ? targetIndex : MarkerPos;
 		MarkerPos += (target - MarkerPos) * (1.0 - Math.Exp(-dt * MarkerEaseRate));
+
+		double speedTarget = double.IsFinite(targetSpeed) ? Math.Clamp(targetSpeed, 0.0, 1.0) : DisplayedSpeed;
+		DisplayedSpeed += (speedTarget - DisplayedSpeed) * (1.0 - Math.Exp(-dt * SpeedEaseRate));
 
 		double bpm = Math.Max(MinBreathBpm, double.IsFinite(heartRate) ? heartRate : 0.0);
 		BreathPhase = (BreathPhase + (dt * (bpm / 60.0) * Math.Tau)) % Math.Tau;

@@ -53,6 +53,7 @@ public sealed class RegulationFieldView : IDisposable
 	private float _animTime;
 	private float _hrDisplay = 60f;          // eased HR for a smooth breathing cadence
 	private RrTexturePlayhead _playhead;     // free-running smooth scroll for the live RR texture
+	private float _arrowSpeed;               // eased displayed normalized speed for the velocity arrow
 
 	private readonly record struct TrailPoint(DateTimeOffset Time, RegulationReading Reading);
 
@@ -198,6 +199,10 @@ public sealed class RegulationFieldView : IDisposable
 		// arrival of beats over BLE. Driven purely by frame time — never reset or clamped per beat.
 		_playhead.Advance(dt, MathF.Max(40f, _hrDisplay) / 60f, beatsAppended - 1);
 
+		// Ease the arrow magnitude toward the latest dynamics so it grows/shrinks smoothly.
+		var dynamics = _pipeline.LatestDynamics;
+		_arrowSpeed += ((float)dynamics.NormalizedSpeed - _arrowSpeed) * (1f - MathF.Exp(-dt * 6f));
+
 		DrawLfHfHalo(draw, centre, halfWidth, disp, confidence);
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
 		DrawVagalAxis(draw, centre, markerYClamp, confidence);
@@ -205,6 +210,7 @@ public sealed class RegulationFieldView : IDisposable
 		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, disp, confidence);
 		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, confidence);
 		DrawMarker(draw, centre, halfWidth, liveLobeHeight, disp, confidence);
+		DrawVelocityArrow(draw, centre, halfWidth, liveLobeHeight, disp, dynamics, confidence);
 		DrawCrossover(draw, centre, confidence);
 		DrawLabelsAndLock(draw, origin, centre, halfWidth, labelClearHeight);
 		DrawReadout(origin, height);
@@ -397,7 +403,17 @@ public sealed class RegulationFieldView : IDisposable
 				Vector2 cur = CatmullRom(p0, p1, p2, p3, t);
 				float frac = (i + t) / (count - 1);
 				float width = 1f + (2.5f * frac);
-				draw.AddLine(prev, cur, Col(MacchiatoPalette.WithAlpha(stateCol, 0.55f * frac * confidence)), width);
+				// Leading edge (newest, frac->1) brightens with speed and tints by trend so the
+				// comet visibly "leans" the way arousal is heading; the tail stays the state colour.
+				// At _arrowSpeed == 0 (steady) this reduces to the original stateCol at 0.55*frac alpha.
+				Vector4 segCol = _pipeline.LatestDynamics.Trend switch
+				{
+					RegulationTrend.Escalating => MacchiatoPalette.Lerp(stateCol, MacchiatoPalette.Peach, frac * _arrowSpeed),
+					RegulationTrend.DeEscalating => MacchiatoPalette.Lerp(stateCol, MacchiatoPalette.Sky, frac * _arrowSpeed),
+					_ => stateCol,
+				};
+				float segAlpha = (0.55f + (0.3f * _arrowSpeed)) * frac * confidence;
+				draw.AddLine(prev, cur, Col(MacchiatoPalette.WithAlpha(segCol, segAlpha)), width);
 				prev = cur;
 			}
 		}
@@ -450,14 +466,47 @@ public sealed class RegulationFieldView : IDisposable
 		draw.AddText(new Vector2(gate.X - (lbl.X * 0.5f), ay - ImGui.GetTextLineHeight() - 3f), goalDim, "RECOVER");
 	}
 
-	// Marker: X = arousal index (eased), Y = vagal tone (eased) — grounded/low when HRV is
-	// healthy, lifted when it collapses. Breathing halo pulses at the current heart rate.
-	private void DrawMarker(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp, float confidence)
+	private static Vector2 MarkerScreenPos(Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp)
 	{
 		Vector2 p = LemniscateGeometry.MarkerPoint((float)disp.Index, centre, halfWidth);
 		float clamp = liveLobeHeight * MarkerYSpan;
 		float yOff = ((float)disp.VariabilityQuality - 0.5f) * liveLobeHeight * MarkerYSpan;
 		p.Y += Math.Clamp(yOff, -clamp, clamp);
+		return p;
+	}
+
+	private void DrawVelocityArrow(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp, RegulationDynamics dyn, float confidence)
+	{
+		if (confidence < 0.999f || dyn.Trend == RegulationTrend.Steady || _arrowSpeed < 0.02f)
+		{
+			return;
+		}
+
+		Vector2 p = MarkerScreenPos(centre, halfWidth, liveLobeHeight, disp);
+		float dir = dyn.Trend == RegulationTrend.Escalating ? 1f : -1f;
+		Vector4 hue = dyn.Trend == RegulationTrend.Escalating ? MacchiatoPalette.Peach : MacchiatoPalette.Sky;
+		float alpha = confidence * (0.35f + (0.65f * _arrowSpeed));
+		uint col = Col(MacchiatoPalette.WithAlpha(hue, alpha));
+
+		float gap = 12f;
+		float len = 10f + (_arrowSpeed * 46f);
+		Vector2 start = p + new Vector2(dir * gap, 0f);
+		Vector2 tip = start + new Vector2(dir * len, 0f);
+		draw.AddLine(start, tip, col, 3f);
+
+		const float head = 7f;
+		draw.AddTriangleFilled(
+			tip,
+			tip + new Vector2(-dir * head, -head * 0.7f),
+			tip + new Vector2(-dir * head, head * 0.7f),
+			col);
+	}
+
+	// Marker: X = arousal index (eased), Y = vagal tone (eased) — grounded/low when HRV is
+	// healthy, lifted when it collapses. Breathing halo pulses at the current heart rate.
+	private void DrawMarker(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp, float confidence)
+	{
+		Vector2 p = MarkerScreenPos(centre, halfWidth, liveLobeHeight, disp);
 
 		Vector4 stateCol = MacchiatoPalette.State(_pipeline.CurrentState);
 		float pulse = 1f + (0.18f * MathF.Sin(_breathPhase));
@@ -529,7 +578,14 @@ public sealed class RegulationFieldView : IDisposable
 		string rel = drop >= 0
 			? $"{drop * 100:F0}% below base"
 			: $"{-drop * 100:F0}% above base";
-		ImGui.Text($"HR {s.MeanHr:F0} bpm    RMSSD {s.Rmssd:F0} ms ({rel})    {_pipeline.CurrentState}");
+		var dyn = _pipeline.LatestDynamics;
+		string trend = dyn.Trend switch
+		{
+			RegulationTrend.Escalating => $"^ escalating {dyn.Velocity:+0.00;-0.00}/s",
+			RegulationTrend.DeEscalating => $"v easing {dyn.Velocity:+0.00;-0.00}/s",
+			_ => "- steady",
+		};
+		ImGui.Text($"HR {s.MeanHr:F0} bpm    RMSSD {s.Rmssd:F0} ms ({rel})    {_pipeline.CurrentState}    {trend}");
 	}
 
 	private static void DrawCalibratingOverlay(ImDrawListPtr draw, Vector2 centre, float confidence)
