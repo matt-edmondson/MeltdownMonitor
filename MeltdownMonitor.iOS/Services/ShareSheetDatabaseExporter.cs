@@ -34,12 +34,12 @@ public sealed class ShareSheetDatabaseExporter : IDatabaseExporter
 				}
 
 				// iPad requires a popover anchor; anchor to the presenting view.
-				if (activity.PopoverPresentationController is { } popover)
+				if (activity.PopoverPresentationController is { } popover && controller.View is { } view)
 				{
-					popover.SourceView = controller.View;
+					popover.SourceView = view;
 					popover.SourceRect = new CoreGraphics.CGRect(
-						controller.View!.Bounds.GetMidX(),
-						controller.View.Bounds.GetMidY(),
+						view.Bounds.GetMidX(),
+						view.Bounds.GetMidY(),
 						0,
 						0);
 					popover.PermittedArrowDirections = 0;
