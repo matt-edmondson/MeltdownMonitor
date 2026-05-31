@@ -205,16 +205,23 @@ jobs:
         with:
           dotnet-version: "10.0.2xx"
 
-      - name: Select latest Xcode
+      # Match the build-test job exactly. The 10.0.2xx iOS workload requires an
+      # EXACT Xcode match (26.0), and build-test is the toolchain PR CI actually
+      # validates. Selecting "latest" here risked a workload/Xcode mismatch that
+      # only ever surfaced on a release tag — long after a contributor could
+      # catch it.
+      - name: Select matching Xcode (26.0)
         run: |
           set -e
-          LATEST=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1)
-          if [ -z "$LATEST" ]; then
-            echo "::error::No Xcode_*.app found in /Applications on this runner."
+          CANDIDATES=$(ls -d /Applications/Xcode_26.0*.app 2>/dev/null | sort -V)
+          if [ -z "$CANDIDATES" ]; then
+            echo "::error title=Xcode 26.0 not on runner::The 10.0.2xx iOS workload requires Xcode 26.0. Available Xcodes on this runner:"
+            ls -d /Applications/Xcode_*.app 2>/dev/null || echo "  (none)"
             exit 1
           fi
-          sudo xcode-select -s "$LATEST/Contents/Developer"
-          echo "Using $(xcodebuild -version | head -n 1) from $LATEST"
+          XCODE=$(echo "$CANDIDATES" | tail -n 1)
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          echo "Using $(xcodebuild -version | head -n 1) from $XCODE"
 
       - name: Install iOS workload
         run: |
