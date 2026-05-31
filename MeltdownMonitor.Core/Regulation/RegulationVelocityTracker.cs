@@ -13,7 +13,7 @@ public sealed class RegulationVelocityTracker
 {
 	// EWMA weight for the per-sample derivative (~2-sample memory at the 5 s emit cadence).
 	private const double SmoothingAlpha = 0.5;
-	// |velocity| (index-units/s) below this is treated as Steady — hysteresis around zero.
+	// |velocity| (index-units/s) below this is treated as Steady — deadband around zero.
 	private const double TrendDeadband = 0.01;
 	// |velocity| that maps to full visual magnitude (~ baseline->saturate in ~20 s).
 	private const double ReferenceSpeed = 0.05;

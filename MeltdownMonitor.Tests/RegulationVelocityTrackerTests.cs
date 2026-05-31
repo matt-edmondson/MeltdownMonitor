@@ -126,4 +126,25 @@ public class RegulationVelocityTrackerTests
 		var d = t.Update(double.NaN, T0.AddSeconds(10));
 		Assert.AreEqual(prev, d);
 	}
+
+	[TestMethod]
+	public void NonFiniteIndex_BeforeSeed_DoesNotSeed_NextCallStillSeeds()
+	{
+		var t = new RegulationVelocityTracker();
+		t.Update(double.NaN, T0);                  // non-finite before any seed — must not count as a seed
+		var d = t.Update(0.9, T0.AddSeconds(5));   // this is the real seed -> Steady, no derivative
+		Assert.AreEqual(RegulationTrend.Steady, d.Trend);
+		Assert.AreEqual(0.0, d.Velocity, 1e-12);
+	}
+
+	[TestMethod]
+	public void VelocityExactlyAtDeadband_IsSteady()
+	{
+		var t = new RegulationVelocityTracker();
+		t.Update(0.0, T0);
+		// raw = 0.1/5 = 0.02/s; EWMA from 0 -> 0.01/s == TrendDeadband exactly -> Steady (strict comparison)
+		var d = t.Update(0.1, T0.AddSeconds(5));
+		Assert.AreEqual(RegulationTrend.Steady, d.Trend);
+		Assert.AreEqual(0.01, d.Velocity, 1e-9);
+	}
 }
