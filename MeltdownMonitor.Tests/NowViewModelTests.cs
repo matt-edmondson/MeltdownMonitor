@@ -192,7 +192,7 @@ public class NowViewModelTests
 		var vm = new NowViewModel();
 		Assert.AreEqual(0, vm.RegulationTrail.Count);
 
-		var reading = new RegulationReading(Index: 0.42, VariabilityQuality: 0.7, Confidence: 1.0);
+		var reading = new RegulationReading(Index: 0.42, VariabilityQuality: 0.7, Confidence: 1.0, LobeRoundness: 0.5, LfHfBalance: 0.0);
 		vm.OnReadingUpdated(reading);
 
 		Assert.AreEqual(0.42, vm.Reading.Index, 0.001);
@@ -208,7 +208,7 @@ public class NowViewModelTests
 		// Push well past the trail cap; the oldest readings should fall off.
 		for (int i = 0; i < 200; i++)
 		{
-			vm.OnReadingUpdated(new RegulationReading(Index: i / 200.0, VariabilityQuality: 1, Confidence: 1));
+			vm.OnReadingUpdated(new RegulationReading(Index: i / 200.0, VariabilityQuality: 1, Confidence: 1, LobeRoundness: 0.5, LfHfBalance: 0.0));
 		}
 
 		Assert.IsTrue(vm.RegulationTrail.Count is > 0 and <= 48,
@@ -224,9 +224,9 @@ public class NowViewModelTests
 	{
 		var vm = new NowViewModel();
 
-		vm.OnReadingUpdated(new RegulationReading(0.1, 1, 1));
+		vm.OnReadingUpdated(new RegulationReading(0.1, 1, 1, 0.5, 0.0));
 		var first = vm.RegulationTrail;
-		vm.OnReadingUpdated(new RegulationReading(0.2, 1, 1));
+		vm.OnReadingUpdated(new RegulationReading(0.2, 1, 1, 0.5, 0.0));
 		var second = vm.RegulationTrail;
 
 		Assert.AreNotSame(first, second, "a new list instance must be published so AffectsRender fires");

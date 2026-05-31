@@ -40,7 +40,7 @@ public sealed class NowViewModel : ViewModelBase
 	private DeviceInformation? _deviceInfo;
 	private DateTimeOffset _stateChangedAt = DateTimeOffset.UtcNow;
 	private ConnectionState _connection = ConnectionState.Disconnected;
-	private RegulationReading _reading = new(0.0, 1.0, 0.0);
+	private RegulationReading _reading = new(0.0, 1.0, 0.0, 0.5, 0.0);
 	private IReadOnlyList<RegulationReading> _regulationTrailSnapshot = [];
 	private bool _isAnnotationSheetOpen;
 	private string _annotationNotes = string.Empty;

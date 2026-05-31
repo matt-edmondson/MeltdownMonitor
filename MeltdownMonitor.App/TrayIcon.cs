@@ -19,6 +19,13 @@ public sealed class TrayIcon : IDisposable
 	private readonly Action _quit;
 	private readonly Dictionary<DetectorState, Icon> _stateIcons;
 
+	// Pipeline.SampleUpdated fires on the background BLE/pipeline thread, but
+	// NotifyIcon and the context-menu items are thread-affine WinForms UI
+	// components. This hidden control — whose handle is created on the UI thread
+	// in the constructor — marshals those mutations back onto the UI message loop
+	// (the desktop counterpart of the mobile NowViewModel.RunOnUi).
+	private readonly Control _uiMarshal = new();
+
 	// Regulation Lemniscate tray glyphs (Catppuccin Macchiato), embedded per detector state.
 	// Logical names match the EmbeddedResource entries in MeltdownMonitor.App.csproj.
 	private static readonly IReadOnlyDictionary<DetectorState, string> StateIconResources = new Dictionary<DetectorState, string>
@@ -47,6 +54,10 @@ public sealed class TrayIcon : IDisposable
 		_toggleOverlayClickThrough = toggleOverlayClickThrough;
 		_quit = quit;
 
+		// Create the marshalling handle on the UI thread before wiring any pipeline
+		// events, so background-thread callbacks always have a valid target.
+		_ = _uiMarshal.Handle;
+
 		_stateIcons = StateIconResources.ToDictionary(
 			static entry => entry.Key,
 			static entry => LoadIcon(entry.Value));
@@ -60,7 +71,26 @@ public sealed class TrayIcon : IDisposable
 		};
 
 		_notifyIcon.DoubleClick += (_, _) => _toggleStatusWindow();
-		_pipeline.SampleUpdated += s => UpdateIcon(s.State);
+		_pipeline.SampleUpdated += s => RunOnUi(() => UpdateIcon(s.State));
+	}
+
+	// Marshal an action onto the UI thread. NotifyIcon/ToolStripMenuItem members
+	// must only be touched there; SampleUpdated arrives on the BLE thread.
+	private void RunOnUi(Action action)
+	{
+		if (_uiMarshal.IsDisposed)
+		{
+			return;
+		}
+
+		if (_uiMarshal.InvokeRequired)
+		{
+			_uiMarshal.BeginInvoke(action);
+		}
+		else
+		{
+			action();
+		}
 	}
 
 	private void UpdateIcon(DetectorState state)
@@ -87,7 +117,7 @@ public sealed class TrayIcon : IDisposable
 		var menu = new ContextMenuStrip();
 
 		var stateItem = new ToolStripMenuItem("State: Idle") { Enabled = false };
-		_pipeline.SampleUpdated += s => stateItem.Text = $"State: {s.State}  RMSSD: {s.Rmssd:F1}  HR: {s.MeanHr:F0}";
+		_pipeline.SampleUpdated += s => RunOnUi(() => stateItem.Text = $"State: {s.State}  RMSSD: {s.Rmssd:F1}  HR: {s.MeanHr:F0}");
 
 		menu.Items.Add(stateItem);
 		menu.Items.Add(new ToolStripSeparator());
@@ -130,6 +160,7 @@ public sealed class TrayIcon : IDisposable
 	public void Dispose()
 	{
 		_notifyIcon.Dispose();
+		_uiMarshal.Dispose();
 		foreach (var icon in _stateIcons.Values)
 		{
 			icon.Dispose();

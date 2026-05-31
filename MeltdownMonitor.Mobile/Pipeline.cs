@@ -45,7 +45,7 @@ public sealed class Pipeline : IDisposable
 
 	/// <summary>Latest arousal-vs-baseline reading for the Regulation Field
 	/// (design doc §6). Neutral until the first sample arrives.</summary>
-	public RegulationReading LatestReading { get; private set; } = new(0.0, 1.0, 0.0);
+	public RegulationReading LatestReading { get; private set; } = new(0.0, 1.0, 0.0, 0.5, 0.0);
 
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
@@ -74,7 +74,7 @@ public sealed class Pipeline : IDisposable
 		_settings = settings;
 		_repository = repository;
 		_source = source;
-		_detector = new DysregulationDetector(settings.Thresholds);
+		_detector = new DysregulationDetector(() => settings.Thresholds);
 		_detector.AlertFired += OnAlertFired;
 		_detector.StateChanged += OnStateChanged;
 

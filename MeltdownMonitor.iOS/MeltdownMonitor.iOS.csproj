@@ -11,6 +11,18 @@
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
     <CodesignEntitlements>Entitlements.plist</CodesignEntitlements>
+
+    <!--
+      The repo-wide TreatWarningsAsErrors (Directory.Build.props) applies to the C#
+      compiler. The iOS Release trim/AOT pass (ILLink) additionally emits trim-analysis
+      warnings, some from third-party assemblies (Avalonia.DesignerSupport,
+      Microsoft.Data.Sqlite) that we cannot fix in source. Keep those warnings VISIBLE
+      but non-fatal so the build can produce the trimmed app, while C# warnings stay
+      errors. NOTE: MobileSettingsSerializer still uses reflection-based System.Text.Json
+      (IL2026) — fine on JIT, not verified under iOS trim/AOT. Follow-up: move it to a
+      source-generated JsonSerializerContext, then this can be reconsidered.
+    -->
+    <ILLinkTreatWarningsAsErrors>false</ILLinkTreatWarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

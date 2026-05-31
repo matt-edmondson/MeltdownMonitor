@@ -141,6 +141,11 @@ public sealed class PolarHrSource : IBeatSource, IBatterySource, IContactSource,
 		ulong address,
 		[EnumeratorCancellation] CancellationToken cancellationToken)
 	{
+		// Start each connection with a clean artifact-filter window so RR intervals
+		// from before a disconnect can't mis-flag the first beats after a reconnect
+		// (matches the Apple source, which resets on every connect).
+		_artifactFilter.Reset();
+
 		_device?.Dispose();
 		_device = await BluetoothLEDevice.FromBluetoothAddressAsync(address);
 

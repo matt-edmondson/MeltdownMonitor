@@ -15,9 +15,14 @@ public static class RegulationFieldCalculator
 	private const double RmssdWeight = 0.6;
 	private const double HrWeight = 0.4;
 
-	// A combined deviation equal to 1.0 (both metrics at their Warning thresholds)
-	// maps to this index magnitude, leaving head-room toward the saturating ±1.
-	private const double WarningIndex = 0.6;
+	/// <summary>
+	/// The index magnitude a combined deviation of 1.0 maps to — i.e. both RMSSD-drop and
+	/// HR-rise exactly at their Warning thresholds. This is therefore the boundary the
+	/// marker must fall back below to clear the Warning condition; the Regulation Field uses
+	/// it to draw the recovery target. Constant regardless of the configured thresholds,
+	/// because the index normalises by them. Leaves head-room toward the saturating ±1.
+	/// </summary>
+	public const double WarningBoundaryIndex = 0.6;
 
 	public static RegulationReading Compute(
 		HrvSample sample,
@@ -32,7 +37,7 @@ public static class RegulationFieldCalculator
 			|| !double.IsFinite(sample.Rmssd) || !double.IsFinite(sample.MeanHr))
 		{
 			// Baseline not usable yet — neutral position, no confidence.
-			return new RegulationReading(0.0, 1.0, 0.0);
+			return new RegulationReading(0.0, 1.0, 0.0, 0.5, 0.0);
 		}
 
 		double rmssdDrop = (sample.BaselineRmssd - sample.Rmssd) / sample.BaselineRmssd; // + when stressed
@@ -46,10 +51,28 @@ public static class RegulationFieldCalculator
 		// Positive combined = activation toward the warm lobe; negative = calmer than baseline.
 		double combined = (RmssdWeight * rmssdDrop / warnR)
 						+ (HrWeight * hrRise / warnH);
-		double index = Math.Clamp(combined * WarningIndex, -1.0, 1.0);
+		double index = Math.Clamp(combined * WarningBoundaryIndex, -1.0, 1.0);
 
 		double quality = Math.Clamp(sample.Rmssd / sample.BaselineRmssd, 0.0, 1.0);
 
-		return new RegulationReading(index, quality, confidence);
+		// Poincaré SD1/SD2 ratio → cosmetic lobe fatness. Un-baselined: healthy ratios sit
+		// roughly in [0.2, 0.6]; map that band to [0, 1]. Neutral 0.5 when extended metrics
+		// are absent. (SD2, the long-term axis, makes this independent of the RMSSD collapse
+		// that VariabilityQuality already shows.)
+		double lobeRoundness = 0.5;
+		if (sample.Extended is { SD1SD2Ratio: > 0 } poincare)
+		{
+			lobeRoundness = Math.Clamp((poincare.SD1SD2Ratio - 0.2) / 0.4, 0.0, 1.0);
+		}
+
+		// Signed LF/HF relative to its own baseline. 0 when no extended LF/HF or no baseline.
+		double lfHfBalance = 0.0;
+		if (sample.BaselineLfHfRatio > 0 && sample.Extended is { LfHfRatio: > 0 } freq)
+		{
+			double rise = (freq.LfHfRatio - sample.BaselineLfHfRatio) / sample.BaselineLfHfRatio;
+			lfHfBalance = Math.Clamp(rise, -1.0, 1.0);
+		}
+
+		return new RegulationReading(index, quality, confidence, lobeRoundness, lfHfBalance);
 	}
 }

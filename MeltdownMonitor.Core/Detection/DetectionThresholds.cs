@@ -44,13 +44,16 @@ public record DetectionThresholds
 	/// </summary>
 	public TimeSpan RecoveryHoldDuration { get; init; } = TimeSpan.FromSeconds(60);
 
-	// ── LF/HF corroboration (disabled by default — calibrate from logged data first) ──
+	// ── LF/HF corroboration (on by default — the most accurate setting) ──
 
 	/// <summary>
-	/// When true, Warning entry also requires LF/HF to be elevated above its baseline.
-	/// Reduces false positives. Enable only after verifying your personal LF/HF baseline.
+	/// When true, Warning entry also requires LF/HF to be elevated above its baseline —
+	/// the more accurate (more specific) signal, so it is the default. It is only applied
+	/// once a personal LF/HF baseline and ≥2 minutes of clean extended metrics exist; until
+	/// then the detector falls back to the RMSSD+HR condition, so it never suppresses early
+	/// warnings during warm-up.
 	/// </summary>
-	public bool UseLfHfCorroboration { get; init; } = false;
+	public bool UseLfHfCorroboration { get; init; } = true;
 
 	/// <summary>
 	/// LF/HF must rise at least this fraction above its baseline for the corroboration

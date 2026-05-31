@@ -18,6 +18,16 @@ public class RegulationFieldCalculatorTests
 		double baselineRmssd = 50, double baselineHr = 70) =>
 		new(DateTimeOffset.UtcNow, rmssd, 20, meanHr, baselineRmssd, baselineHr, DetectorState.Watching);
 
+	private static HrvSample WithExtended(double rmssd, double meanHr, double sd1Sd2Ratio,
+		double lfHfRatio, double baselineLfHf) =>
+		new HrvSample(DateTimeOffset.UtcNow, rmssd, 20, meanHr, 50, 70, DetectorState.Watching)
+		{
+			BaselineLfHfRatio = baselineLfHf,
+			Extended = new ExtendedHrvMetrics(
+				LfPowerMs2: 0, HfPowerMs2: 0, LfHfRatio: lfHfRatio,
+				SD1: 0, SD2: 0, SD1SD2Ratio: sd1Sd2Ratio, Sdnn: 0),
+		};
+
 	[TestMethod]
 	public void AtBaseline_IndexIsZero()
 	{
@@ -87,5 +97,40 @@ public class RegulationFieldCalculatorTests
 			Sample(50, 70, baselineRmssd: double.NaN, baselineHr: 70), Thresholds, 1, true);
 		Assert.AreEqual(0.0, r.Index, 0.001);
 		Assert.AreEqual(0.0, r.Confidence, 0.001);
+	}
+
+	[TestMethod]
+	public void LobeRoundness_DefaultsToNeutral_WhenNoExtended()
+	{
+		var r = RegulationFieldCalculator.Compute(Sample(50, 70), Thresholds, 1, true);
+		Assert.AreEqual(0.5, r.LobeRoundness, 0.001);
+	}
+
+	[TestMethod]
+	public void LobeRoundness_MapsSd1Sd2RatioBand()
+	{
+		// Band [0.2, 0.6] → [0, 1], clamped.
+		Assert.AreEqual(0.0, RegulationFieldCalculator.Compute(WithExtended(50, 70, 0.2, 0, 0), Thresholds, 1, true).LobeRoundness, 0.001);
+		Assert.AreEqual(0.5, RegulationFieldCalculator.Compute(WithExtended(50, 70, 0.4, 0, 0), Thresholds, 1, true).LobeRoundness, 0.001);
+		Assert.AreEqual(1.0, RegulationFieldCalculator.Compute(WithExtended(50, 70, 0.6, 0, 0), Thresholds, 1, true).LobeRoundness, 0.001);
+		Assert.AreEqual(1.0, RegulationFieldCalculator.Compute(WithExtended(50, 70, 0.9, 0, 0), Thresholds, 1, true).LobeRoundness, 0.001);
+	}
+
+	[TestMethod]
+	public void LfHfBalance_ZeroWhenNoExtendedOrNoBaseline()
+	{
+		Assert.AreEqual(0.0, RegulationFieldCalculator.Compute(Sample(50, 70), Thresholds, 1, true).LfHfBalance, 0.001);
+		Assert.AreEqual(0.0, RegulationFieldCalculator.Compute(WithExtended(50, 70, 0.4, 1.5, 0), Thresholds, 1, true).LfHfBalance, 0.001);
+	}
+
+	[TestMethod]
+	public void LfHfBalance_SignedRelativeToBaseline_Clamped()
+	{
+		// 50% above baseline → +0.5
+		Assert.AreEqual(0.5, RegulationFieldCalculator.Compute(WithExtended(50, 70, 0.4, 1.5, 1.0), Thresholds, 1, true).LfHfBalance, 0.001);
+		// 50% below baseline → -0.5
+		Assert.AreEqual(-0.5, RegulationFieldCalculator.Compute(WithExtended(50, 70, 0.4, 1.0, 2.0), Thresholds, 1, true).LfHfBalance, 0.001);
+		// 400% above → clamps to +1
+		Assert.AreEqual(1.0, RegulationFieldCalculator.Compute(WithExtended(50, 70, 0.4, 5.0, 1.0), Thresholds, 1, true).LfHfBalance, 0.001);
 	}
 }
