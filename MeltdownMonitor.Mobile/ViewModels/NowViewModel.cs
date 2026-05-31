@@ -41,6 +41,7 @@ public sealed class NowViewModel : ViewModelBase
 	private DateTimeOffset _stateChangedAt = DateTimeOffset.UtcNow;
 	private ConnectionState _connection = ConnectionState.Disconnected;
 	private RegulationReading _reading = new(0.0, 1.0, 0.0, 0.5, 0.0);
+	private RegulationDynamics _dynamics = RegulationDynamics.Steady;
 	private IReadOnlyList<RegulationReading> _regulationTrailSnapshot = [];
 	private bool _isAnnotationSheetOpen;
 	private string _annotationNotes = string.Empty;
@@ -68,6 +69,41 @@ public sealed class NowViewModel : ViewModelBase
 		get => _reading;
 		private set => SetField(ref _reading, value);
 	}
+
+	/// <summary>Latest escalation/de-escalation velocity + trend driving the field's arrow.</summary>
+	public RegulationDynamics Dynamics
+	{
+		get => _dynamics;
+		private set
+		{
+			if (SetField(ref _dynamics, value))
+			{
+				Raise(nameof(TrendLabel));
+				Raise(nameof(VelocityText));
+				Raise(nameof(NormalizedSpeed));
+				Raise(nameof(IsTrendVisible));
+			}
+		}
+	}
+
+	/// <summary>Human-readable trend word for the readout.</summary>
+	public string TrendLabel => _dynamics.Trend switch
+	{
+		RegulationTrend.Escalating => "Escalating",
+		RegulationTrend.DeEscalating => "Easing",
+		_ => "Steady",
+	};
+
+	/// <summary>Signed rate for the readout, or "steady" inside the deadband.</summary>
+	public string VelocityText => _dynamics.Trend == RegulationTrend.Steady
+		? "steady"
+		: $"{_dynamics.Velocity:+0.00;-0.00} /s";
+
+	/// <summary>[0,1] magnitude for the readout bar.</summary>
+	public double NormalizedSpeed => _dynamics.NormalizedSpeed;
+
+	/// <summary>Whether to show the trend readout — only when moving and the baseline is warm.</summary>
+	public bool IsTrendVisible => _dynamics.Trend != RegulationTrend.Steady && _reading.Confidence >= 0.999;
 
 	/// <summary>Recent readings (oldest first) drawn as the field's comet trail.
 	/// Replaced with a fresh snapshot on each update so the control re-renders.</summary>
@@ -305,6 +341,7 @@ public sealed class NowViewModel : ViewModelBase
 		pipeline.SampleUpdated += OnSampleUpdated;
 		pipeline.StateChanged += OnStateChanged;
 		pipeline.ReadingUpdated += OnReadingUpdated;
+		pipeline.DynamicsUpdated += OnDynamicsUpdated;
 		pipeline.BatteryUpdated += OnBatteryUpdated;
 		pipeline.ContactChanged += OnContactChanged;
 		pipeline.DeviceInfoUpdated += OnDeviceInfoUpdated;
@@ -383,6 +420,7 @@ public sealed class NowViewModel : ViewModelBase
 	public void OnReadingUpdated(RegulationReading reading) => RunOnUi(() =>
 	{
 		Reading = reading;
+		Raise(nameof(IsTrendVisible));
 
 		_regulationTrail.Add(reading);
 		while (_regulationTrail.Count > RegulationTrailLength)
@@ -393,6 +431,13 @@ public sealed class NowViewModel : ViewModelBase
 		// Hand the control a fresh list instance so its AffectsRender binding fires.
 		RegulationTrail = _regulationTrail.ToArray();
 	});
+
+	/// <summary>
+	/// Push fresh velocity/trend dynamics into the VM. Wired to
+	/// <see cref="Pipeline.DynamicsUpdated"/> and marshalled to the UI thread like the
+	/// other handlers. Public so tests can drive it without a live pipeline.
+	/// </summary>
+	public void OnDynamicsUpdated(RegulationDynamics dynamics) => RunOnUi(() => Dynamics = dynamics);
 
 	public void TickTimeDisplay() => Raise(nameof(TimeSinceStateChange));
 
