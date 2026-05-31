@@ -54,6 +54,10 @@ public sealed class RegulationField : Control
 	public static readonly StyledProperty<double> HeartRateProperty =
 		AvaloniaProperty.Register<RegulationField, double>(nameof(HeartRate));
 
+	public static readonly StyledProperty<RegulationDynamics> DynamicsProperty =
+		AvaloniaProperty.Register<RegulationField, RegulationDynamics>(
+			nameof(Dynamics), RegulationDynamics.Steady);
+
 	// Catppuccin Macchiato — the field's distinctive palette, single-sourced here
 	// to match the desktop renderer's MacchiatoPalette.
 	private static readonly Color Base = Color.FromRgb(0x24, 0x27, 0x3a);
@@ -67,7 +71,7 @@ public sealed class RegulationField : Control
 	private static readonly Color Maroon = Color.FromRgb(0xee, 0x99, 0xa0);
 
 	static RegulationField() =>
-		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty);
+		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty);
 
 	/// <summary>Latest arousal-vs-baseline reading; drives the marker position,
 	/// stroke fatness and overall confidence dimming.</summary>
@@ -101,6 +105,14 @@ public sealed class RegulationField : Control
 		set => SetValue(HeartRateProperty, value);
 	}
 
+	/// <summary>Latest escalation/de-escalation velocity + trend; drives the marker's
+	/// direction arrow and tints the trail's leading edge.</summary>
+	public RegulationDynamics Dynamics
+	{
+		get => GetValue(DynamicsProperty);
+		set => SetValue(DynamicsProperty, value);
+	}
+
 	protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
 	{
 		base.OnAttachedToVisualTree(e);
@@ -124,7 +136,7 @@ public sealed class RegulationField : Control
 		double dt = (now - _lastFrame).TotalSeconds;
 		_lastFrame = now;
 
-		_animator.Step(dt, Reading.Index, HeartRate);
+		_animator.Step(dt, Reading.Index, HeartRate, Dynamics.NormalizedSpeed);
 		InvalidateVisual();
 	}
 
@@ -222,7 +234,16 @@ public sealed class RegulationField : Control
 			double frac = i / (double)(trail.Count - 1);
 			Vector2 p = LemniscateGeometry.MarkerPoint((float)trail[i].Index, centre, halfWidth);
 			double radius = 1.5 + (3.0 * frac);
-			context.DrawEllipse(Brush(StateColor, 0.5 * frac * confidence), null, P(p), radius, radius);
+			// Leading edge (newest, frac->1) brightens with speed and tints by trend so the
+			// comet visibly "leans" the way arousal is heading; the tail stays the state colour.
+			Color tint = Dynamics.Trend switch
+			{
+				RegulationTrend.Escalating => Lerp(StateColor, Peach, frac * _animator.DisplayedSpeed),
+				RegulationTrend.DeEscalating => Lerp(StateColor, Sky, frac * _animator.DisplayedSpeed),
+				_ => StateColor,
+			};
+			double alpha = (0.5 + (0.3 * _animator.DisplayedSpeed)) * frac * confidence;
+			context.DrawEllipse(Brush(tint, alpha), null, P(p), radius, radius);
 		}
 	}
 
@@ -236,6 +257,39 @@ public sealed class RegulationField : Control
 		context.DrawEllipse(Brush(StateColor, 0.18 * confidence), null, at, halo, halo); // halo
 		context.DrawEllipse(Brush(StateColor, confidence), null, at, 6, 6);              // core
 		context.DrawEllipse(Brush(Base, confidence), null, at, 2.5, 2.5);                // pupil
+		DrawVelocityArrow(context, at, confidence);
+	}
+
+	private void DrawVelocityArrow(DrawingContext context, Point markerAt, double confidence)
+	{
+		var dyn = Dynamics;
+		double speed = _animator.DisplayedSpeed;
+		if (confidence < 0.999 || dyn.Trend == RegulationTrend.Steady || speed < 0.02)
+		{
+			return;
+		}
+
+		double dir = dyn.Trend == RegulationTrend.Escalating ? 1.0 : -1.0;
+		Color hue = dyn.Trend == RegulationTrend.Escalating ? Peach : Sky;
+		double alpha = confidence * (0.35 + (0.65 * speed));
+
+		double gap = 12.0;
+		double len = 10.0 + (speed * 46.0);
+		var start = new Point(markerAt.X + (dir * gap), markerAt.Y);
+		var tip = new Point(start.X + (dir * len), start.Y);
+		context.DrawLine(new Pen(Brush(hue, alpha), 3), start, tip);
+
+		const double head = 7.0;
+		var geo = new StreamGeometry();
+		using (var g = geo.Open())
+		{
+			g.BeginFigure(tip, isFilled: true);
+			g.LineTo(new Point(tip.X - (dir * head), tip.Y - (head * 0.7)));
+			g.LineTo(new Point(tip.X - (dir * head), tip.Y + (head * 0.7)));
+			g.EndFigure(isClosed: true);
+		}
+
+		context.DrawGeometry(Brush(hue, alpha), null, geo);
 	}
 
 	private static void DrawLabels(DrawingContext context, Point centre, float halfWidth, float lobeHeight)
