@@ -74,7 +74,7 @@ public sealed class Pipeline : IDisposable
 		_settings = settings;
 		_repository = repository;
 		_source = source;
-		_detector = new DysregulationDetector(settings.Thresholds);
+		_detector = new DysregulationDetector(() => settings.Thresholds);
 		_detector.AlertFired += OnAlertFired;
 		_detector.StateChanged += OnStateChanged;
 
