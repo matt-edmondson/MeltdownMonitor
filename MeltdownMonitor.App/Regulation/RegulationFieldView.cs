@@ -295,7 +295,7 @@ public sealed class RegulationFieldView : IDisposable
 				int i0 = (int)Math.Floor(posBuf);
 				int i1 = Math.Min(i0 + 1, devLen - 1);
 				float d = dev[i0] + ((float)(dev[i1] - dev[i0]) * (float)(posBuf - i0));
-				jitter = d * MaxJitterPx * depth;
+				jitter = d * MaxJitterPx * _drawScale * depth;
 			}
 			Vector2 normal = Normal(live[(i - 1 + n) % n], live[(i + 1) % n]);
 			pts[i] = v + (normal * jitter);
