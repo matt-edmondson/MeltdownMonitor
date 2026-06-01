@@ -133,4 +133,35 @@ public class RegulationFieldCalculatorTests
 		// 400% above → clamps to +1
 		Assert.AreEqual(1.0, RegulationFieldCalculator.Compute(WithExtended(50, 70, 0.4, 5.0, 1.0), Thresholds, 1, true).LfHfBalance, 0.001);
 	}
+
+	[TestMethod]
+	public void Hypoarousal_HighWhenHrFarBelowBaselineAndVariabilityCollapsed()
+	{
+		// HR ~30% below baseline, RMSSD collapsed to 20% of baseline = low-arousal collapse.
+		var r = RegulationFieldCalculator.Compute(Sample(rmssd: 10, meanHr: 49), Thresholds, 1, true);
+		Assert.IsTrue(r.Hypoarousal > 0.7, $"expected strong hypoarousal, got {r.Hypoarousal}");
+	}
+
+	[TestMethod]
+	public void Hypoarousal_ZeroForGenuineRest_HrBelowButVariabilityHigh()
+	{
+		// HR below baseline but RMSSD above baseline = real vagal rest, not shutdown.
+		var r = RegulationFieldCalculator.Compute(Sample(rmssd: 70, meanHr: 60), Thresholds, 1, true);
+		Assert.AreEqual(0.0, r.Hypoarousal, 0.001);
+	}
+
+	[TestMethod]
+	public void Hypoarousal_ZeroWhenActivated()
+	{
+		// HR above baseline = sympathetic activation, not hypoarousal.
+		var r = RegulationFieldCalculator.Compute(Sample(rmssd: 20, meanHr: 90), Thresholds, 1, true);
+		Assert.AreEqual(0.0, r.Hypoarousal, 0.001);
+	}
+
+	[TestMethod]
+	public void Hypoarousal_ZeroWhenBaselineUnusable()
+	{
+		var r = RegulationFieldCalculator.Compute(Sample(50, 70, baselineRmssd: 0, baselineHr: 0), Thresholds, 1, true);
+		Assert.AreEqual(0.0, r.Hypoarousal, 0.001);
+	}
 }
