@@ -19,7 +19,8 @@
                                          HeartRate="{Binding HeartRate}"
                                          StateColor="{Binding RegulationStateColor}"
                                          Dynamics="{Binding Dynamics}"
-                                         JitterExaggeration="{Binding JitterExaggeration}" />
+                                         JitterExaggeration="{Binding JitterExaggeration}"
+                                         LobeThickness="{Binding LobeThickness}" />
                     <ctl:Sparkline Grid.Row="1"
                                    Height="48"
                                    Margin="0,8,0,0"

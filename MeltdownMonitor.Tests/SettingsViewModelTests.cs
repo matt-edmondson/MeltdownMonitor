@@ -83,4 +83,43 @@ public class SettingsViewModelTests
 		vm.JitterExaggeration = 1.5; // changed → one persist
 		Assert.AreEqual(1, saves);
 	}
+
+	[TestMethod]
+	public void LobeThickness_RoundTripsOntoSettings()
+	{
+		var settings = new MobileSettings();
+		var vm = new SettingsViewModel(settings);
+
+		vm.LobeThickness = 2.0;
+
+		Assert.AreEqual(2.0, settings.LobeThickness, 1e-9);
+		Assert.AreEqual(2.0, vm.LobeThickness, 1e-9);
+	}
+
+	[TestMethod]
+	public void LobeThickness_ClampsToRange()
+	{
+		var settings = new MobileSettings();
+		var vm = new SettingsViewModel(settings);
+
+		vm.LobeThickness = 0.0;
+		Assert.AreEqual(0.5, settings.LobeThickness, 1e-9, "below floor clamps to 0.5");
+
+		vm.LobeThickness = 99.0;
+		Assert.AreEqual(3.0, settings.LobeThickness, 1e-9, "above ceiling clamps to 3");
+	}
+
+	[TestMethod]
+	public void LobeThickness_PersistsOnlyOnChange()
+	{
+		var settings = new MobileSettings { LobeThickness = 1.0 };
+		int saves = 0;
+		var vm = new SettingsViewModel(settings, onChanged: () => saves++);
+
+		vm.LobeThickness = 1.0; // unchanged → no persist
+		Assert.AreEqual(0, saves);
+
+		vm.LobeThickness = 1.5; // changed → one persist
+		Assert.AreEqual(1, saves);
+	}
 }

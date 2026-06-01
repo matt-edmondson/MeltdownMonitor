@@ -61,6 +61,9 @@ public sealed class RegulationField : Control
 	public static readonly StyledProperty<double> JitterExaggerationProperty =
 		AvaloniaProperty.Register<RegulationField, double>(nameof(JitterExaggeration), 1.0);
 
+	public static readonly StyledProperty<double> LobeThicknessProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(LobeThickness), 1.0);
+
 	// Catppuccin Macchiato — the field's distinctive palette, single-sourced here
 	// to match the desktop renderer's MacchiatoPalette.
 	private static readonly Color Base = Color.FromRgb(0x24, 0x27, 0x3a);
@@ -74,7 +77,7 @@ public sealed class RegulationField : Control
 	private static readonly Color Maroon = Color.FromRgb(0xee, 0x99, 0xa0);
 
 	static RegulationField() =>
-		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty);
+		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, LobeThicknessProperty);
 
 	/// <summary>Latest arousal-vs-baseline reading; drives the marker position,
 	/// stroke fatness and overall confidence dimming.</summary>
@@ -123,6 +126,14 @@ public sealed class RegulationField : Control
 	{
 		get => GetValue(JitterExaggerationProperty);
 		set => SetValue(JitterExaggerationProperty, value);
+	}
+
+	/// <summary>User-configurable multiplier on the live trace's lobe stroke thickness
+	/// (clamped 0.5–3). 1.0 is the tuned default.</summary>
+	public double LobeThickness
+	{
+		get => GetValue(LobeThicknessProperty);
+		set => SetValue(LobeThicknessProperty, value);
 	}
 
 	protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -211,7 +222,7 @@ public sealed class RegulationField : Control
 		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * 1.4f);
 		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * 1.4f);
 		float quality = (float)Math.Clamp(r.VariabilityQuality, 0.0, 1.0);
-		double baseThick = 3.0 + (4.0 * quality);
+		double baseThick = (3.0 + (4.0 * quality)) * Math.Clamp(LobeThickness, 0.5, 3.0);
 
 		for (int i = 0; i < ghost.Count; i++)
 		{

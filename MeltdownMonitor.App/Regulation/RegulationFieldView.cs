@@ -267,7 +267,7 @@ public sealed class RegulationFieldView : IDisposable
 		float[] dev = BuildRrDeviations(rr);
 		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * LobeSwellFactor);
 		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * LobeSwellFactor);
-		float baseThick = (4f + (6f * (float)r.VariabilityQuality)) * _drawScale;
+		float baseThick = (4f + (6f * (float)r.VariabilityQuality)) * (float)_pipeline.LobeThickness * _drawScale;
 		int n = live.Count;
 
 		// Jitter each VERTEX once (along the smoothed vertex normal) so adjacent segments

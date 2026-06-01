@@ -99,4 +99,21 @@ public class MobileSettingsSerializerTests
 	{
 		Assert.AreEqual(1.0, new MobileSettings().JitterExaggeration, 1e-9);
 	}
+
+	[TestMethod]
+	public void RoundTrip_PreservesLobeThickness()
+	{
+		var settings = new MobileSettings { LobeThickness = 2.5 };
+
+		string json = MobileSettingsSerializer.Serialize(settings);
+		MobileSettings restored = MobileSettingsSerializer.Deserialize(json);
+
+		Assert.AreEqual(2.5, restored.LobeThickness, 1e-9);
+	}
+
+	[TestMethod]
+	public void Default_LobeThickness_Is1()
+	{
+		Assert.AreEqual(1.0, new MobileSettings().LobeThickness, 1e-9);
+	}
 }

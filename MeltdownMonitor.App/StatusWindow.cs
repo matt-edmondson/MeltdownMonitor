@@ -976,6 +976,16 @@ public sealed class StatusWindow : IDisposable
 		}
 		ImGui.SameLine();
 		HelpMarker("How much the Regulation Field's live trace exaggerates beat-to-beat variability. 1.0x is tuned default; 0 flattens it; higher amplifies the undulation.");
+		ImGui.SameLine();
+
+		float lobeThick = (float)_settings.LobeThickness;
+		if (ImGuiWidgets.Knob("Lobe thickness", ref lobeThick, 0.5f, 3f, format: "%.1fx", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.LobeThickness = lobeThick;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Stroke thickness of the Regulation Field's live trace. 1.0x is tuned default; higher = bolder lobes, lower = finer.");
 
 		// ── Detection thresholds ─────────────────────────────────────────
 		// Fraction knobs work in percent (0..100) and divide on assign so the
@@ -1407,6 +1417,7 @@ public sealed class StatusWindow : IDisposable
 				_settings.SparklineWindowMinutes = 60;
 				_settings.RegulationTrailLength = 48;
 				_settings.JitterExaggeration = 1.0;
+				_settings.LobeThickness = 1.0;
 				_settings.Save();
 				_pipeline.ReseedBaseline();
 				ImGui.CloseCurrentPopup();

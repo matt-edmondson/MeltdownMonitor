@@ -57,6 +57,10 @@ public sealed class Pipeline : IDisposable
 	/// read live by the field view.</summary>
 	public double JitterExaggeration => Math.Clamp(_settings.JitterExaggeration, 0.0, 3.0);
 
+	/// <summary>Configured Regulation Field lobe stroke-thickness multiplier (clamped 0.5–3),
+	/// read live by the field view.</summary>
+	public double LobeThickness => Math.Clamp(_settings.LobeThickness, 0.5, 3.0);
+
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<Beat>? BeatReceived;

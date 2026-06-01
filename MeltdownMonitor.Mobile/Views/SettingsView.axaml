@@ -58,6 +58,16 @@
                         Value="{Binding JitterExaggeration, Mode=TwoWay}" />
                 <TextBlock Text="How much the live trace exaggerates beat-to-beat variability. 1.0x is the default; 0 flattens it."
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Lobe thickness" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding LobeThickness, StringFormat='{}{0:F1}x'}" />
+                </Grid>
+                <Slider Minimum="0.5" Maximum="3"
+                        Value="{Binding LobeThickness, Mode=TwoWay}" />
+                <TextBlock Text="Stroke thickness of the live trace. 1.0x is the default; higher = bolder lobes."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
             </StackPanel>
 
             <StackPanel Spacing="6">
