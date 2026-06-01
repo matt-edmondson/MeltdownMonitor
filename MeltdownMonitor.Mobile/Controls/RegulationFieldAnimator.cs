@@ -35,7 +35,7 @@ public sealed class RegulationFieldAnimator
 
 	/// <summary>Pulse phase in radians (wrapped to <c>[0, 2π)</c>), advanced
 	/// at the current HR cadence; drives the marker halo's gentle pulse.</summary>
-	public double BreathPhase { get; private set; }
+	public double PulsePhase { get; private set; }
 
 	/// <summary>Free-running clock in seconds driving the trace's variability
 	/// jitter.</summary>
@@ -69,14 +69,14 @@ public sealed class RegulationFieldAnimator
 		DisplayedSpeed += (speedTarget - DisplayedSpeed) * (1.0 - Math.Exp(-dt * SpeedEaseRate));
 
 		double bpm = Math.Max(MinPulseBpm, double.IsFinite(heartRate) ? heartRate : 0.0);
-		BreathPhase = (BreathPhase + (dt * (bpm / 60.0) * Math.Tau)) % Math.Tau;
+		PulsePhase = (PulsePhase + (dt * (bpm / 60.0) * Math.Tau)) % Math.Tau;
 
 		AnimTime += dt;
 	}
 
 	/// <summary>Multiplier for the pulse halo radius: <c>1 ± 0.18</c> over
 	/// the pulse cycle.</summary>
-	public double HaloPulse => 1.0 + (PulseHalfAmplitude * Math.Sin(BreathPhase));
+	public double HaloPulse => 1.0 + (PulseHalfAmplitude * Math.Sin(PulsePhase));
 
 	/// <summary>Perpendicular jitter offset in px for trace segment
 	/// <paramref name="segmentIndex"/>, scaling with variability
