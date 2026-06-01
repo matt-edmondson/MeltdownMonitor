@@ -12,6 +12,11 @@ internal static class MacchiatoPalette
 	public static readonly Vector4 Subtext0 = Hex(0xa5, 0xad, 0xcb);
 	public static readonly Vector4 Overlay1 = Hex(0x80, 0x87, 0xa2);
 	public static readonly Vector4 Lavender = Hex(0xb7, 0xbd, 0xf8);
+
+	/// <summary>Collapse / dorsal-vagal "shutdown" hue — a dim, desaturated slate-indigo that reads
+	/// cold/withdrawn, deliberately distinct from the soft <see cref="Lavender"/> used for the
+	/// window-of-tolerance and crossover. First-cut shade; live-tune against a real sensor.</summary>
+	public static readonly Vector4 Slate = Hex(0x5d, 0x6a, 0x9e);
 	public static readonly Vector4 Sky = Hex(0x91, 0xd7, 0xe3);
 	public static readonly Vector4 Sapphire = Hex(0x7d, 0xc4, 0xe4);
 	public static readonly Vector4 Green = Hex(0xa6, 0xda, 0x95);

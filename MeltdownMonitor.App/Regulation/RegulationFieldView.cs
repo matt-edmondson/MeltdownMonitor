@@ -47,9 +47,9 @@ public sealed class RegulationFieldView : IDisposable
 	private double _intervalEwma = 5.0;   // running-average inter-sample interval
 
 	// Animation state (UI thread only).
-	private float _breathPhase;
+	private float _pulsePhase;
 	private float _animTime;
-	private float _hrDisplay = 60f;          // eased HR for a smooth breathing cadence
+	private float _hrDisplay = 60f;          // eased HR for a smooth pulse cadence
 	private RrTexturePlayhead _playhead;     // free-running smooth scroll for the live RR texture
 	private float _arrowSpeed;               // eased displayed normalized speed for the velocity arrow
 	private float _recoveryDisplay;          // eased recovery progress [0,1] for the gate arc
@@ -183,13 +183,13 @@ public sealed class RegulationFieldView : IDisposable
 
 		float confidence = (float)disp.Confidence;
 
-		// Ease displayed HR so the breathing pulse rate doesn't step every sample.
+		// Ease displayed HR so the pulse rate doesn't step every sample.
 		float hrTarget = (float)(_pipeline.LatestSample?.MeanHr ?? 60.0);
 		_hrDisplay += (hrTarget - _hrDisplay) * (1f - MathF.Exp(-dt * 1.5f));
-		_breathPhase += dt * (MathF.Max(40f, _hrDisplay) / 60f) * MathF.Tau;
+		_pulsePhase += dt * (MathF.Max(40f, _hrDisplay) / 60f) * MathF.Tau;
 
 		// RR-texture scroll: a free-running playhead over the absolute beat timeline. It dead-reckons
-		// forward at the real beat rate (constant velocity → flows like the breathing pulse) and is
+		// forward at the real beat rate (constant velocity → flows like the pulse) and is
 		// gently corrected toward the newest sample, decoupling the visual from the irregular, batched
 		// arrival of beats over BLE. Driven purely by frame time — never reset or clamped per beat.
 		_playhead.Advance(dt, MathF.Max(40f, _hrDisplay) / 60f, beatsAppended - 1);
@@ -204,6 +204,7 @@ public sealed class RegulationFieldView : IDisposable
 
 		DrawLfHfHalo(draw, centre, halfWidth, disp, confidence);
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
+		DrawShutdownZone(draw, centre, halfWidth, baseLobeHeight, disp, confidence);
 		DrawVagalAxis(draw, centre, markerYClamp, confidence);
 		DrawAxisHistograms(draw, origin, centre, halfWidth, labelClearHeight, markerYClamp, height, trail, confidence);
 		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, _playhead.Position, beatsAppended, confidence);
@@ -224,8 +225,8 @@ public sealed class RegulationFieldView : IDisposable
 	private static uint Col(Vector4 c) => ImGui.ColorConvertFloat4ToU32(c);
 
 	// Soft, asymmetric glow biased toward the dominant autonomic pole. Gated on the LF/HF
-	// corroboration setting — LF/HF is noisy and off by default, so it only surfaces here
-	// for users who have opted into trusting it.
+	// corroboration setting (on by default since the 2026-06-01 audit), and only once a real
+	// LF/HF baseline exists — LF/HF is laggy/noisy, so it is a low-commitment lean cue, not a gate.
 	private void DrawLfHfHalo(ImDrawListPtr draw, Vector2 centre, float halfWidth, RegulationReading r, float confidence)
 	{
 		if (!_pipeline.LatestThresholds.UseLfHfCorroboration)
@@ -255,6 +256,21 @@ public sealed class RegulationFieldView : IDisposable
 	{
 		var zone = MacchiatoPalette.WithAlpha(MacchiatoPalette.Lavender, 0.08f * confidence);
 		draw.AddEllipseFilled(centre, new Vector2(halfWidth * 0.32f, lobeHeight * 0.7f), Col(zone));
+	}
+
+	// Upper-cool quadrant (cool side, fragile/low-variability) = collapse territory. Fill it with
+	// Slate at an opacity tracking the collapse signal, so approach is visible before the latch.
+	private void DrawShutdownZone(ImDrawListPtr draw, Vector2 centre, float halfWidth, float lobeHeight, RegulationReading r, float confidence)
+	{
+		double intensity = HypoarousalVisual.Intensity(r.Hypoarousal);
+		if (intensity <= 0.0)
+		{
+			return;
+		}
+
+		Vector2 tl = new(centre.X - halfWidth, centre.Y - (lobeHeight * 0.95f));
+		Vector2 br = new(centre.X, centre.Y);
+		draw.AddRectFilled(tl, br, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Slate, (float)(0.22 * intensity) * confidence)));
 	}
 
 	private void DrawLemniscate(ImDrawListPtr draw, Vector2 centre, float halfWidth, float baseLobeHeight, float liveLobeHeight, RegulationReading r, double[] rr, double playhead, long beatsAppended, float confidence)
@@ -524,7 +540,26 @@ public sealed class RegulationFieldView : IDisposable
 
 	private void DrawVelocityArrow(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp, RegulationDynamics dyn, float confidence)
 	{
-		if (confidence < 0.999f || dyn.Trend == RegulationTrend.Steady || _arrowSpeed < 0.02f)
+		if (confidence < 0.999f)
+		{
+			return;
+		}
+
+		double hypoScalar = disp.Hypoarousal;
+		RegulationDynamics hypoDyn = _pipeline.LatestHypoarousalDynamics;
+		if (HypoarousalVisual.ShowCollapseArrow(hypoScalar, hypoDyn))
+		{
+			Vector2 cp = MarkerScreenPos(centre, halfWidth, liveLobeHeight, disp);
+			DrawArrowHead(draw, cp, dir: -1f, hue: MacchiatoPalette.Slate, magnitude: (float)hypoDyn.NormalizedSpeed, confidence: confidence);
+			return;
+		}
+
+		if (HypoarousalVisual.SuppressIndexArrow(hypoScalar, dyn))
+		{
+			return;
+		}
+
+		if (dyn.Trend == RegulationTrend.Steady || _arrowSpeed < 0.02f)
 		{
 			return;
 		}
@@ -532,12 +567,17 @@ public sealed class RegulationFieldView : IDisposable
 		Vector2 p = MarkerScreenPos(centre, halfWidth, liveLobeHeight, disp);
 		float dir = dyn.Trend == RegulationTrend.Escalating ? 1f : -1f;
 		Vector4 hue = dyn.Trend == RegulationTrend.Escalating ? MacchiatoPalette.Peach : MacchiatoPalette.Sky;
-		float alpha = confidence * (0.35f + (0.65f * _arrowSpeed));
+		DrawArrowHead(draw, p, dir: dir, hue: hue, magnitude: _arrowSpeed, confidence: confidence);
+	}
+
+	private void DrawArrowHead(ImDrawListPtr draw, Vector2 from, float dir, Vector4 hue, float magnitude, float confidence)
+	{
+		float alpha = confidence * (0.35f + (0.65f * magnitude));
 		uint col = Col(MacchiatoPalette.WithAlpha(hue, alpha));
 
 		float gap = 12f * _drawScale;
-		float len = (10f + (_arrowSpeed * 46f)) * _drawScale;
-		Vector2 start = p + new Vector2(dir * gap, 0f);
+		float len = (10f + (magnitude * 46f)) * _drawScale;
+		Vector2 start = from + new Vector2(dir * gap, 0f);
 		Vector2 tip = start + new Vector2(dir * len, 0f);
 		draw.AddLine(start, tip, col, 3f * _drawScale);
 
@@ -550,14 +590,24 @@ public sealed class RegulationFieldView : IDisposable
 	}
 
 	// Marker: X = arousal index (eased), Y = vagal tone (eased) — grounded/low when HRV is
-	// healthy, lifted when it collapses. Breathing halo pulses at the current heart rate.
+	// healthy, lifted when it collapses. Pulse halo pulses at the current heart rate.
 	private void DrawMarker(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp, float confidence)
 	{
 		Vector2 p = MarkerScreenPos(centre, halfWidth, liveLobeHeight, disp);
 
 		Vector4 stateCol = MacchiatoPalette.State(_pipeline.CurrentState);
-		float pulse = 1f + (0.18f * MathF.Sin(_breathPhase));
+		float pulse = 1f + (0.18f * MathF.Sin(_pulsePhase));
 		draw.AddCircleFilled(p, 16f * _drawScale * pulse, Col(MacchiatoPalette.WithAlpha(stateCol, 0.18f * confidence)));
+
+		// Outer collapse halo: Slate, non-pulsing, radius grows with the collapse signal — layered
+		// outside the pulsing state halo so the two read as distinct (different colour + motion).
+		double collapse = HypoarousalVisual.Intensity(disp.Hypoarousal);
+		if (collapse > 0.0)
+		{
+			float ring = (16f + (10f * (float)collapse)) * _drawScale;
+			draw.AddCircleFilled(p, ring, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Slate, (float)(0.30 * collapse) * confidence)));
+		}
+
 		draw.AddCircleFilled(p, 6.5f * _drawScale, Col(MacchiatoPalette.WithAlpha(stateCol, confidence)));
 		draw.AddCircleFilled(p, 2.6f * _drawScale, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Base, confidence)));
 	}
@@ -693,6 +743,18 @@ public sealed class RegulationFieldView : IDisposable
 			draw.AddText(new Vector2(origin.X + 8f, origin.Y + 8f), Col(MacchiatoPalette.Overlay1), "BASELINE LOCKED");
 		}
 
+		// Static quadrant label so the upper-cool region reads as collapse territory, not rest.
+		// Suppressed during a latched episode (the brighter episode tag below/above takes over).
+		if (_pipeline.CurrentHypoarousalState != HypoarousalState.LowArousal)
+		{
+			const string zoneTag = "SHUTDOWN";
+			Vector2 zsz = ImGui.CalcTextSize(zoneTag);
+			draw.AddText(
+				new Vector2(centre.X - halfWidth - poleGap - zsz.X, midY - lineH - 2f),
+				Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Slate, 0.6f)),
+				zoneTag);
+		}
+
 		// Low-arousal collapse sits on the cool side of the field, where a naive read mistakes it for
 		// calm REST. Tag the cool pole so a sustained shutdown reads as shutdown, not regulation
 		// (audit A(b)). Driven by the debounced detector state, not the raw scalar, to avoid flicker.
@@ -702,7 +764,7 @@ public sealed class RegulationFieldView : IDisposable
 			Vector2 tagSize = ImGui.CalcTextSize(tag);
 			draw.AddText(
 				new Vector2(centre.X - halfWidth - poleGap - tagSize.X, midY + lineH + 2f),
-				Col(MacchiatoPalette.Lavender),
+				Col(MacchiatoPalette.Slate),
 				tag);
 		}
 
