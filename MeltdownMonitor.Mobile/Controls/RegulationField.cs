@@ -22,9 +22,9 @@ namespace MeltdownMonitor.Mobile.Controls;
 /// reusing the pure, unit-tested <see cref="LemniscateGeometry"/> and
 /// <see cref="RegulationFieldCalculator"/> from Core verbatim — the same maths
 /// the desktop view is specified against. While attached to the visual tree a
-/// render-tick timer drives the desktop's breathing/jitter flourishes through a
+/// render-tick timer drives the desktop's pulse/jitter flourishes through a
 /// pure <see cref="RegulationFieldAnimator"/>: the marker eases between the
-/// multi-second samples, its halo breathes at the current HR cadence, and the
+/// multi-second samples, its halo pulses at the current HR cadence, and the
 /// trace carries variability jitter. The timer stops when the control detaches
 /// (the Now tab tears down while backgrounded) so it costs nothing off-screen.
 /// </summary>
@@ -32,7 +32,7 @@ public sealed class RegulationField : Control
 {
 	private const int LobeSegments = 96;
 
-	// ~30 fps: enough for a smooth breathe/jitter without churning the battery
+	// ~30 fps: enough for a smooth pulse/jitter without churning the battery
 	// the way a 60 fps loop would on a phone that stays on this screen.
 	private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(33);
 
@@ -76,14 +76,37 @@ public sealed class RegulationField : Control
 	private static readonly Color Subtext0 = Color.FromRgb(0xa5, 0xad, 0xcb);
 	private static readonly Color Overlay1 = Color.FromRgb(0x80, 0x87, 0xa2);
 	private static readonly Color Lavender = Color.FromRgb(0xb7, 0xbd, 0xf8);
+	// Collapse / shutdown hue — dim slate-indigo, distinct from Lavender (window-of-tolerance + crossover).
+	private static readonly Color Slate = Color.FromRgb(0x5d, 0x6a, 0x9e);
 	private static readonly Color Sky = Color.FromRgb(0x91, 0xd7, 0xe3);
 	private static readonly Color Sapphire = Color.FromRgb(0x7d, 0xc4, 0xe4);
 	private static readonly Color Peach = Color.FromRgb(0xf5, 0xa9, 0x7f);
 	private static readonly Color Maroon = Color.FromRgb(0xee, 0x99, 0xa0);
 	private static readonly Color Green = Color.FromRgb(0xa6, 0xda, 0x95);
 
+	public static readonly StyledProperty<double> HypoarousalProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(Hypoarousal));
+
+	public static readonly StyledProperty<RegulationDynamics> HypoarousalDynamicsProperty =
+		AvaloniaProperty.Register<RegulationField, RegulationDynamics>(
+			nameof(HypoarousalDynamics), RegulationDynamics.Steady);
+
+	/// <summary>[0,1] low-arousal collapse signal driving the shutdown zone + marker halo.</summary>
+	public double Hypoarousal
+	{
+		get => GetValue(HypoarousalProperty);
+		set => SetValue(HypoarousalProperty, value);
+	}
+
+	/// <summary>Velocity/trend of the collapse signal; selects the hypoarousal-aware arrow.</summary>
+	public RegulationDynamics HypoarousalDynamics
+	{
+		get => GetValue(HypoarousalDynamicsProperty);
+		set => SetValue(HypoarousalDynamicsProperty, value);
+	}
+
 	static RegulationField() =>
-		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, RecoveryProperty, LobeThicknessProperty);
+		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, RecoveryProperty, LobeThicknessProperty, HypoarousalProperty, HypoarousalDynamicsProperty);
 
 	/// <summary>Latest arousal-vs-baseline reading; drives the marker position,
 	/// stroke fatness and overall confidence dimming.</summary>
@@ -110,8 +133,8 @@ public sealed class RegulationField : Control
 		set => SetValue(StateColorProperty, value);
 	}
 
-	/// <summary>Current heart rate (bpm); sets the breathing cadence of the
-	/// marker halo. Zero/absent falls back to a gentle resting breath.</summary>
+	/// <summary>Current heart rate (bpm); sets the pulse cadence of the
+	/// marker halo. Zero/absent falls back to a gentle resting pulse.</summary>
 	public double HeartRate
 	{
 		get => GetValue(HeartRateProperty);
@@ -198,6 +221,8 @@ public sealed class RegulationField : Control
 		// Window of tolerance: a soft lavender zone marking the regulated centre.
 		context.DrawEllipse(Brush(Lavender, 0.08 * confidence), null, centre, halfWidth * 0.32, lobeHeight * 0.7);
 
+		DrawShutdownZone(context, centreV, halfWidth, lobeHeight, confidence);
+
 		var ghost = LemniscateGeometry.Polyline(centreV, halfWidth, lobeHeight, LobeSegments);
 		DrawTrace(context, ghost, centreV, halfWidth, reading, confidence);
 		DrawAxisHistograms(context, centre, w, h, halfWidth, lobeHeight, confidence);
@@ -215,6 +240,30 @@ public sealed class RegulationField : Control
 		{
 			DrawText(context, $"Calibrating baseline… {confidence * 100:F0}%",
 				new Point(centre.X, centre.Y + lobeHeight + 14), Subtext0, 12, centred: true);
+		}
+	}
+
+	// Upper-cool quadrant (cool/left side, low variability) = collapse territory. Fill it with Slate
+	// at an opacity that tracks the collapse signal, so approach is visible before the latch.
+	private void DrawShutdownZone(DrawingContext context, Vector2 centre, float halfWidth, float lobeHeight, double confidence)
+	{
+		double intensity = HypoarousalVisual.Intensity(Hypoarousal);
+		if (intensity <= 0.0)
+		{
+			return;
+		}
+
+		double top = centre.Y - (lobeHeight * 0.95);
+		var rect = new Rect(centre.X - halfWidth, top, halfWidth, centre.Y - top);
+		context.FillRectangle(Brush(Slate, 0.22 * intensity * confidence), rect);
+
+		// Intensity-gated SHUTDOWN label at the top of the collapse zone — names the zone
+		// it sits in for parity with the always-on REST/MELTDOWN pole labels.
+		if (intensity > 0.01)
+		{
+			DrawText(context, "SHUTDOWN",
+				new Point(centre.X - (halfWidth * 0.5), top + 2),
+				Slate, 10, centred: true);
 		}
 	}
 
@@ -252,7 +301,7 @@ public sealed class RegulationField : Control
 				: Lerp(Sky, Sapphire, depth);
 
 			// Animated variability jitter on the outer half of each lobe: the
-			// healthier the variability, the more the line "breathes" sideways.
+			// healthier the variability, the more the line shifts sideways.
 			Vector2 n = Normal(a, b) * (float)_animator.JitterOffset(i, quality, depth);
 
 			double thick = baseThick * (warm ? warmSwell : coolSwell);
@@ -421,11 +470,20 @@ public sealed class RegulationField : Control
 	private void DrawMarker(DrawingContext context, Vector2 centre, float halfWidth, double confidence)
 	{
 		// Eased position glides between the multi-second samples; the halo
-		// breathes at the current HR cadence (RegulationFieldAnimator).
+		// pulses at the current HR cadence (RegulationFieldAnimator).
 		Vector2 p = LemniscateGeometry.MarkerPoint((float)_animator.MarkerPos, centre, halfWidth);
 		var at = P(p);
 		double halo = 14 * _animator.HaloPulse;
 		context.DrawEllipse(Brush(StateColor, 0.18 * confidence), null, at, halo, halo); // halo
+		// Outer collapse halo: Slate, non-pulsing, radius grows with the collapse signal. Layers
+		// outside the pulsing state halo so the two read as distinct (different colour + motion).
+		double collapse = HypoarousalVisual.Intensity(Hypoarousal);
+		if (collapse > 0.0)
+		{
+			double ring = 14 + (10 * collapse);
+			context.DrawEllipse(Brush(Slate, 0.30 * collapse * confidence), null, at, ring, ring);
+		}
+
 		context.DrawEllipse(Brush(StateColor, confidence), null, at, 6, 6);              // core
 		context.DrawEllipse(Brush(Base, confidence), null, at, 2.5, 2.5);                // pupil
 		DrawVelocityArrow(context, at, confidence);
@@ -433,15 +491,46 @@ public sealed class RegulationField : Control
 
 	private void DrawVelocityArrow(DrawingContext context, Point markerAt, double confidence)
 	{
+		if (confidence < 0.999)
+		{
+			return;
+		}
+
+		double scalar = Hypoarousal;
+
+		// A rising collapse signal overrides the index arrow with a Slate WARNING toward the cool/left
+		// (shutdown) side — never let a slide into collapse read as a calming de-escalation.
+		if (HypoarousalVisual.ShowCollapseArrow(scalar, HypoarousalDynamics))
+		{
+			// dir=-1 → toward cool/left/REST (shutdown side)
+			DrawArrow(context, markerAt, -1.0, Slate, confidence, HypoarousalDynamics.NormalizedSpeed);
+			return;
+		}
+
 		var dyn = Dynamics;
 		double speed = _animator.DisplayedSpeed;
-		if (confidence < 0.999 || dyn.Trend == RegulationTrend.Steady || speed < 0.02)
+
+		// Suppress the index arrow when it would contradict the shutdown zone (de-escalating
+		// while collapse signal is present would read as calming — it isn't).
+		if (HypoarousalVisual.SuppressIndexArrow(scalar, dyn))
+		{
+			return;
+		}
+
+		// Index-only floor — evaluated AFTER the collapse branch so a rising collapse can show
+		// even when the index trend is Steady.
+		if (dyn.Trend == RegulationTrend.Steady || speed < 0.02)
 		{
 			return;
 		}
 
 		double dir = dyn.Trend == RegulationTrend.Escalating ? 1.0 : -1.0;
 		Color hue = dyn.Trend == RegulationTrend.Escalating ? Peach : Sky;
+		DrawArrow(context, markerAt, dir, hue, confidence, speed);
+	}
+
+	private static void DrawArrow(DrawingContext context, Point markerAt, double dir, Color hue, double confidence, double speed)
+	{
 		double alpha = confidence * (0.35 + (0.65 * speed));
 
 		double gap = 12.0;

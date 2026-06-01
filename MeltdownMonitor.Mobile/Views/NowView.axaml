@@ -21,7 +21,9 @@
                                          Dynamics="{Binding Dynamics}"
                                          Recovery="{Binding Recovery}"
                                          JitterExaggeration="{Binding JitterExaggeration}"
-                                         LobeThickness="{Binding LobeThickness}" />
+                                         LobeThickness="{Binding LobeThickness}"
+                                         Hypoarousal="{Binding Reading.Hypoarousal}"
+                                         HypoarousalDynamics="{Binding HypoarousalDynamics}" />
                     <ctl:Sparkline Grid.Row="1"
                                    Height="48"
                                    Margin="0,8,0,0"
@@ -69,9 +71,10 @@
                            FontSize="12"
                            HorizontalAlignment="Center" />
                 <!-- Low-arousal collapse reads as the cool/calm side of the field; this badge keeps it
-                     from being mistaken for regulation (audit A(b)). Lavender matches the desktop tag. -->
+                     from being mistaken for regulation (audit A(b)). Slate (#5D6A9E) matches the
+                     shutdown zone fill in RegulationField and the desktop head's collapse cues. -->
                 <TextBlock Text="Low arousal · shutdown — not calm rest"
-                           Foreground="#B7BDF8"
+                           Foreground="#5D6A9E"
                            FontSize="13"
                            FontWeight="SemiBold"
                            TextWrapping="Wrap"

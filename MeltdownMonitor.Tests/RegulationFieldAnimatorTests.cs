@@ -55,14 +55,14 @@ public class RegulationFieldAnimatorTests
 		var a = new RegulationFieldAnimator();
 		a.Step(0.033, 0.5, 70);
 		double pos = a.MarkerPos;
-		double phase = a.BreathPhase;
+		double phase = a.PulsePhase;
 
 		a.Step(0.0, 1.0, 70);
 		a.Step(-1.0, 1.0, 70);
 		a.Step(double.NaN, 1.0, 70);
 
 		Assert.AreEqual(pos, a.MarkerPos);
-		Assert.AreEqual(phase, a.BreathPhase);
+		Assert.AreEqual(phase, a.PulsePhase);
 	}
 
 	[TestMethod]
@@ -78,7 +78,7 @@ public class RegulationFieldAnimatorTests
 	}
 
 	[TestMethod]
-	public void BreathPhase_AdvancesFasterAtHigherHeartRate()
+	public void PulsePhase_AdvancesFasterAtHigherHeartRate()
 	{
 		var fast = new RegulationFieldAnimator();
 		var slow = new RegulationFieldAnimator();
@@ -86,36 +86,36 @@ public class RegulationFieldAnimatorTests
 		fast.Step(0.1, 0.0, 120);
 		slow.Step(0.1, 0.0, 60);
 
-		Assert.IsTrue(fast.BreathPhase > slow.BreathPhase,
-			"a higher HR should breathe faster");
+		Assert.IsTrue(fast.PulsePhase > slow.PulsePhase,
+			"a higher HR should pulse faster");
 	}
 
 	[TestMethod]
-	public void BreathPhase_WrapsAndKeepsHaloPulseInBand()
+	public void PulsePhase_WrapsAndKeepsHaloPulseInBand()
 	{
 		var a = new RegulationFieldAnimator();
 		for (int i = 0; i < 1000; i++)
 		{
 			a.Step(0.033, 0.0, 180);
-			Assert.IsTrue(a.BreathPhase >= 0.0 && a.BreathPhase < Math.Tau);
+			Assert.IsTrue(a.PulsePhase >= 0.0 && a.PulsePhase < Math.Tau);
 			Assert.IsTrue(a.HaloPulse >= 1.0 - 0.18 - 1e-9 && a.HaloPulse <= 1.0 + 0.18 + 1e-9);
 		}
 	}
 
 	[TestMethod]
-	public void BreathPhase_FloorsCadenceWhenHeartRateMissing()
+	public void PulsePhase_FloorsCadenceWhenHeartRateMissing()
 	{
 		var absent = new RegulationFieldAnimator();
 		var floor = new RegulationFieldAnimator();
 
-		// Zero/NaN HR breathes at the same gentle floor as 40 bpm, not stalled.
+		// Zero/NaN HR pulses at the same gentle floor as 40 bpm, not stalled.
 		absent.Step(0.5, 0.0, 0);
 		floor.Step(0.5, 0.0, 40);
-		Assert.AreEqual(floor.BreathPhase, absent.BreathPhase, 1e-9);
+		Assert.AreEqual(floor.PulsePhase, absent.PulsePhase, 1e-9);
 
 		var nan = new RegulationFieldAnimator();
 		nan.Step(0.5, 0.0, double.NaN);
-		Assert.AreEqual(floor.BreathPhase, nan.BreathPhase, 1e-9);
+		Assert.AreEqual(floor.PulsePhase, nan.PulsePhase, 1e-9);
 	}
 
 	[TestMethod]
