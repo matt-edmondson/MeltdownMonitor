@@ -51,5 +51,5 @@ Pipeline flow (both heads): `IBeatSource → RrArtifactFilter → ShortWindowHrv
 
 ## Conventions specific to this repo
 
-- The user-facing self check-in labels are the `AnnotationLabel` enum: **Fine, Edged, Escalating, Blown** (`Core/Persistence/AnnotationLabel.cs`).
+- The user-facing self check-in labels are the `AnnotationLabel` enum: **Fine, Edged, Escalating, Blown, Shutdown** (`Core/Persistence/AnnotationLabel.cs`). The first four are the hyperarousal escalation axis; `Shutdown` is the low-arousal/collapse edge (append-only — labels persist as case-insensitive strings). Both check-in UIs auto-enumerate the enum.
 - A repo-root `Directory.Build.props` sets `TreatWarningsAsErrors=true` and centralizes `Nullable`/`ImplicitUsings` for every project (`TargetFramework` stays per-project — it varies). The per-project `Nullable`/`ImplicitUsings` copies in the 7 csproj files are now redundant and can be removed. Warnings-as-errors is verified on the 5 non-iOS projects; the `net10.0-ios` projects (`Ble.Apple`, `iOS`) build only on macOS/CI, where the gate may surface pre-existing warnings — check `ios.yml` there.

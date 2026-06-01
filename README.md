@@ -29,7 +29,7 @@ In a healthy, relaxed state the two branches are constantly negotiating, so the 
 - **Detection state machine** — Idle → Watching → Warning → Alerting → Cooldown, with configurable thresholds, **sensor-contact gating**, and a physiological-recovery exit
 - **Regulation Field** — a signature figure-8 ("window of tolerance") instrument whose marker slides from the cool REST lobe through baseline to the warm MELTDOWN lobe as arousal rises; rendered on both the desktop overlay and the mobile Now tab
 - **Sensor health surfacing** — battery level (BLE Battery Service), skin/electrode contact status, and device identity (Device Information Service: manufacturer, model, serial, firmware)
-- **Low-friction self check-ins** — log subjective states (**Fine, Edged, Escalating, Blown**) with optional notes
+- **Low-friction self check-ins** — log subjective states (**Fine, Edged, Escalating, Blown, Shutdown**) with optional notes
 - **Persistent SQLite log** — beats, HRV samples (incl. extended metrics), alerts, annotations, and battery readings, append-only
 - **Overlay mode (desktop)** — turns the whole window into a borderless, translucent, always-on-top overlay; shows a compact HUD with the Regulation Field and a user-selectable metric set, or expands to the full UI; optional click-through
 - **iOS extras** — HealthKit warm-start and opt-in episode write-back, a Lock-Screen / Dynamic Island Live Activity, time-sensitive local notifications, and BLE state restoration for background reconnection
