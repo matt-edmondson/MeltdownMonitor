@@ -15,11 +15,6 @@ public static class RegulationFieldCalculator
 	private const double RmssdWeight = 0.6;
 	private const double HrWeight = 0.4;
 
-	// Hypoarousal display signal: only HR falling beyond HypoHrBand below baseline counts, and
-	// it saturates HypoHrSpan further down. Suppressed by healthy variability (see Compute).
-	private const double HypoHrBand = 0.10;
-	private const double HypoHrSpan = 0.15;
-
 	/// <summary>
 	/// The index magnitude a combined deviation of 1.0 maps to — i.e. both RMSSD-drop and
 	/// HR-rise exactly at their Warning thresholds. This is therefore the boundary the
@@ -79,9 +74,10 @@ public static class RegulationFieldCalculator
 		}
 
 		// Hypoarousal: HR well below baseline, gated by *low* variability so genuine vagal rest
-		// (high RMSSD) does not read as collapse. `quality` is RMSSD/baseline clamped to [0,1].
-		double hrFall = (sample.BaselineHr - sample.MeanHr) / sample.BaselineHr;
-		double hypoarousal = Math.Clamp((hrFall - HypoHrBand) / HypoHrSpan, 0.0, 1.0) * (1.0 - quality);
+		// (high RMSSD) does not read as collapse. Shared with HypoarousalDetector so display and
+		// detection never diverge.
+		double hypoarousal = HypoarousalSignal.Compute(
+			sample.Rmssd, sample.MeanHr, sample.BaselineRmssd, sample.BaselineHr);
 
 		return new RegulationReading(index, quality, confidence, lobeRoundness, lfHfBalance)
 		{
