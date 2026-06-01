@@ -17,7 +17,9 @@ The autonomic nervous system has two main branches:
 - The **sympathetic** branch ("fight, flight, freeze") — speeds the heart up, narrows attention, mobilises the body for threat.
 - The **parasympathetic** branch ("rest and digest") — slows the heart down, supports recovery, signalled through the **vagus nerve**.
 
-In a healthy, relaxed state the two branches are constantly negotiating, so the gap between heartbeats varies from beat to beat — this variation is **HRV**. When the sympathetic branch takes over (stress, dysregulation, the lead-up to a meltdown or shutdown), HRV collapses: the beats become metronome-like and heart rate climbs. MeltdownMonitor watches for that signature shift against *your own* baseline and gives you a quiet heads-up before you would normally notice it consciously.
+In a healthy, relaxed state the two branches are constantly negotiating, so the gap between heartbeats varies from beat to beat — this variation is **HRV**. When the sympathetic branch takes over (stress, dysregulation, the lead-up to a meltdown or shutdown), HRV collapses: the beats become metronome-like and heart rate climbs. MeltdownMonitor watches for that signature shift against *your own* baseline and aims to give you a quiet heads-up — ideally before you'd consciously notice. It can't promise to, though, and it can't catch every form of dysregulation — see the caution below.
+
+> **⚠️ Silence is not safety.** MeltdownMonitor reads **one signal** — heart-rate variability — from your heart. It can miss dysregulation that doesn't show up in HRV, **especially shutdown, freeze, or dissociation**, where the body collapses *inward* and HRV can stay normal or even read as "calm". A quiet app — or a calm "REST" reading — is **never** a guarantee that you're fine. **Trust your own felt sense over the screen:** if you feel off, you're off, whatever the app says. (And whether its alerts actually arrive *before* your own awareness is still unproven, and varies from person to person.)
 
 ---
 
@@ -95,7 +97,7 @@ On startup the baseline is **warm-started** from persisted history rather than s
 The baseline is considered "warm" after a cold-start warm-up (default 10 minutes of data; instant when a warm-start succeeds), is **frozen during Warning/Alerting states**, and is **not updated while the sensor reports no contact** — both so an in-progress stress event or an off-body dropout can't normalise itself into the baseline.
 
 ### Why RMSSD?
-RMSSD is the gold-standard short-window **parasympathetic** HRV marker — it's dominated by beat-to-beat differences, which are driven mostly by vagal tone. A sudden drop in RMSSD (combined with rising HR) indicates **sympathetic activation** — the physiological signature of a stress / dysregulation / pre-meltdown response, often appearing seconds to minutes before the person consciously registers it. The 60-second window gives responsiveness without excess noise; the personalised EWMA baseline means the threshold for "abnormal for you" is built from your own data rather than a textbook range.
+RMSSD is the gold-standard short-window **parasympathetic** HRV marker — it's dominated by beat-to-beat differences, which are driven mostly by vagal tone. A sudden drop in RMSSD (combined with rising HR) indicates **sympathetic activation** — the physiological signature of a stress / dysregulation / pre-meltdown response. This shift can in principle register before conscious awareness, but **whether MeltdownMonitor's alerts actually precede your felt experience, and by how much, is unproven and personal** — the app stores the data needed to measure it (alert timestamps vs. self check-in `annotations`, via `DetectionEfficacyAnalyzer`), but that validation has not yet been run. The 60-second window gives responsiveness without excess noise; the personalised EWMA baseline means the threshold for "abnormal for you" is built from your own data rather than a textbook range.
 
 ---
 
