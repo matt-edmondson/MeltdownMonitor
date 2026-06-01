@@ -33,6 +33,10 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Current low-arousal/shutdown state — a peer signal to <see cref="CurrentState"/>.</summary>
 	public HypoarousalState CurrentHypoarousalState => _hypoDetector.State;
 
+	/// <summary>True when the baseline was self-calibrated cold with no personal history anchor —
+	/// the UI surfaces this so a possibly-activated baseline isn't presented as confident calm.</summary>
+	public bool IsColdCalibrated => _baseline.IsColdCalibrated;
+
 	public HrvSample? LatestSample { get; private set; }
 
 	/// <summary>Latest sensor battery level (0–100), or null until the source reports one.</summary>

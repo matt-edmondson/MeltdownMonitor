@@ -33,6 +33,19 @@ public class NowViewModelTests
 	}
 
 	[TestMethod]
+	public void OnHypoarousalStateChanged_TogglesIsShutdown()
+	{
+		var vm = new NowViewModel();
+		Assert.IsFalse(vm.IsShutdown);
+
+		vm.OnHypoarousalStateChanged(HypoarousalState.LowArousal);
+		Assert.IsTrue(vm.IsShutdown, "Entering LowArousal flags shutdown.");
+
+		vm.OnHypoarousalStateChanged(HypoarousalState.Monitoring);
+		Assert.IsFalse(vm.IsShutdown, "Leaving LowArousal clears the flag.");
+	}
+
+	[TestMethod]
 	public void OnStateChanged_UpdatesStatePillWithoutASample()
 	{
 		var vm = new NowViewModel();
