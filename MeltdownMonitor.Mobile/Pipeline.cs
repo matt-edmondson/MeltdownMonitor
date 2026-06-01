@@ -52,6 +52,11 @@ public sealed class Pipeline : IDisposable
 	/// <see cref="RegulationDynamics.Steady"/> until the baseline is warm.</summary>
 	public RegulationDynamics LatestDynamics { get; private set; } = RegulationDynamics.Steady;
 
+	/// <summary>How close the body is to clearing the current episode (two-stage: metrics
+	/// return to baseline, then hold). <see cref="RecoveryProgress.Inactive"/> outside an
+	/// active Warning/Alerting episode.</summary>
+	public RecoveryProgress LatestRecovery => _detector.Recovery;
+
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<DetectorState>? StateChanged;
@@ -77,6 +82,10 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Fires after <see cref="ReadingUpdated"/> with the velocity/trend of the
 	/// arousal index, derived from the same sample. Steady while calibrating or off-contact.</summary>
 	public event Action<RegulationDynamics>? DynamicsUpdated;
+
+	/// <summary>Fires after <see cref="DynamicsUpdated"/> with the two-stage recovery progress
+	/// for the current episode, derived from the same sample. Inactive outside Warning/Alerting.</summary>
+	public event Action<RecoveryProgress>? RecoveryUpdated;
 
 	public Pipeline(MobileSettings settings, MeltdownRepository repository, IBeatSource source)
 	{
@@ -259,6 +268,8 @@ public sealed class Pipeline : IDisposable
 
 			LatestDynamics = _velocity.Latest;
 			DynamicsUpdated?.Invoke(LatestDynamics);
+
+			RecoveryUpdated?.Invoke(_detector.Recovery);
 		}
 	}
 
