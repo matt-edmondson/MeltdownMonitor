@@ -372,6 +372,50 @@ public class NowViewModelTests
 		Assert.AreEqual(2160, huge.RegulationTrail.Count, "above-ceiling cap clamps to 2160");
 	}
 
+	[TestMethod]
+	public void OnSampleUpdated_RecordsOneTimestampPerValue()
+	{
+		var vm = new NowViewModel();
+		var t0 = DateTimeOffset.UtcNow;
+
+		vm.OnSampleUpdated(SampleAt(t0, rmssd: 40));
+		vm.OnSampleUpdated(SampleAt(t0.AddSeconds(5), rmssd: 42));
+
+		Assert.AreEqual(2, vm.RmssdTimestamps.Count);
+		Assert.AreEqual(vm.RmssdHistory.Count, vm.RmssdTimestamps.Count,
+			"every charted value carries exactly one timestamp");
+		Assert.AreEqual(5.0, vm.RmssdTimestamps[1] - vm.RmssdTimestamps[0], 1e-6,
+			"timestamps are epoch seconds spaced by the real sample gap");
+	}
+
+	[TestMethod]
+	public void OnSampleUpdated_TimestampsPreserveSubSecondSpacing()
+	{
+		var vm = new NowViewModel();
+		var t0 = DateTimeOffset.UtcNow;
+
+		vm.OnSampleUpdated(SampleAt(t0, rmssd: 40));
+		vm.OnSampleUpdated(SampleAt(t0.AddMilliseconds(500), rmssd: 41));
+
+		Assert.AreEqual(0.5, vm.RmssdTimestamps[1] - vm.RmssdTimestamps[0], 1e-6,
+			"sub-second sample spacing must survive (epoch ms / 1000), not collapse to whole seconds");
+	}
+
+	[TestMethod]
+	public void TrimHistory_KeepsValuesAndTimestampsTheSameLength()
+	{
+		var vm = new NowViewModel();
+		var t0 = DateTimeOffset.UtcNow;
+
+		for (int i = 0; i < 400; i++) // past the 360-point cap
+		{
+			vm.OnSampleUpdated(SampleAt(t0.AddSeconds(i), rmssd: 30 + (i % 5)));
+		}
+
+		Assert.AreEqual(vm.RmssdHistory.Count, vm.RmssdTimestamps.Count);
+		Assert.AreEqual(360, vm.RmssdTimestamps.Count, "trimmed to exactly the 360-point cap");
+	}
+
 	private static HrvSample Sample(double rmssd, double meanHr, double baseline, DetectorState state) =>
 		new(
 			DateTimeOffset.UtcNow,
@@ -381,4 +425,14 @@ public class NowViewModelTests
 			BaselineRmssd: baseline,
 			BaselineHr: 65,
 			state);
+
+	private static HrvSample SampleAt(DateTimeOffset timestamp, double rmssd) =>
+		new(
+			timestamp,
+			rmssd,
+			Pnn50: 20,
+			MeanHr: 70,
+			BaselineRmssd: 50,
+			BaselineHr: 65,
+			DetectorState.Watching);
 }

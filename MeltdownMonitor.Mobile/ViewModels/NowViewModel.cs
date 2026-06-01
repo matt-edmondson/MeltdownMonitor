@@ -23,6 +23,7 @@ public sealed class NowViewModel : ViewModelBase
 
 	private readonly ObservableCollection<double> _rmssdHistory = [];
 	private readonly ObservableCollection<double> _baselineHistory = [];
+	private readonly ObservableCollection<double> _rmssdTimestamps = [];
 	private readonly List<RegulationTrailPoint> _regulationTrail = [];
 
 	private readonly Func<Task>? _onConnect;
@@ -64,6 +65,10 @@ public sealed class NowViewModel : ViewModelBase
 
 	public IReadOnlyList<double> RmssdHistory => _rmssdHistory;
 	public IReadOnlyList<double> BaselineHistory => _baselineHistory;
+
+	/// <summary>Unix epoch seconds for each <see cref="RmssdHistory"/> / <see cref="BaselineHistory"/>
+	/// point — both series share this sample cadence. Lets the sparkline space points by real time.</summary>
+	public IReadOnlyList<double> RmssdTimestamps => _rmssdTimestamps;
 
 	/// <summary>Latest arousal-vs-baseline reading driving the Regulation Field.</summary>
 	public RegulationReading Reading
@@ -380,10 +385,12 @@ public sealed class NowViewModel : ViewModelBase
 
 		_rmssdHistory.Add(sample.Rmssd);
 		_baselineHistory.Add(sample.BaselineRmssd);
+		_rmssdTimestamps.Add(sample.Timestamp.ToUnixTimeMilliseconds() / 1000.0);
 		TrimHistory();
 
 		Raise(nameof(RmssdHistory));
 		Raise(nameof(BaselineHistory));
+		Raise(nameof(RmssdTimestamps));
 	});
 
 	/// <summary>
@@ -469,6 +476,11 @@ public sealed class NowViewModel : ViewModelBase
 		while (_baselineHistory.Count > SparklineMaxPoints)
 		{
 			_baselineHistory.RemoveAt(0);
+		}
+
+		while (_rmssdTimestamps.Count > SparklineMaxPoints)
+		{
+			_rmssdTimestamps.RemoveAt(0);
 		}
 	}
 
