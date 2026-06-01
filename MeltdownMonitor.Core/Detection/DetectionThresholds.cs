@@ -60,4 +60,20 @@ public record DetectionThresholds
 	/// condition to be satisfied. Default 50% (e.g. baseline 1.5 → current ≥ 2.25).
 	/// </summary>
 	public double LfHfWarningRiseFraction { get; init; } = 0.50;
+
+	/// <summary>
+	/// Whether LF/HF corroboration can veto a Warning or only strengthen it. Default
+	/// <see cref="LfHfCorroborationMode.Veto"/> preserves prior behaviour; the 2026-06-01 clinical
+	/// audit recommends <see cref="LfHfCorroborationMode.Additive"/> so the laggy 5-minute LF/HF
+	/// signal can't suppress a core-satisfied early Warning. Only consulted when
+	/// <see cref="UseLfHfCorroboration"/> is true.
+	/// </summary>
+	public LfHfCorroborationMode LfHfCorroborationMode { get; init; } = LfHfCorroborationMode.Veto;
+
+	/// <summary>
+	/// Consecutive in-contact samples with an immediate-severe RMSSD drop required before the
+	/// immediate alert fires. Default 1 (fire on the first qualifying sample). 2 rejects a
+	/// transient regularisation (a breath-hold, Valsalva) at the cost of ~one sample of latency.
+	/// </summary>
+	public int SevereDropConfirmationCount { get; init; } = 1;
 }

@@ -17,6 +17,7 @@ public class DysregulationDetector
 	private bool _warningConditionsActive;
 	private DateTimeOffset _recoveryHeldSince = DateTimeOffset.MinValue;
 	private bool _recoveryActive;
+	private int _severeDropStreak;
 
 	private DetectionThresholds _thresholds => _thresholdsProvider();
 
@@ -61,6 +62,7 @@ public class DysregulationDetector
 		{
 			_warningConditionsActive = false;
 			_recoveryActive = false;
+			_severeDropStreak = 0;
 			return _state;
 		}
 
@@ -98,7 +100,7 @@ public class DysregulationDetector
 
 	private void ProcessWatching(HrvSample sample)
 	{
-		if (IsSevereDropping(sample))
+		if (IsSevereDropConfirmed(sample))
 		{
 			FireAlert(sample, "Immediate: RMSSD dropped ≥50% below baseline");
 			Transition(DetectorState.Alerting, sample.Timestamp);
@@ -127,7 +129,7 @@ public class DysregulationDetector
 
 	private void ProcessWarning(HrvSample sample)
 	{
-		if (IsSevereDropping(sample))
+		if (IsSevereDropConfirmed(sample))
 		{
 			FireAlert(sample, "Severe: RMSSD dropped ≥50% below baseline during Warning");
 			Transition(DetectorState.Alerting, sample.Timestamp);
@@ -207,6 +209,7 @@ public class DysregulationDetector
 		// Optional LF/HF corroboration — only checked when enabled, baseline is ready,
 		// and extended metrics are present in this sample.
 		if (_thresholds.UseLfHfCorroboration
+			&& _thresholds.LfHfCorroborationMode == LfHfCorroborationMode.Veto
 			&& sample.BaselineLfHfRatio > 0
 			&& sample.Extended is { LfHfRatio: > 0 } extended)
 		{
@@ -249,6 +252,20 @@ public class DysregulationDetector
 		return rmssdDrop >= _thresholds.RmssdAlertingDropFraction;
 	}
 
+	// Counts consecutive immediate-severe samples; fires only once the configured confirmation
+	// count is reached. Default count 1 → fires on the first qualifying sample (prior behaviour).
+	private bool IsSevereDropConfirmed(HrvSample sample)
+	{
+		if (IsSevereDropping(sample))
+		{
+			_severeDropStreak++;
+			return _severeDropStreak >= Math.Max(1, _thresholds.SevereDropConfirmationCount);
+		}
+
+		_severeDropStreak = 0;
+		return false;
+	}
+
 	private void FireAlert(HrvSample sample, string reason)
 	{
 		var payload = new AlertPayload(
@@ -263,8 +280,9 @@ public class DysregulationDetector
 	{
 		_state = newState;
 		_stateEnteredAt = timestamp;
-		// Recovery is tracked per alert episode; never carry a streak across states.
+		// Recovery and severe-drop streaks are tracked per episode; never carry one across states.
 		_recoveryActive = false;
+		_severeDropStreak = 0;
 		StateChanged?.Invoke(newState);
 	}
 }
