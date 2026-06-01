@@ -72,6 +72,30 @@ public class MeltdownRepositoryAnnotationTests
 	}
 
 	[TestMethod]
+	public void Shutdown_RoundTripsThroughStringPersistence()
+	{
+		// Shutdown is the low-arousal/collapse self-report (audit A(c)). Labels persist as
+		// case-insensitive lower-cased strings, so the freshly-appended enum member must survive
+		// the write→read boundary like the original four.
+		var path = NewTempDbPath();
+		try
+		{
+			var ts = DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_500_000);
+			MeltdownRepository.WriteAnnotation(path, ts, AnnotationLabel.Shutdown, "went numb");
+
+			var read = MeltdownRepository.ReadAnnotations(path, ts.AddMinutes(-1), ts.AddMinutes(1));
+
+			Assert.AreEqual(1, read.Count);
+			Assert.AreEqual(AnnotationLabel.Shutdown, read[0].Label);
+			Assert.AreEqual("went numb", read[0].Notes);
+		}
+		finally
+		{
+			TryDelete(path);
+		}
+	}
+
+	[TestMethod]
 	public void InstanceInsert_IsReadableByStaticReader()
 	{
 		// The pipeline writes annotations via the instance method on its live

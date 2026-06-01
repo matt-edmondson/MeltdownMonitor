@@ -3,8 +3,8 @@ using MeltdownMonitor.Core.Persistence;
 namespace MeltdownMonitor.App;
 
 /// <summary>
-/// Tiny dialog with four label buttons and an optional notes field.
-/// The user opens it from the tray menu to record how they're feeling.
+/// Tiny dialog with one button per <see cref="AnnotationLabel"/> and an optional notes
+/// field. The user opens it from the tray menu to record how they're feeling.
 /// </summary>
 public sealed class AnnotationDialog : Form
 {

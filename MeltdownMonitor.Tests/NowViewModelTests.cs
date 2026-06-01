@@ -133,7 +133,7 @@ public class NowViewModelTests
 	}
 
 	[TestMethod]
-	public void AnnotationLabels_ExposesTheFourCheckInChoices()
+	public void AnnotationLabels_ExposesEveryCheckInChoice()
 	{
 		var vm = new NowViewModel();
 
