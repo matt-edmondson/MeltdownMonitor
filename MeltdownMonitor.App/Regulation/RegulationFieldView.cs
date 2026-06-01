@@ -21,7 +21,7 @@ public sealed class RegulationFieldView : IDisposable
 	private const int MinRrForJitter = 8;        // below this, draw a smooth (flat) trace
 	private const int LobeSegments = 96;
 	private const float LobeSwellFactor = 1.4f;  // how much a lobe thickens at full index
-	private const float MaxJitterPx = 18f;       // peak trace deflection from the real RR signal
+	private const float MaxJitterPx = 18f;       // peak trace deflection from the real RR signal at 1× exaggeration
 	private const float RrDevScaleMs = 30f;      // beat-to-beat difference that maps to full deflection
 	private const float LobeHeightMin = 0.7f;    // live lobe height factor at lowest Poincaré roundness
 	private const float LobeHeightMax = 1.18f;   // ...and at highest
@@ -296,7 +296,7 @@ public sealed class RegulationFieldView : IDisposable
 				int i0 = (int)Math.Floor(posBuf);
 				int i1 = Math.Min(i0 + 1, devLen - 1);
 				float d = dev[i0] + ((float)(dev[i1] - dev[i0]) * (float)(posBuf - i0));
-				jitter = d * MaxJitterPx * _drawScale * depth;
+				jitter = d * MaxJitterPx * (float)_pipeline.JitterExaggeration * _drawScale * depth;
 			}
 			Vector2 normal = Normal(live[(i - 1 + n) % n], live[(i + 1) % n]);
 			pts[i] = v + (normal * jitter);

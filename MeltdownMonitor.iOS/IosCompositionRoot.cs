@@ -65,7 +65,8 @@ public static class IosCompositionRoot
 
 		_now = new NowViewModel(
 			onAnnotate: RecordAnnotationAsync,
-			trailLengthProvider: () => settings.RegulationTrailLength);
+			trailLengthProvider: () => settings.RegulationTrailLength,
+			jitterExaggerationProvider: () => settings.JitterExaggeration);
 		_history = new HistoryViewModel();
 
 		var settingsTab = new SettingsViewModel(

@@ -58,6 +58,9 @@ public sealed class RegulationField : Control
 		AvaloniaProperty.Register<RegulationField, RegulationDynamics>(
 			nameof(Dynamics), RegulationDynamics.Steady);
 
+	public static readonly StyledProperty<double> JitterExaggerationProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(JitterExaggeration), 1.0);
+
 	// Catppuccin Macchiato — the field's distinctive palette, single-sourced here
 	// to match the desktop renderer's MacchiatoPalette.
 	private static readonly Color Base = Color.FromRgb(0x24, 0x27, 0x3a);
@@ -114,6 +117,14 @@ public sealed class RegulationField : Control
 		set => SetValue(DynamicsProperty, value);
 	}
 
+	/// <summary>User-configurable multiplier on the live trace's variability jitter
+	/// (clamped 0–3). 1.0 is the tuned default; fed to the animator each frame.</summary>
+	public double JitterExaggeration
+	{
+		get => GetValue(JitterExaggerationProperty);
+		set => SetValue(JitterExaggerationProperty, value);
+	}
+
 	protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
 	{
 		base.OnAttachedToVisualTree(e);
@@ -137,6 +148,7 @@ public sealed class RegulationField : Control
 		double dt = (now - _lastFrame).TotalSeconds;
 		_lastFrame = now;
 
+		_animator.JitterExaggeration = Math.Clamp(JitterExaggeration, 0.0, 3.0);
 		_animator.Step(dt, Reading.Index, HeartRate, Dynamics.NormalizedSpeed);
 		InvalidateVisual();
 	}

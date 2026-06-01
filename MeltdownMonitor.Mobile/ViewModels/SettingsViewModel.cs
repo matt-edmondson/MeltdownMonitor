@@ -177,6 +177,21 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	public double JitterExaggeration
+	{
+		get => _settings.JitterExaggeration;
+		set
+		{
+			double clamped = Math.Clamp(value, 0.0, 3.0);
+			if (Math.Abs(_settings.JitterExaggeration - clamped) > 1e-6)
+			{
+				_settings.JitterExaggeration = clamped;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	public string PausedUntilLabel =>
 		_settings.PausedUntil is null
 			? "Not paused"
