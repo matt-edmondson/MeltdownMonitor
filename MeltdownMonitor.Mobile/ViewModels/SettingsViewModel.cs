@@ -162,6 +162,21 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	public int RegulationTrailLength
+	{
+		get => _settings.RegulationTrailLength;
+		set
+		{
+			int clamped = Math.Clamp(value, 12, 240);
+			if (_settings.RegulationTrailLength != clamped)
+			{
+				_settings.RegulationTrailLength = clamped;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	public string PausedUntilLabel =>
 		_settings.PausedUntil is null
 			? "Not paused"
