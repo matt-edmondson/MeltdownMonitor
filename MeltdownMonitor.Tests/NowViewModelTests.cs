@@ -389,6 +389,19 @@ public class NowViewModelTests
 	}
 
 	[TestMethod]
+	public void OnSampleUpdated_TimestampsPreserveSubSecondSpacing()
+	{
+		var vm = new NowViewModel();
+		var t0 = DateTimeOffset.UtcNow;
+
+		vm.OnSampleUpdated(SampleAt(t0, rmssd: 40));
+		vm.OnSampleUpdated(SampleAt(t0.AddMilliseconds(500), rmssd: 41));
+
+		Assert.AreEqual(0.5, vm.RmssdTimestamps[1] - vm.RmssdTimestamps[0], 1e-6,
+			"sub-second sample spacing must survive (epoch ms / 1000), not collapse to whole seconds");
+	}
+
+	[TestMethod]
 	public void TrimHistory_KeepsValuesAndTimestampsTheSameLength()
 	{
 		var vm = new NowViewModel();
@@ -400,7 +413,7 @@ public class NowViewModelTests
 		}
 
 		Assert.AreEqual(vm.RmssdHistory.Count, vm.RmssdTimestamps.Count);
-		Assert.IsTrue(vm.RmssdTimestamps.Count <= 360, $"capped, was {vm.RmssdTimestamps.Count}");
+		Assert.AreEqual(360, vm.RmssdTimestamps.Count, "trimmed to exactly the 360-point cap");
 	}
 
 	private static HrvSample Sample(double rmssd, double meanHr, double baseline, DetectorState state) =>
