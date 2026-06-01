@@ -11,9 +11,11 @@ namespace MeltdownMonitor.Core.Hrv;
 public static class RelativeTimeAxis
 {
 	/// <summary>
-	/// Returns evenly spaced tick positions (seconds, all &lt;= 0, starting at 0 = now
-	/// and stepping back to at least -<paramref name="windowSeconds"/>) plus their
-	/// labels. Labels under a minute read in seconds ("-30s"); the rest read in minutes.
+	/// Returns evenly spaced tick positions (seconds, all &lt;= 0) and their labels:
+	/// 0 = now, then stepping back in multiples of an auto-chosen step for as long as the
+	/// tick stays within <paramref name="windowSeconds"/>. The grid favours clean step
+	/// multiples, so the last tick may fall short of the exact window edge. Labels under a
+	/// minute read in seconds ("-30s"); the rest read in minutes.
 	/// </summary>
 	public static (double[] Positions, string[] Labels) Ticks(double windowSeconds)
 	{
@@ -31,6 +33,8 @@ public static class RelativeTimeAxis
 		return ([.. positions], [.. labels]);
 	}
 
+	// All step values are whole seconds whose /60 is exactly representable, which is what
+	// Label's "minutes == Math.Floor(minutes)" test relies on — preserve that if adding a band.
 	// Tick spacing bands — coarse enough that even a 6-hour window doesn't crowd.
 	private static double ChooseStep(double windowSeconds) => windowSeconds switch
 	{

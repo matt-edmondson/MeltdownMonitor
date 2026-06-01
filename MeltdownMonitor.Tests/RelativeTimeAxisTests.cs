@@ -15,7 +15,7 @@ public class RelativeTimeAxisTests
 	}
 
 	[TestMethod]
-	public void Ticks_PositionsDescendByStepAndStopAtWindow()
+	public void Ticks_300sWindow_ProducesExpectedGridLines()
 	{
 		// 5-min window -> 2-min step.
 		(double[] positions, _) = RelativeTimeAxis.Ticks(300.0);
@@ -55,5 +55,15 @@ public class RelativeTimeAxisTests
 		(double[] positions, string[] labels) = RelativeTimeAxis.Ticks(900.0);
 
 		Assert.AreEqual(positions.Length, labels.Length);
+	}
+
+	[TestMethod]
+	public void Ticks_SubStepWindow_ReturnsOnlyNow()
+	{
+		// A window smaller than the smallest step (30 s) yields a single "now" tick.
+		(double[] positions, string[] labels) = RelativeTimeAxis.Ticks(10.0);
+
+		CollectionAssert.AreEqual(new[] { 0.0 }, positions);
+		CollectionAssert.AreEqual(new[] { "now" }, labels);
 	}
 }
