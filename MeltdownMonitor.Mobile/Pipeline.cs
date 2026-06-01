@@ -156,7 +156,16 @@ public sealed class Pipeline : IDisposable
 		}
 
 		var window = lookback ?? TimeSpan.FromHours(24);
-		var warmCalculator = new ShortWindowHrvCalculator();
+
+		// HealthKit HR samples are legitimately spaced seconds-to-minutes apart, so the live-stream
+		// guards (gap reset, min-beat floor) must be relaxed here or the warm-start would clear its
+		// window on every sample and never seed — re-introducing the cold-start blindness this exists
+		// to avoid. These protections apply to live BLE streams, not historical resampling.
+		var warmCalculator = new ShortWindowHrvCalculator
+		{
+			MaxBeatGapSeconds = double.MaxValue,
+			MinBeatsForMetrics = 2,
+		};
 
 		await foreach (var hr in healthStore.ReadRecentHeartRateAsync(window).WithCancellation(cancellationToken).ConfigureAwait(false))
 		{
