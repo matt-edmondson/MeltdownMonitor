@@ -25,7 +25,7 @@ public sealed class RegulationFieldView : IDisposable
 	private const float RrDevScaleMs = 30f;      // beat-to-beat difference that maps to full deflection
 	private const float LobeHeightMin = 0.7f;    // live lobe height factor at lowest Poincaré roundness
 	private const float LobeHeightMax = 1.18f;   // ...and at highest
-	private const float MarkerYSpan = 0.8f;      // vagal-tone vertical travel, as a fraction of lobe height
+	private const float MarkerYSpan = 0.8f;      // vagal-tone half-travel (crossover→FRAGILE/STEADY), as a fraction of lobe height
 
 	private readonly Pipeline _pipeline;
 	private readonly object _lock = new();
@@ -500,17 +500,15 @@ public sealed class RegulationFieldView : IDisposable
 		}
 	}
 
-	// Vagal-tone vertical offset from the crossover for a quality in [0, 1]: FRAGILE (0) lifts to the
-	// top of the band, STEADY (1) settles at the bottom, 0.5 rests on the crossover line. The band is
-	// MarkerYSpan of the lobe height tall (markerYClamp = liveLobeHeight * MarkerYSpan) and centred on
-	// the crossover, so its half-height is markerYClamp * 0.5. The marker, its comet trail, the vagal
-	// axis and the Y-axis histogram all map quality through this one transform, so the density column
-	// lines up with where the marker actually rides rather than spanning twice that height.
+	// Vagal-tone vertical offset from the crossover for a quality in [0, 1]: FRAGILE (0) lifts the
+	// marker to the top extent (-markerYClamp), STEADY (1) drops it to the bottom extent
+	// (+markerYClamp); 0.5 rests on the crossover line. markerYClamp (= liveLobeHeight * MarkerYSpan)
+	// is the half-travel from the crossover to each extent. The marker, its comet trail, the vagal
+	// axis and the Y-axis histogram all map quality through this one transform, so the marker reaches
+	// the FRAGILE/STEADY ends and the density column lines up with where it rides. The clamp only
+	// guards quality outside [0, 1] (the calculator clamps it, so it never bites in practice).
 	private static float VagalToneOffsetY(double quality, float markerYClamp)
-	{
-		float half = markerYClamp * 0.5f;
-		return Math.Clamp(((float)quality - 0.5f) * markerYClamp, -half, half);
-	}
+		=> Math.Clamp(((float)quality - 0.5f) * 2f * markerYClamp, -markerYClamp, markerYClamp);
 
 	private static Vector2 MarkerScreenPos(Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp)
 	{
@@ -640,8 +638,8 @@ public sealed class RegulationFieldView : IDisposable
 			if (maxW > 1f)
 			{
 				int n = yHist.BucketCount;
-				// Endpoints follow the marker's vagal-tone band (FRAGILE at quality 0, STEADY at 1), so
-				// each bar sits at the height the marker rides for the quality it counts — not twice that.
+				// Endpoints follow the marker's vagal-tone travel (FRAGILE at quality 0, STEADY at 1), so
+				// each bar sits at the exact height the marker rides for the quality its bucket counts.
 				float topY = centre.Y + VagalToneOffsetY(0.0, markerYClamp);
 				float botY = centre.Y + VagalToneOffsetY(1.0, markerYClamp);
 				float slot = (botY - topY) / n;
