@@ -657,28 +657,26 @@ public sealed class StatusWindow : IDisposable
 		ImGui.Separator();
 
 		double now = NowEpochSeconds();
-		float[] rmssdX, rmssdY, baseRmssdX, baseRmssdY, pnn50X, pnn50Y, sdnnX, sdnnY,
-			hrX, hrY, baseHrX, baseHrY, lfX, lfY, hfX, hfY, lfhfX, lfhfY,
-			baseLfhfX, baseLfhfY, sd1X, sd1Y, sd2X, sd2Y, sd1sd2X, sd1sd2Y,
-			batteryX, batteryY, contactX, contactY;
+		ChartSeries rmssd, baseRmssd, pnn50, sdnn, hr, baseHr, lf, hf, lfhf,
+			baseLfhf, sd1, sd2, sd1sd2, battery, contact;
 		double[] rrsD;
 		lock (_historyLock)
 		{
-			_rmssd.Snapshot(now, out rmssdX, out rmssdY);
-			_baselineRmssd.Snapshot(now, out baseRmssdX, out baseRmssdY);
-			_pnn50.Snapshot(now, out pnn50X, out pnn50Y);
-			_sdnn.Snapshot(now, out sdnnX, out sdnnY);
-			_meanHr.Snapshot(now, out hrX, out hrY);
-			_baselineHr.Snapshot(now, out baseHrX, out baseHrY);
-			_lfPower.Snapshot(now, out lfX, out lfY);
-			_hfPower.Snapshot(now, out hfX, out hfY);
-			_lfHfRatio.Snapshot(now, out lfhfX, out lfhfY);
-			_baselineLfHf.Snapshot(now, out baseLfhfX, out baseLfhfY);
-			_sd1.Snapshot(now, out sd1X, out sd1Y);
-			_sd2.Snapshot(now, out sd2X, out sd2Y);
-			_sd1Sd2.Snapshot(now, out sd1sd2X, out sd1sd2Y);
-			_battery.Snapshot(now, out batteryX, out batteryY);
-			_contact.Snapshot(now, out contactX, out contactY);
+			rmssd = _rmssd.Snapshot(now);
+			baseRmssd = _baselineRmssd.Snapshot(now);
+			pnn50 = _pnn50.Snapshot(now);
+			sdnn = _sdnn.Snapshot(now);
+			hr = _meanHr.Snapshot(now);
+			baseHr = _baselineHr.Snapshot(now);
+			lf = _lfPower.Snapshot(now);
+			hf = _hfPower.Snapshot(now);
+			lfhf = _lfHfRatio.Snapshot(now);
+			baseLfhf = _baselineLfHf.Snapshot(now);
+			sd1 = _sd1.Snapshot(now);
+			sd2 = _sd2.Snapshot(now);
+			sd1sd2 = _sd1Sd2.Snapshot(now);
+			battery = _battery.Snapshot(now);
+			contact = _contact.Snapshot(now);
 			rrsD = SnapshotD(_recentRr);
 		}
 
@@ -689,18 +687,18 @@ public sealed class StatusWindow : IDisposable
 		// where available; the Poincaré scatter is included as a square cell.
 		OverviewChart[] charts =
 		[
-			new("RMSSD vs baseline (ms)", rmssdX, rmssdY, baseRmssdX, baseRmssdY),
-			new("Heart rate vs baseline (bpm)", hrX, hrY, baseHrX, baseHrY),
-			new("LF/HF ratio (sympathovagal balance)", lfhfX, lfhfY, baseLfhfX, baseLfhfY),
-			new("pNN50 (%)", pnn50X, pnn50Y, null, null),
-			new("SDNN (ms)", sdnnX, sdnnY, null, null),
-			new("LF power (ms²)", lfX, lfY, null, null),
-			new("HF power (ms²)", hfX, hfY, null, null),
-			new("SD1 (ms)", sd1X, sd1Y, null, null),
-			new("SD2 (ms)", sd2X, sd2Y, null, null),
-			new("SD1/SD2 ratio (parasympathetic index)", sd1sd2X, sd1sd2Y, null, null),
+			new("RMSSD vs baseline (ms)", rmssd.Xs, rmssd.Ys, baseRmssd.Xs, baseRmssd.Ys),
+			new("Heart rate vs baseline (bpm)", hr.Xs, hr.Ys, baseHr.Xs, baseHr.Ys),
+			new("LF/HF ratio (sympathovagal balance)", lfhf.Xs, lfhf.Ys, baseLfhf.Xs, baseLfhf.Ys),
+			new("pNN50 (%)", pnn50.Xs, pnn50.Ys, null, null),
+			new("SDNN (ms)", sdnn.Xs, sdnn.Ys, null, null),
+			new("LF power (ms²)", lf.Xs, lf.Ys, null, null),
+			new("HF power (ms²)", hf.Xs, hf.Ys, null, null),
+			new("SD1 (ms)", sd1.Xs, sd1.Ys, null, null),
+			new("SD2 (ms)", sd2.Xs, sd2.Ys, null, null),
+			new("SD1/SD2 ratio (parasympathetic index)", sd1sd2.Xs, sd1sd2.Ys, null, null),
 			new("RR intervals (ms)", rrX, rrY, null, null),
-			new("Battery (%)", batteryX, batteryY, null, null),
+			new("Battery (%)", battery.Xs, battery.Ys, null, null),
 			new("Poincaré (RR[i] vs RR[i+1])", rrX, rrY, null, null, IsScatter: true),
 		];
 
@@ -725,9 +723,9 @@ public sealed class StatusWindow : IDisposable
 		{
 			SetupTimeAxis(ImPlotAxisFlags.Lock | ImPlotAxisFlags.NoTickLabels);
 			ImPlot.SetupAxisLimits(ImAxis.Y1, 0.0, 1.0, ImPlotCond.Always);
-			if (contactY.Length >= 2)
+			if (contact.Ys.Length >= 2)
 			{
-				ImPlot.PlotStairs("Sensor contact (1=OK 0=no contact)", ref contactX[0], ref contactY[0], contactY.Length);
+				ImPlot.PlotStairs("Sensor contact (1=OK 0=no contact)", ref contact.Xs[0], ref contact.Ys[0], contact.Ys.Length);
 			}
 
 			ImPlot.EndPlot();
@@ -770,58 +768,58 @@ public sealed class StatusWindow : IDisposable
 	private void DrawHeartRateTab()
 	{
 		double now = NowEpochSeconds();
-		float[] hrX, hrY, baseHrX, baseHrY;
+		ChartSeries hr, baseHr;
 		double[] rrsD;
 		lock (_historyLock)
 		{
-			_meanHr.Snapshot(now, out hrX, out hrY);
-			_baselineHr.Snapshot(now, out baseHrX, out baseHrY);
+			hr = _meanHr.Snapshot(now);
+			baseHr = _baselineHr.Snapshot(now);
 			rrsD = SnapshotD(_recentRr);
 		}
 
 		(float[] rrX, float[] rrY) = RrSeries(rrsD);
 
 		float h = FillRowHeight(2);
-		PlotPair(h, "Heart rate vs baseline (bpm)", "HR", hrX, hrY, "Baseline HR", baseHrX, baseHrY);
+		PlotPair(h, "Heart rate vs baseline (bpm)", "HR", hr.Xs, hr.Ys, "Baseline HR", baseHr.Xs, baseHr.Ys);
 		PlotRow(h, ("RR intervals (ms, last received beats)", rrX, rrY));
 	}
 
 	private void DrawTimeDomainTab()
 	{
 		double now = NowEpochSeconds();
-		float[] rmssdX, rmssdY, baseX, baseY, pnnX, pnnY, sdnnX, sdnnY;
+		ChartSeries rmssd, baseRmssd, pnn50, sdnn;
 		lock (_historyLock)
 		{
-			_rmssd.Snapshot(now, out rmssdX, out rmssdY);
-			_baselineRmssd.Snapshot(now, out baseX, out baseY);
-			_pnn50.Snapshot(now, out pnnX, out pnnY);
-			_sdnn.Snapshot(now, out sdnnX, out sdnnY);
+			rmssd = _rmssd.Snapshot(now);
+			baseRmssd = _baselineRmssd.Snapshot(now);
+			pnn50 = _pnn50.Snapshot(now);
+			sdnn = _sdnn.Snapshot(now);
 		}
 
 		float h = FillRowHeight(2);
-		PlotPair(h, "RMSSD (ms)", "RMSSD", rmssdX, rmssdY, "Baseline", baseX, baseY);
-		PlotRow(h, ("pNN50 (%)", pnnX, pnnY), ("SDNN (ms)", sdnnX, sdnnY));
+		PlotPair(h, "RMSSD (ms)", "RMSSD", rmssd.Xs, rmssd.Ys, "Baseline", baseRmssd.Xs, baseRmssd.Ys);
+		PlotRow(h, ("pNN50 (%)", pnn50.Xs, pnn50.Ys), ("SDNN (ms)", sdnn.Xs, sdnn.Ys));
 	}
 
 	private void DrawFrequencyTab()
 	{
 		double now = NowEpochSeconds();
-		float[] lfX, lfY, hfX, hfY, ratioX, ratioY, baseRX, baseRY;
+		ChartSeries lf, hf, ratio, baseLfhf;
 		lock (_historyLock)
 		{
-			_lfPower.Snapshot(now, out lfX, out lfY);
-			_hfPower.Snapshot(now, out hfX, out hfY);
-			_lfHfRatio.Snapshot(now, out ratioX, out ratioY);
-			_baselineLfHf.Snapshot(now, out baseRX, out baseRY);
+			lf = _lfPower.Snapshot(now);
+			hf = _hfPower.Snapshot(now);
+			ratio = _lfHfRatio.Snapshot(now);
+			baseLfhf = _baselineLfHf.Snapshot(now);
 		}
 
 		float h = FillRowHeight(2, ImGui.GetTextLineHeightWithSpacing());
-		PlotPair(h, "LF/HF ratio (sympathovagal balance)", "LF/HF", ratioX, ratioY, "Baseline LF/HF", baseRX, baseRY);
+		PlotPair(h, "LF/HF ratio (sympathovagal balance)", "LF/HF", ratio.Xs, ratio.Ys, "Baseline LF/HF", baseLfhf.Xs, baseLfhf.Ys);
 		PlotRow(h,
-			("LF power (ms², 0.04–0.15 Hz)", lfX, lfY),
-			("HF power (ms², 0.15–0.40 Hz)", hfX, hfY));
+			("LF power (ms², 0.04–0.15 Hz)", lf.Xs, lf.Ys),
+			("HF power (ms², 0.15–0.40 Hz)", hf.Xs, hf.Ys));
 
-		if (ratioY.Length < 2)
+		if (ratio.Ys.Length < 2)
 		{
 			ImGui.TextDisabled("Frequency metrics need ≥2 minutes of clean beats to populate.");
 		}
@@ -830,29 +828,25 @@ public sealed class StatusWindow : IDisposable
 	private void DrawPoincareTab()
 	{
 		double now = NowEpochSeconds();
-		float[] sd1X, sd1Y, sd2X, sd2Y, ratioX, ratioY;
+		ChartSeries sd1, sd2, ratio;
 		double[] rrsD;
 		lock (_historyLock)
 		{
-			_sd1.Snapshot(now, out sd1X, out sd1Y);
-			_sd2.Snapshot(now, out sd2X, out sd2Y);
-			_sd1Sd2.Snapshot(now, out ratioX, out ratioY);
+			sd1 = _sd1.Snapshot(now);
+			sd2 = _sd2.Snapshot(now);
+			ratio = _sd1Sd2.Snapshot(now);
 			rrsD = SnapshotD(_recentRr);
 		}
 
-		float[] rrs = new float[rrsD.Length];
-		for (int i = 0; i < rrsD.Length; i++)
-		{
-			rrs[i] = (float)rrsD[i];
-		}
+		float[] rrs = ToFloat(rrsD);
 
 		float h = FillRowHeight(3);
 		DrawPoincareScatter(rrs, h); // unchanged: scatter, not a time series
 
 		PlotRow(h,
-			("SD1 (short-term variability, ms)", sd1X, sd1Y),
-			("SD2 (long-term variability, ms)", sd2X, sd2Y));
-		PlotRow(h, ("SD1/SD2 ratio (parasympathetic index)", ratioX, ratioY));
+			("SD1 (short-term variability, ms)", sd1.Xs, sd1.Ys),
+			("SD2 (long-term variability, ms)", sd2.Xs, sd2.Ys));
+		PlotRow(h, ("SD1/SD2 ratio (parasympathetic index)", ratio.Xs, ratio.Ys));
 	}
 
 	private static void DrawPoincareScatter(float[] rrs, float maxSide)
@@ -1418,19 +1412,25 @@ public sealed class StatusWindow : IDisposable
 		}
 	}
 
+	private static float[] ToFloat(double[] values)
+	{
+		var result = new float[values.Length];
+		for (int i = 0; i < values.Length; i++)
+		{
+			result[i] = (float)values[i];
+		}
+
+		return result;
+	}
+
 	// Build the RR plot's (x, y): x is the cumulative-RR time axis (newest beat at 0,
 	// seconds), y is the RR interval in ms. Reconstructed because batched beats share a
 	// timestamp — see RrTimeAxis.
 	private static (float[] xs, float[] ys) RrSeries(double[] rrMs)
 	{
 		double[] secs = RrTimeAxis.CumulativeSeconds(rrMs);
-		var xs = new float[secs.Length];
-		var ys = new float[rrMs.Length];
-		for (int i = 0; i < secs.Length; i++)
-		{
-			xs[i] = (float)secs[i];
-			ys[i] = (float)rrMs[i];
-		}
+		var xs = ToFloat(secs);
+		float[] ys = ToFloat(rrMs);
 
 		return (xs, ys);
 	}
