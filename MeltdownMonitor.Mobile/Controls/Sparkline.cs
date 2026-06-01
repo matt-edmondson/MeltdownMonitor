@@ -133,6 +133,9 @@ public sealed class Sparkline : Control
 		// Headroom so peaks don't kiss the top edge.
 		max *= 1.15;
 
+		// NowViewModel appends and trims Values, BaselineValues, and Timestamps together,
+		// so in steady state all three are equal-length and share one time-relative x-scale.
+		// If a caller ever desyncs them, DrawSeries safely falls back to index spacing per series.
 		if (baseline is not null && baseline.Count >= 2)
 		{
 			DrawSeries(context, baseline, timestamps, now, window, bounds, max, BaselineBrush, LineThickness, dashed: true);
