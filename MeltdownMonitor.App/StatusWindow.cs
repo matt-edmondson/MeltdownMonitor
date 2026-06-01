@@ -53,6 +53,7 @@ public sealed class StatusWindow : IDisposable
 	private readonly RingBuffer<float> _sd1 = new(InitialSparklineCapacity);
 	private readonly RingBuffer<float> _sd2 = new(InitialSparklineCapacity);
 	private readonly RingBuffer<float> _sd1Sd2 = new(InitialSparklineCapacity);
+	private readonly RingBuffer<float> _contact = new(InitialSparklineCapacity);
 	private readonly RingBuffer<double> _recentRr = new(InitialSparklineCapacity);
 
 	// Battery is updated on its own slow cadence (a read on connect plus occasional
@@ -64,6 +65,7 @@ public sealed class StatusWindow : IDisposable
 		_meanHr, _baselineHr,
 		_lfPower, _hfPower, _lfHfRatio, _baselineLfHf,
 		_sd1, _sd2, _sd1Sd2,
+		_contact,
 	];
 
 	public StatusWindow(Pipeline pipeline, MeltdownRepository repository, AppSettings settings)
@@ -237,6 +239,7 @@ public sealed class StatusWindow : IDisposable
 			_meanHr.PushBack((float)sample.MeanHr);
 			_baselineHr.PushBack((float)sample.BaselineHr);
 			_baselineLfHf.PushBack((float)sample.BaselineLfHfRatio);
+			_contact.PushBack(ContactToValue(sample.SensorContact));
 
 			if (sample.Extended is { } ext)
 			{
@@ -314,6 +317,7 @@ public sealed class StatusWindow : IDisposable
 				_meanHr.PushBack((float)s.MeanHr);
 				_baselineHr.PushBack((float)s.BaselineHr);
 				_baselineLfHf.PushBack((float)s.BaselineLfHfRatio);
+				_contact.PushBack(ContactToValue(s.SensorContact));
 
 				if (s.Extended is { } ext)
 				{
@@ -334,6 +338,10 @@ public sealed class StatusWindow : IDisposable
 			}
 		}
 	}
+
+	// 1 = signal trustworthy (Detected or NotSupported), 0 = NotDetected (readings gated).
+	private static float ContactToValue(SensorContactStatus contact) =>
+		contact == SensorContactStatus.NotDetected ? 0f : 1f;
 
 	private static float[] SnapshotF(RingBuffer<float> rb)
 	{
@@ -656,7 +664,7 @@ public sealed class StatusWindow : IDisposable
 
 		ImGui.Separator();
 
-		float[] rmssd, baseRmssd, pnn50, sdnn, hr, baseHr, lf, hf, lfhf, baseLfhf, sd1, sd2, sd1sd2, battery;
+		float[] rmssd, baseRmssd, pnn50, sdnn, hr, baseHr, lf, hf, lfhf, baseLfhf, sd1, sd2, sd1sd2, battery, contact;
 		double[] rrsD;
 		lock (_historyLock)
 		{
@@ -674,6 +682,7 @@ public sealed class StatusWindow : IDisposable
 			sd2 = SnapshotF(_sd2);
 			sd1sd2 = SnapshotF(_sd1Sd2);
 			battery = SnapshotF(_battery);
+			contact = SnapshotF(_contact);
 			rrsD = SnapshotD(_recentRr);
 		}
 
@@ -713,6 +722,25 @@ public sealed class StatusWindow : IDisposable
 		ImGuiWidgets.RowMajorGrid("overview-charts", charts,
 			_ => new Vector2(cellW, cellH),
 			static (chart, cellSize, itemSize) => DrawOverviewChart(chart, itemSize));
+
+		// Contact step-strip: binary 0/1 signal, fixed Y range so a single value
+		// of 1 fills the bar and a single value of 0 is clearly at the floor.
+		ImGui.Spacing();
+		float contactH = ImGui.GetTextLineHeightWithSpacing() * 2f;
+		float contactW = ImGui.GetContentRegionAvail().X;
+		if (ImPlot.BeginPlot("Sensor contact", new Vector2(contactW, contactH),
+				ImPlotFlags.NoLegend | ImPlotFlags.NoMouseText))
+		{
+			ImPlot.SetupAxes(string.Empty, string.Empty,
+				ImPlotAxisFlags.AutoFit | ImPlotAxisFlags.NoTickLabels,
+				ImPlotAxisFlags.Lock | ImPlotAxisFlags.NoTickLabels);
+			ImPlot.SetupAxisLimits(ImAxis.Y1, 0.0, 1.0, ImPlotCond.Always);
+			if (contact.Length >= 2)
+			{
+				ImPlot.PlotStairs("Sensor contact (1=OK 0=no contact)", ref contact[0], contact.Length);
+			}
+			ImPlot.EndPlot();
+		}
 	}
 
 	private sealed record OverviewChart(string Title, float[] Data, float[]? Baseline, bool IsScatter = false);

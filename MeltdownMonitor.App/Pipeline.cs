@@ -197,6 +197,7 @@ public sealed class Pipeline : IDisposable
 				BaselineRmssd = _baseline.BaselineRmssd,
 				BaselineHr = _baseline.BaselineHr,
 				State = state,
+				SensorContact = LatestContact,
 			};
 
 			_repository.InsertHrvSample(finalSample);

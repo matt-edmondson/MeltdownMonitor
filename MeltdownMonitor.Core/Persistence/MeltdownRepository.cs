@@ -125,6 +125,7 @@ public class MeltdownRepository : IDisposable
 			("sd2",            "REAL"),
 			("sd1_sd2_ratio",  "REAL"),
 			("sdnn",           "REAL"),
+			("contact",        "TEXT"),
 		};
 
 		foreach (var (col, type) in toAdd)
@@ -192,10 +193,10 @@ public class MeltdownRepository : IDisposable
 			cmd.CommandText = """
 				INSERT OR IGNORE INTO hrv_samples (
 					ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state,
-					lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn)
+					lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn, contact)
 				VALUES (
 					$ts, $rmssd, $pnn50, $mean_hr, $baseline_rmssd, $baseline_hr, $state,
-					$lf, $hf, $lf_hf, $sd1, $sd2, $sd1_sd2, $sdnn)
+					$lf, $hf, $lf_hf, $sd1, $sd2, $sd1_sd2, $sdnn, $contact)
 				""";
 			cmd.Parameters.AddWithValue("$ts", sample.Timestamp.ToUnixTimeMilliseconds());
 			cmd.Parameters.AddWithValue("$rmssd", sample.Rmssd);
@@ -213,6 +214,7 @@ public class MeltdownRepository : IDisposable
 			cmd.Parameters.AddWithValue("$sd2",    ext is not null ? ext.SD2          : DBNull.Value);
 			cmd.Parameters.AddWithValue("$sd1_sd2",ext is not null ? ext.SD1SD2Ratio  : DBNull.Value);
 			cmd.Parameters.AddWithValue("$sdnn",   ext is not null ? ext.Sdnn         : DBNull.Value);
+			cmd.Parameters.AddWithValue("$contact", sample.SensorContact.ToString());
 
 			cmd.ExecuteNonQuery();
 		}
@@ -321,7 +323,7 @@ public class MeltdownRepository : IDisposable
 			using var cmd = _connection.CreateCommand();
 			cmd.CommandText = """
 				SELECT ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state,
-				       lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn
+				       lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn, contact
 				FROM hrv_samples
 				WHERE ts >= $from AND ts <= $to
 				ORDER BY ts
@@ -349,6 +351,12 @@ public class MeltdownRepository : IDisposable
 						reader.GetDouble(13));
 				}
 
+				var contact = reader.IsDBNull(14)
+					? SensorContactStatus.NotSupported
+					: Enum.TryParse<SensorContactStatus>(reader.GetString(14), ignoreCase: true, out var c)
+						? c
+						: SensorContactStatus.NotSupported;
+
 				results.Add(new HrvSample(ts,
 					reader.GetDouble(1),
 					reader.GetDouble(2),
@@ -358,6 +366,7 @@ public class MeltdownRepository : IDisposable
 					state)
 				{
 					Extended = ext,
+					SensorContact = contact,
 				});
 			}
 
@@ -376,7 +385,7 @@ public class MeltdownRepository : IDisposable
 		using var cmd = conn.CreateCommand();
 		cmd.CommandText = """
 			SELECT ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state,
-			       lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn
+			       lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn, contact
 			FROM hrv_samples
 			WHERE ts >= $from AND ts <= $to
 			ORDER BY ts
@@ -404,6 +413,12 @@ public class MeltdownRepository : IDisposable
 					reader.GetDouble(13));
 			}
 
+			var contact = reader.IsDBNull(14)
+				? SensorContactStatus.NotSupported
+				: Enum.TryParse<SensorContactStatus>(reader.GetString(14), ignoreCase: true, out var c)
+					? c
+					: SensorContactStatus.NotSupported;
+
 			results.Add(new HrvSample(ts,
 				reader.GetDouble(1),
 				reader.GetDouble(2),
@@ -413,6 +428,7 @@ public class MeltdownRepository : IDisposable
 				state)
 			{
 				Extended = ext,
+				SensorContact = contact,
 			});
 		}
 
