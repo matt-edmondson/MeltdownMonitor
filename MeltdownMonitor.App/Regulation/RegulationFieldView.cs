@@ -458,9 +458,8 @@ public sealed class RegulationFieldView : IDisposable
 			new Vector2(gate.X - (3f * _drawScale), ay - (5f * _drawScale)),
 			new Vector2(gate.X - (3f * _drawScale), ay + (5f * _drawScale)), goal);
 
-		float fontSize = ImGui.GetFontSize() * _drawScale;
 		Vector2 lbl = ImGui.CalcTextSize("RECOVER");
-		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(gate.X - (lbl.X * 0.5f * _drawScale), ay - (ImGui.GetTextLineHeight() * _drawScale) - (3f * _drawScale)), goalDim, "RECOVER");
+		draw.AddText(new Vector2(gate.X - (lbl.X * 0.5f), ay - ImGui.GetTextLineHeight() - 3f), goalDim, "RECOVER");
 	}
 
 	private static Vector2 MarkerScreenPos(Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp)
@@ -524,15 +523,14 @@ public sealed class RegulationFieldView : IDisposable
 	{
 		uint axis = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Overlay1, 0.22f * confidence));
 		uint label = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Subtext0, 0.8f * confidence));
-		float lineH = ImGui.GetTextLineHeight() * _drawScale;
-		float fontSize = ImGui.GetFontSize() * _drawScale;
+		float lineH = ImGui.GetTextLineHeight();
 
 		draw.AddLine(new Vector2(centre.X, centre.Y - yClamp), new Vector2(centre.X, centre.Y + yClamp), axis, 1f * _drawScale);
 
 		Vector2 fr = ImGui.CalcTextSize("FRAGILE");
 		Vector2 st = ImGui.CalcTextSize("STEADY");
-		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X - (fr.X * 0.5f * _drawScale), centre.Y - yClamp - lineH - (2f * _drawScale)), label, "FRAGILE");
-		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X - (st.X * 0.5f * _drawScale), centre.Y + yClamp + (2f * _drawScale)), label, "STEADY");
+		draw.AddText(new Vector2(centre.X - (fr.X * 0.5f), centre.Y - yClamp - lineH - 2f), label, "FRAGILE");
+		draw.AddText(new Vector2(centre.X - (st.X * 0.5f), centre.Y + yClamp + 2f), label, "STEADY");
 	}
 
 	private void DrawLabelsAndLock(ImDrawListPtr draw, Vector2 origin, Vector2 centre, float halfWidth, float lobeClearHeight)
@@ -544,17 +542,16 @@ public sealed class RegulationFieldView : IDisposable
 		// Pole labels sit clear of the lobe tips: REST right-aligned just left of the cool
 		// tip, MELTDOWN just right of the warm tip, both vertically centred on the tip line.
 		// WINDOW OF TOLERANCE is horizontally centred above the tallest possible lobe.
-		float lineH = ImGui.GetTextLineHeight() * _drawScale;
+		float lineH = ImGui.GetTextLineHeight();
 		float midY = centre.Y - (lineH * 0.5f);
-		float poleGap = 16f * _drawScale;
-		float fontSize = ImGui.GetFontSize() * _drawScale;
+		const float poleGap = 16f;
 
 		Vector2 restSize = ImGui.CalcTextSize("REST");
-		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X - halfWidth - poleGap - (restSize.X * _drawScale), midY), rest, "REST");
-		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X + halfWidth + poleGap, midY), melt, "MELTDOWN");
+		draw.AddText(new Vector2(centre.X - halfWidth - poleGap - restSize.X, midY), rest, "REST");
+		draw.AddText(new Vector2(centre.X + halfWidth + poleGap, midY), melt, "MELTDOWN");
 
 		Vector2 wotSize = ImGui.CalcTextSize("WINDOW OF TOLERANCE");
-		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X - (wotSize.X * 0.5f * _drawScale), centre.Y - lobeClearHeight - lineH - (10f * _drawScale)), dim, "WINDOW OF TOLERANCE");
+		draw.AddText(new Vector2(centre.X - (wotSize.X * 0.5f), centre.Y - lobeClearHeight - lineH - 10f), dim, "WINDOW OF TOLERANCE");
 
 		var state = _pipeline.CurrentState;
 		if (state is DetectorState.Warning or DetectorState.Alerting)
@@ -587,11 +584,10 @@ public sealed class RegulationFieldView : IDisposable
 		ImGui.Text($"HR {s.MeanHr:F0} bpm    RMSSD {s.Rmssd:F0} ms ({rel})    {_pipeline.CurrentState}    {trend}");
 	}
 
-	private void DrawCalibratingOverlay(ImDrawListPtr draw, Vector2 centre, float confidence)
+	private static void DrawCalibratingOverlay(ImDrawListPtr draw, Vector2 centre, float confidence)
 	{
 		string msg = $"Calibrating baseline… {confidence * 100:F0}%";
-		float fontSize = ImGui.GetFontSize() * _drawScale;
-		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X - (70f * _drawScale), centre.Y + (30f * _drawScale)), Col(MacchiatoPalette.Subtext0), msg);
+		draw.AddText(new Vector2(centre.X - 70f, centre.Y + 30f), Col(MacchiatoPalette.Subtext0), msg);
 	}
 
 	private static Vector2 Normal(Vector2 a, Vector2 b)
