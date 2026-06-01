@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Threading;
+using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Regulation;
 
 namespace MeltdownMonitor.Mobile.Controls;
@@ -58,6 +59,16 @@ public sealed class RegulationField : Control
 		AvaloniaProperty.Register<RegulationField, RegulationDynamics>(
 			nameof(Dynamics), RegulationDynamics.Steady);
 
+	public static readonly StyledProperty<RecoveryProgress> RecoveryProperty =
+		AvaloniaProperty.Register<RegulationField, RecoveryProgress>(
+			nameof(Recovery), RecoveryProgress.Inactive);
+
+	public static readonly StyledProperty<double> JitterExaggerationProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(JitterExaggeration), 1.0);
+
+	public static readonly StyledProperty<double> LobeThicknessProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(LobeThickness), 1.0);
+
 	// Catppuccin Macchiato — the field's distinctive palette, single-sourced here
 	// to match the desktop renderer's MacchiatoPalette.
 	private static readonly Color Base = Color.FromRgb(0x24, 0x27, 0x3a);
@@ -69,9 +80,10 @@ public sealed class RegulationField : Control
 	private static readonly Color Sapphire = Color.FromRgb(0x7d, 0xc4, 0xe4);
 	private static readonly Color Peach = Color.FromRgb(0xf5, 0xa9, 0x7f);
 	private static readonly Color Maroon = Color.FromRgb(0xee, 0x99, 0xa0);
+	private static readonly Color Green = Color.FromRgb(0xa6, 0xda, 0x95);
 
 	static RegulationField() =>
-		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty);
+		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, RecoveryProperty, LobeThicknessProperty);
 
 	/// <summary>Latest arousal-vs-baseline reading; drives the marker position,
 	/// stroke fatness and overall confidence dimming.</summary>
@@ -114,6 +126,30 @@ public sealed class RegulationField : Control
 		set => SetValue(DynamicsProperty, value);
 	}
 
+	/// <summary>How close the body is to clearing the current episode; draws the recovery
+	/// gate and a progress arc during Warning/Alerting. Inactive otherwise.</summary>
+	public RecoveryProgress Recovery
+	{
+		get => GetValue(RecoveryProperty);
+		set => SetValue(RecoveryProperty, value);
+	}
+
+	/// <summary>User-configurable multiplier on the live trace's variability jitter
+	/// (clamped 0–3). 1.0 is the tuned default; fed to the animator each frame.</summary>
+	public double JitterExaggeration
+	{
+		get => GetValue(JitterExaggerationProperty);
+		set => SetValue(JitterExaggerationProperty, value);
+	}
+
+	/// <summary>User-configurable multiplier on the live trace's lobe stroke thickness
+	/// (clamped 0.5–3). 1.0 is the tuned default.</summary>
+	public double LobeThickness
+	{
+		get => GetValue(LobeThicknessProperty);
+		set => SetValue(LobeThicknessProperty, value);
+	}
+
 	protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
 	{
 		base.OnAttachedToVisualTree(e);
@@ -137,6 +173,7 @@ public sealed class RegulationField : Control
 		double dt = (now - _lastFrame).TotalSeconds;
 		_lastFrame = now;
 
+		_animator.JitterExaggeration = Math.Clamp(JitterExaggeration, 0.0, 3.0);
 		_animator.Step(dt, Reading.Index, HeartRate, Dynamics.NormalizedSpeed);
 		InvalidateVisual();
 	}
@@ -165,6 +202,7 @@ public sealed class RegulationField : Control
 		DrawTrace(context, ghost, centreV, halfWidth, reading, confidence);
 		DrawAxisHistograms(context, centre, w, h, halfWidth, lobeHeight, confidence);
 		DrawTrail(context, centreV, halfWidth, confidence);
+		DrawRecoveryTarget(context, centreV, halfWidth, lobeHeight, confidence);
 		DrawMarker(context, centreV, halfWidth, confidence);
 
 		// Crossover node at the centre of the figure-8.
@@ -199,7 +237,7 @@ public sealed class RegulationField : Control
 		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * 1.4f);
 		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * 1.4f);
 		float quality = (float)Math.Clamp(r.VariabilityQuality, 0.0, 1.0);
-		double baseThick = 3.0 + (4.0 * quality);
+		double baseThick = (3.0 + (4.0 * quality)) * Math.Clamp(LobeThickness, 0.5, 3.0);
 
 		for (int i = 0; i < ghost.Count; i++)
 		{
@@ -323,6 +361,60 @@ public sealed class RegulationField : Control
 			};
 			double alpha = (0.5 + (0.3 * _animator.DisplayedSpeed)) * frac * confidence;
 			context.DrawEllipse(Brush(tint, alpha), null, P(p), radius, radius);
+		}
+	}
+
+	// During an active episode, mark the warm-side warning boundary the marker must fall back
+	// below and sweep a progress arc showing how close the body is to recovery (metrics back in
+	// band, then held). Mirrors the desktop RegulationFieldView's recovery gate.
+	private void DrawRecoveryTarget(DrawingContext context, Vector2 centre, float halfWidth, float lobeHeight, double confidence)
+	{
+		var recovery = Recovery;
+		if (!recovery.IsActive)
+		{
+			return;
+		}
+
+		Vector2 g = LemniscateGeometry.MarkerPoint((float)RegulationFieldCalculator.WarningBoundaryIndex, centre, halfWidth);
+		var gate = P(g);
+		var goal = Brush(Green, confidence);
+
+		const double ring = 11;
+		context.DrawEllipse(null, new Pen(Brush(Green, 0.45 * confidence), 1.5), gate, ring, ring);
+		context.DrawEllipse(goal, null, gate, 2.5, 2.5);
+
+		// Two-stage recovery progress sweeping clockwise from 12 o'clock around the gate.
+		DrawArc(context, gate, ring + 3, recovery.Overall, new Pen(goal, 2.5));
+
+		if (recovery.Overall > 0.005)
+		{
+			DrawText(context, $"{recovery.Overall * 100:F0}%", new Point(gate.X, gate.Y + ring + 4), Green, 11, centred: true);
+		}
+
+		DrawText(context, "RECOVER", new Point(gate.X, gate.Y - (lobeHeight * 0.5) - 24), Green, 10, centred: true);
+	}
+
+	// A circular progress arc, clockwise from 12 o'clock, drawn as connected segments — matches
+	// the manual point-and-DrawLine idiom the lemniscate trace uses.
+	private static void DrawArc(DrawingContext context, Point centre, double radius, double fraction, IPen pen)
+	{
+		fraction = Math.Clamp(fraction, 0.0, 1.0);
+		if (fraction <= 0.005)
+		{
+			return;
+		}
+
+		const int maxSegments = 48;
+		int segments = Math.Max(1, (int)Math.Ceiling(maxSegments * fraction));
+		double a0 = -Math.PI / 2;
+		double sweep = fraction * 2 * Math.PI;
+		var prev = new Point(centre.X + (radius * Math.Cos(a0)), centre.Y + (radius * Math.Sin(a0)));
+		for (int i = 1; i <= segments; i++)
+		{
+			double a = a0 + (sweep * i / segments);
+			var p = new Point(centre.X + (radius * Math.Cos(a)), centre.Y + (radius * Math.Sin(a)));
+			context.DrawLine(pen, prev, p);
+			prev = p;
 		}
 	}
 

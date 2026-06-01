@@ -18,7 +18,10 @@
                                          Trail="{Binding RegulationTrail}"
                                          HeartRate="{Binding HeartRate}"
                                          StateColor="{Binding RegulationStateColor}"
-                                         Dynamics="{Binding Dynamics}" />
+                                         Dynamics="{Binding Dynamics}"
+                                         Recovery="{Binding Recovery}"
+                                         JitterExaggeration="{Binding JitterExaggeration}"
+                                         LobeThickness="{Binding LobeThickness}" />
                     <ctl:Sparkline Grid.Row="1"
                                    Height="48"
                                    Margin="0,8,0,0"
@@ -80,6 +83,20 @@
                                  Minimum="0"
                                  Maximum="1"
                                  Value="{Binding NormalizedSpeed}"
+                                 VerticalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            Spacing="8"
+                            IsVisible="{Binding IsRecoveryVisible}">
+                    <TextBlock Text="{Binding RecoveryText}"
+                               Foreground="#A6DA95"
+                               FontSize="13"
+                               FontWeight="SemiBold" />
+                    <ProgressBar Width="60"
+                                 Minimum="0"
+                                 Maximum="1"
+                                 Value="{Binding RecoveryFraction}"
                                  VerticalAlignment="Center" />
                 </StackPanel>
                 <TextBlock Text="Sensor contact lost — readings paused"

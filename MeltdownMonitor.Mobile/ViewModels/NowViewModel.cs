@@ -30,6 +30,8 @@ public sealed class NowViewModel : ViewModelBase
 	private readonly Func<Task>? _onDisconnect;
 	private readonly Func<AnnotationLabel, string?, Task>? _onAnnotate;
 	private readonly Func<int>? _trailLengthProvider;
+	private readonly Func<double>? _jitterExaggerationProvider;
+	private readonly Func<double>? _lobeThicknessProvider;
 
 	private DetectorState _state = DetectorState.Idle;
 	private bool _isPaused;
@@ -43,20 +45,27 @@ public sealed class NowViewModel : ViewModelBase
 	private ConnectionState _connection = ConnectionState.Disconnected;
 	private RegulationReading _reading = new(0.0, 1.0, 0.0, 0.5, 0.0);
 	private RegulationDynamics _dynamics = RegulationDynamics.Steady;
+	private RecoveryProgress _recovery = RecoveryProgress.Inactive;
 	private IReadOnlyList<RegulationTrailPoint> _regulationTrailSnapshot = [];
 	private bool _isAnnotationSheetOpen;
 	private string _annotationNotes = string.Empty;
+	private double _jitterExaggeration = 1.0;
+	private double _lobeThickness = 1.0;
 
 	public NowViewModel(
 		Func<Task>? onConnect = null,
 		Func<Task>? onDisconnect = null,
 		Func<AnnotationLabel, string?, Task>? onAnnotate = null,
-		Func<int>? trailLengthProvider = null)
+		Func<int>? trailLengthProvider = null,
+		Func<double>? jitterExaggerationProvider = null,
+		Func<double>? lobeThicknessProvider = null)
 	{
 		_onConnect = onConnect;
 		_onDisconnect = onDisconnect;
 		_onAnnotate = onAnnotate;
 		_trailLengthProvider = trailLengthProvider;
+		_jitterExaggerationProvider = jitterExaggerationProvider;
+		_lobeThicknessProvider = lobeThicknessProvider;
 		ToggleConnectionCommand = new RelayCommand(ToggleConnection);
 		OpenAnnotationCommand = new RelayCommand(() => IsAnnotationSheetOpen = true);
 		CancelAnnotationCommand = new RelayCommand(CloseAnnotationSheet);
@@ -112,6 +121,31 @@ public sealed class NowViewModel : ViewModelBase
 	/// <summary>Whether to show the trend readout — only when moving and the baseline is warm.</summary>
 	public bool IsTrendVisible => _dynamics.Trend != RegulationTrend.Steady && _reading.Confidence >= 0.999;
 
+	/// <summary>How close the body is to clearing the current episode, driving the field's
+	/// recovery indicator. <see cref="RecoveryProgress.Inactive"/> outside Warning/Alerting.</summary>
+	public RecoveryProgress Recovery
+	{
+		get => _recovery;
+		private set
+		{
+			if (SetField(ref _recovery, value))
+			{
+				Raise(nameof(RecoveryFraction));
+				Raise(nameof(RecoveryText));
+				Raise(nameof(IsRecoveryVisible));
+			}
+		}
+	}
+
+	/// <summary>[0,1] two-stage recovery progress for the readout bar.</summary>
+	public double RecoveryFraction => _recovery.Overall;
+
+	/// <summary>Human-readable recovery progress for the readout.</summary>
+	public string RecoveryText => $"Recovery {_recovery.Overall * 100:F0}%";
+
+	/// <summary>Whether to show the recovery readout — only during an active episode.</summary>
+	public bool IsRecoveryVisible => _recovery.IsActive;
+
 	/// <summary>Recent trail points (oldest first) drawn as the field's comet trail, each
 	/// carrying the detector state it was captured under so segments keep their original
 	/// colour. Replaced with a fresh snapshot on each update so the control re-renders.</summary>
@@ -119,6 +153,24 @@ public sealed class NowViewModel : ViewModelBase
 	{
 		get => _regulationTrailSnapshot;
 		private set => SetField(ref _regulationTrailSnapshot, value);
+	}
+
+	/// <summary>Configured Regulation Field jitter exaggeration multiplier (clamped 0–3),
+	/// driving the live trace's variability undulation. Refreshed on each reading so a
+	/// setting change applies live, mirroring the comet-trail length.</summary>
+	public double JitterExaggeration
+	{
+		get => _jitterExaggeration;
+		private set => SetField(ref _jitterExaggeration, value);
+	}
+
+	/// <summary>Configured Regulation Field lobe stroke-thickness multiplier (clamped 0.5–3),
+	/// driving the live trace's stroke width. Refreshed on each reading so a setting change
+	/// applies live, mirroring the comet-trail length.</summary>
+	public double LobeThickness
+	{
+		get => _lobeThickness;
+		private set => SetField(ref _lobeThickness, value);
 	}
 
 	/// <summary>The detector-state accent the field's marker and trail take.</summary>
@@ -350,6 +402,7 @@ public sealed class NowViewModel : ViewModelBase
 		pipeline.StateChanged += OnStateChanged;
 		pipeline.ReadingUpdated += OnReadingUpdated;
 		pipeline.DynamicsUpdated += OnDynamicsUpdated;
+		pipeline.RecoveryUpdated += OnRecoveryUpdated;
 		pipeline.BatteryUpdated += OnBatteryUpdated;
 		pipeline.ContactChanged += OnContactChanged;
 		pipeline.DeviceInfoUpdated += OnDeviceInfoUpdated;
@@ -443,6 +496,11 @@ public sealed class NowViewModel : ViewModelBase
 
 		// Hand the control a fresh list instance so its AffectsRender binding fires.
 		RegulationTrail = _regulationTrail.ToArray();
+
+		// Pick up any live Regulation Field display changes the same way (settings can
+		// be adjusted while the Now screen is open).
+		JitterExaggeration = Math.Clamp(_jitterExaggerationProvider?.Invoke() ?? 1.0, 0.0, 3.0);
+		LobeThickness = Math.Clamp(_lobeThicknessProvider?.Invoke() ?? 1.0, 0.5, 3.0);
 	});
 
 	/// <summary>
@@ -451,6 +509,13 @@ public sealed class NowViewModel : ViewModelBase
 	/// other handlers. Public so tests can drive it without a live pipeline.
 	/// </summary>
 	public void OnDynamicsUpdated(RegulationDynamics dynamics) => RunOnUi(() => Dynamics = dynamics);
+
+	/// <summary>
+	/// Push fresh two-stage recovery progress into the VM. Wired to
+	/// <see cref="Pipeline.RecoveryUpdated"/> and marshalled to the UI thread like the
+	/// other handlers. Public so tests can drive it without a live pipeline.
+	/// </summary>
+	public void OnRecoveryUpdated(RecoveryProgress recovery) => RunOnUi(() => Recovery = recovery);
 
 	public void TickTimeDisplay() => Raise(nameof(TimeSinceStateChange));
 

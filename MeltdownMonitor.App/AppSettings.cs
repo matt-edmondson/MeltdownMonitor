@@ -53,4 +53,13 @@ public class AppSettings : AppData<AppSettings>
 	/// <summary>Number of recent readings drawn as the Regulation Field comet trail
 	/// (12–2160; clamped at the consumer). Default 48 ≈ 4 min, max ≈ 3 h at the 5 s emit cadence.</summary>
 	public int RegulationTrailLength { get; set; } = 48;
+
+	/// <summary>Multiplier on the Regulation Field's live-trace variability jitter
+	/// (0–3; clamped at the consumer). 1.0 is the tuned default, 0 flattens the trace,
+	/// higher exaggerates the beat-to-beat undulation.</summary>
+	public double JitterExaggeration { get; set; } = 1.0;
+
+	/// <summary>Multiplier on the Regulation Field's live-trace lobe stroke thickness
+	/// (0.5–3; clamped at the consumer). 1.0 is the tuned default.</summary>
+	public double LobeThickness { get; set; } = 1.0;
 }

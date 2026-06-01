@@ -23,6 +23,9 @@ public sealed class StatusWindow : IDisposable
 	private const int PoincareScatterPoints = 512;
 	private const int InitialSparklineCapacity = 2048;
 
+	// Side of the square resize grip drawn in the overlay's bottom-right corner.
+	private const float OverlayGripSize = 16f;
+
 	// Chart layout, tunable from the Settings tab (applied live).
 	private float OverviewChartWidth => _settings.ChartTuning.OverviewChartWidth;
 	private float MaxPlotAspect => _settings.ChartTuning.MaxPlotAspect;
@@ -38,6 +41,10 @@ public sealed class StatusWindow : IDisposable
 	private Thread? _uiThread;
 	private int _appliedCapacity = InitialSparklineCapacity;
 	private int _subscriptionsReleased;
+
+	// Auto-fitted height (px) of the compact HUD, measured each frame and applied on the
+	// next so the overlay grows/shrinks vertically with the selected metrics.
+	private int _compactHeight;
 	private bool _settingsDirty;
 
 	private readonly TimedSeries _rmssd = new(InitialSparklineCapacity);
@@ -396,7 +403,12 @@ public sealed class StatusWindow : IDisposable
 	{
 		var ov = _settings.Overlay;
 		ImGuiApp.EnableOverlay(ov.Opacity, ov.ClickThrough);
-		ImGuiApp.SetOverlayGeometry(MapCorner(ov.Corner), ov.OffsetX, ov.OffsetY, ov.Width, ov.Height);
+
+		// Width is user-specified; the compact HUD's height auto-fits the selected metrics
+		// (measured on the previous frame) so it never shows a vertical scrollbar. The
+		// expanded tabbed UI keeps its own configurable, resizable height.
+		int height = ov.Expanded || _compactHeight <= 0 ? ov.Height : _compactHeight;
+		ImGuiApp.SetOverlayGeometry(MapCorner(ov.Corner), ov.OffsetX, ov.OffsetY, ov.Width, height);
 
 		DrawOverlayToolbar(ov);
 
@@ -405,13 +417,20 @@ public sealed class StatusWindow : IDisposable
 			DrawStatusHeader();
 			ImGui.Separator();
 			_tabs.Draw();
+			DrawResizeGrip(ov);
 		}
 		else
 		{
 			DrawCompactHud(ov);
-		}
 
-		DrawResizeGrip(ov);
+			// Measure the content extent (the next-item Y plus the bottom window padding)
+			// so next frame's window is exactly tall enough to hold the HUD. The width grip
+			// is placed at that bottom edge and folded into the measurement so it has room
+			// without forcing a scrollbar.
+			float contentBottom = ImGui.GetCursorPosY();
+			DrawWidthGrip(ov, contentBottom);
+			_compactHeight = (int)MathF.Ceiling(contentBottom + OverlayGripSize + ImGui.GetStyle().WindowPadding.Y);
+		}
 	}
 
 	// Map our persisted overlay corner onto ImGuiApp's canonical OverlayCorner. Both enums share
@@ -491,8 +510,18 @@ public sealed class StatusWindow : IDisposable
 		if (ov.ShowRegulationField)
 		{
 			// Reuse the signature Regulation Field instrument so the overlay and the tab
-			// stay identical (animation, palette, trail all live in one place).
-			_regulationField.Draw();
+			// stay identical (animation, palette, trail all live in one place). It fills its
+			// available height, so in the auto-sized HUD we pin it to a fixed-height child
+			// (proportional to the width) — otherwise it would keep growing every frame.
+			float fieldWidth = ImGui.GetContentRegionAvail().X;
+			float fieldHeight = MathF.Max(120f, fieldWidth * 0.5f);
+			if (ImGui.BeginChild("##overlay-regfield", new Vector2(0f, fieldHeight), ImGuiChildFlags.None,
+				ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
+			{
+				_regulationField.Draw();
+			}
+
+			ImGui.EndChild();
 			ImGui.Spacing();
 		}
 
@@ -527,14 +556,14 @@ public sealed class StatusWindow : IDisposable
 		}
 	}
 
-	// A small grip in the bottom-right corner; dragging it resizes the overlay window. The
-	// window stays anchored to its corner, so it grows or shrinks away from that corner.
+	// A small grip in the bottom-right corner of the expanded overlay; dragging it resizes
+	// the window on both axes. The window stays anchored to its corner, so it grows or
+	// shrinks away from that corner.
 	private void DrawResizeGrip(OverlaySettings ov)
 	{
-		const float grip = 16f;
 		Vector2 windowSize = ImGui.GetWindowSize();
-		ImGui.SetCursorPos(new Vector2(windowSize.X - grip - 4f, windowSize.Y - grip - 4f));
-		ImGui.Button("##overlay-resize", new Vector2(grip, grip));
+		ImGui.SetCursorPos(new Vector2(windowSize.X - OverlayGripSize - 4f, windowSize.Y - OverlayGripSize - 4f));
+		ImGui.Button("##overlay-resize", new Vector2(OverlayGripSize, OverlayGripSize));
 		if (ImGui.IsItemActive())
 		{
 			Vector2 delta = ImGui.GetIO().MouseDelta;
@@ -550,6 +579,28 @@ public sealed class StatusWindow : IDisposable
 		if (ImGui.IsItemHovered())
 		{
 			ImGui.SetTooltip("Drag to resize");
+		}
+	}
+
+	// The compact HUD's grip, pinned to the right edge just below the metrics. Its height is
+	// auto-fitted, so this only adjusts the width; dragging vertically does nothing.
+	private void DrawWidthGrip(OverlaySettings ov, float y)
+	{
+		float x = ImGui.GetWindowSize().X - OverlayGripSize - ImGui.GetStyle().WindowPadding.X;
+		ImGui.SetCursorPos(new Vector2(Math.Max(0f, x), y));
+		ImGui.Button("##overlay-resize-w", new Vector2(OverlayGripSize, OverlayGripSize));
+		if (ImGui.IsItemActive())
+		{
+			int newW = ov.Width + (int)ImGui.GetIO().MouseDelta.X;
+			if (newW != ov.Width)
+			{
+				ov.Width = Math.Max(200, newW);
+				_settingsDirty = true;
+			}
+		}
+		if (ImGui.IsItemHovered())
+		{
+			ImGui.SetTooltip("Drag to resize width (height auto-fits the metrics)");
 		}
 	}
 
@@ -966,6 +1017,26 @@ public sealed class StatusWindow : IDisposable
 		}
 		ImGui.SameLine();
 		HelpMarker("How many recent readings the Regulation Field comet trail shows. Higher = longer tail; lower = shorter.");
+		ImGui.SameLine();
+
+		float jitter = (float)_settings.JitterExaggeration;
+		if (ImGuiWidgets.Knob("Jitter", ref jitter, 0f, 3f, format: "%.1fx", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.JitterExaggeration = jitter;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How much the Regulation Field's live trace exaggerates beat-to-beat variability. 1.0x is tuned default; 0 flattens it; higher amplifies the undulation.");
+		ImGui.SameLine();
+
+		float lobeThick = (float)_settings.LobeThickness;
+		if (ImGuiWidgets.Knob("Lobe thickness", ref lobeThick, 0.5f, 3f, format: "%.1fx", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.LobeThickness = lobeThick;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Stroke thickness of the Regulation Field's live trace. 1.0x is tuned default; higher = bolder lobes, lower = finer.");
 
 		// ── Detection thresholds ─────────────────────────────────────────
 		// Fraction knobs work in percent (0..100) and divide on assign so the
@@ -1292,13 +1363,13 @@ public sealed class StatusWindow : IDisposable
 		ImGui.SameLine();
 		int overlayH = ov.Height;
 		ImGui.SetNextItemWidth(120f);
-		if (ImGui.InputInt("Height", ref overlayH))
+		if (ImGui.InputInt("Height (expanded)", ref overlayH))
 		{
 			ov.Height = Math.Max(140, overlayH);
 			_settingsDirty = true;
 		}
 		ImGui.SameLine();
-		HelpMarker("Overlay window size in pixels. You can also drag the grip in the overlay's bottom-right corner to resize.");
+		HelpMarker("Overlay width is fixed at this value (drag the grip in the overlay to resize it). In the compact HUD the height auto-fits the selected metrics with no scrollbar; the Height value only applies to the expanded view.");
 
 		ImGui.TextDisabled("HUD metrics:");
 		foreach (var metric in OverlayMetrics.All)
@@ -1396,6 +1467,8 @@ public sealed class StatusWindow : IDisposable
 				_settings.HrvEmitIntervalSeconds = 5.0;
 				_settings.SparklineWindowMinutes = 60;
 				_settings.RegulationTrailLength = 48;
+				_settings.JitterExaggeration = 1.0;
+				_settings.LobeThickness = 1.0;
 				_settings.Save();
 				_pipeline.ReseedBaseline();
 				ImGui.CloseCurrentPopup();

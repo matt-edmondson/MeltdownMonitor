@@ -18,10 +18,18 @@ public class DysregulationDetector
 	private DateTimeOffset _recoveryHeldSince = DateTimeOffset.MinValue;
 	private bool _recoveryActive;
 	private int _severeDropStreak;
+	private RecoveryProgress _recovery = RecoveryProgress.Inactive;
 
 	private DetectionThresholds _thresholds => _thresholdsProvider();
 
 	public DetectorState State => _state;
+
+	/// <summary>
+	/// How close the body is to clearing the current episode, refreshed on each
+	/// <see cref="Process"/> call. <see cref="RecoveryProgress.Inactive"/> outside an
+	/// active episode (Warning or Alerting) and while the sensor is off-body.
+	/// </summary>
+	public RecoveryProgress Recovery => _recovery;
 
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<DetectorState>? StateChanged;
@@ -63,6 +71,7 @@ public class DysregulationDetector
 			_warningConditionsActive = false;
 			_recoveryActive = false;
 			_severeDropStreak = 0;
+			_recovery = RecoveryProgress.Inactive;
 			return _state;
 		}
 
@@ -95,7 +104,69 @@ public class DysregulationDetector
 				break;
 		}
 
+		// Refresh the recovery indicator from the (possibly just-updated) streak state.
+		_recovery = ComputeRecovery(sample);
+
 		return _state;
+	}
+
+	/// <summary>
+	/// Snapshots how close the current sample is to clearing the episode: the two-stage
+	/// gate of metrics returning to the recovery band, then holding it. Only active in
+	/// Warning or Alerting; the hold component accrues only while a streak is being tracked.
+	/// </summary>
+	private RecoveryProgress ComputeRecovery(HrvSample sample)
+	{
+		if (_state is not (DetectorState.Warning or DetectorState.Alerting))
+		{
+			return RecoveryProgress.Inactive;
+		}
+
+		if (sample.BaselineRmssd <= 0 || sample.BaselineHr <= 0)
+		{
+			return RecoveryProgress.Inactive;
+		}
+
+		double rmssdDrop = (sample.BaselineRmssd - sample.Rmssd) / sample.BaselineRmssd;
+		double hrRise = (sample.MeanHr - sample.BaselineHr) / sample.BaselineHr;
+
+		// Recovery requires *both* markers back in band, so the worse of the two gates
+		// the metric proximity — the same conjunction IsPhysiologicallyRecovered uses.
+		double rmssdProximity = BandProximity(rmssdDrop, _thresholds.RmssdRecoveryDropFraction, _thresholds.RmssdWarningDropFraction);
+		double hrProximity = BandProximity(hrRise, _thresholds.HrRecoveryRiseFraction, _thresholds.HrWarningRiseFraction);
+		double metricProximity = Math.Min(rmssdProximity, hrProximity);
+
+		// The hold timer only ticks once a sustained in-band streak is being tracked
+		// (set in ProcessAlerting). A broken streak resets _recoveryActive, so this falls
+		// back to 0 and the indicator drops to the metric stage.
+		double holdProgress = 0.0;
+		if (_recoveryActive)
+		{
+			double need = _thresholds.RecoveryHoldDuration.TotalSeconds;
+			double held = (sample.Timestamp - _recoveryHeldSince).TotalSeconds;
+			holdProgress = need > 0 ? Math.Clamp(held / need, 0.0, 1.0) : 1.0;
+		}
+
+		return new RecoveryProgress(metricProximity, holdProgress, IsActive: true);
+	}
+
+	/// <summary>
+	/// Maps a stress deviation onto [0, 1]: 1 once it has fallen to/below the recovery
+	/// band edge, 0 at/above the Warning trigger, linear between. Guards a degenerate band.
+	/// </summary>
+	private static double BandProximity(double value, double recovered, double warning)
+	{
+		if (value <= recovered)
+		{
+			return 1.0;
+		}
+
+		if (value >= warning || warning <= recovered)
+		{
+			return 0.0;
+		}
+
+		return (warning - value) / (warning - recovered);
 	}
 
 	private void ProcessWatching(HrvSample sample)

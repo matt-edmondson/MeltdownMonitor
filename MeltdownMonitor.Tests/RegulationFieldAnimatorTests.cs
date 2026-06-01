@@ -146,6 +146,33 @@ public class RegulationFieldAnimatorTests
 	}
 
 	[TestMethod]
+	public void JitterOffset_ScalesWithExaggeration()
+	{
+		var a = new RegulationFieldAnimator();
+		// Advance so the sine term is non-zero.
+		for (int i = 0; i < 5; i++)
+		{
+			a.Step(0.033, 0.0, 70);
+		}
+
+		a.JitterExaggeration = 1.0;
+		double baseline = Math.Abs(a.JitterOffset(7, quality: 1.0, depth: 1.0));
+
+		a.JitterExaggeration = 2.0;
+		double doubled = Math.Abs(a.JitterOffset(7, quality: 1.0, depth: 1.0));
+		Assert.AreEqual(baseline * 2.0, doubled, 1e-9, "doubling exaggeration doubles the offset");
+
+		a.JitterExaggeration = 0.0;
+		Assert.AreEqual(0.0, a.JitterOffset(7, quality: 1.0, depth: 1.0), 1e-12, "zero exaggeration flattens the trace");
+	}
+
+	[TestMethod]
+	public void JitterExaggeration_DefaultsToOne()
+	{
+		Assert.AreEqual(1.0, new RegulationFieldAnimator().JitterExaggeration, 1e-9);
+	}
+
+	[TestMethod]
 	public void Step_EasesDisplayedSpeedTowardTarget()
 	{
 		var a = new RegulationFieldAnimator();

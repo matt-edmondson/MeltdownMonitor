@@ -50,8 +50,21 @@ public sealed class Pipeline : IDisposable
 	/// <see cref="RegulationDynamics.Steady"/> until the baseline is warm.</summary>
 	public RegulationDynamics LatestDynamics { get; private set; } = RegulationDynamics.Steady;
 
+	/// <summary>How close the body is to clearing the current episode (two-stage: metrics
+	/// return to baseline, then hold). <see cref="RecoveryProgress.Inactive"/> outside an
+	/// active Warning/Alerting episode.</summary>
+	public RecoveryProgress LatestRecovery => _detector.Recovery;
+
 	/// <summary>Configured comet-trail length (clamped 12–2160), read live by the field view.</summary>
 	public int RegulationTrailLength => Math.Clamp(_settings.RegulationTrailLength, 12, 2160);
+
+	/// <summary>Configured Regulation Field jitter exaggeration multiplier (clamped 0–3),
+	/// read live by the field view.</summary>
+	public double JitterExaggeration => Math.Clamp(_settings.JitterExaggeration, 0.0, 3.0);
+
+	/// <summary>Configured Regulation Field lobe stroke-thickness multiplier (clamped 0.5–3),
+	/// read live by the field view.</summary>
+	public double LobeThickness => Math.Clamp(_settings.LobeThickness, 0.5, 3.0);
 
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;

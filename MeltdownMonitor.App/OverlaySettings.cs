@@ -47,7 +47,10 @@ public sealed class OverlaySettings
 	/// <summary>Overlay window width in pixels (resizable from the grip).</summary>
 	public int Width { get; set; } = 460;
 
-	/// <summary>Overlay window height in pixels (resizable from the grip).</summary>
+	/// <summary>
+	/// Overlay window height in pixels for the expanded tabbed view (resizable from the grip).
+	/// The compact HUD ignores this and auto-fits its height to the selected metrics.
+	/// </summary>
 	public int Height { get; set; } = 500;
 
 	/// <summary>The metrics shown in the compact HUD, in the order they're listed.</summary>

@@ -21,7 +21,7 @@ public sealed class RegulationFieldAnimator
 	private const double MarkerEaseRate = 6.0;     // matches the desktop's exp ease
 	private const double SpeedEaseRate = 6.0;      // matches the marker ease so the arrow grows/shrinks in step
 	private const double JitterRate = 6.0;
-	private const double JitterAmplitude = 1.5;    // px at full quality + depth
+	private const double JitterAmplitude = 1.5;    // px at full quality + depth and 1× exaggeration
 	private const double BreathHalfAmplitude = 0.18;
 	private const double MinBreathBpm = 40.0;      // a missing/low HR still breathes gently
 
@@ -40,6 +40,11 @@ public sealed class RegulationFieldAnimator
 	/// <summary>Free-running clock in seconds driving the trace's variability
 	/// jitter.</summary>
 	public double AnimTime { get; private set; }
+
+	/// <summary>User-configurable multiplier on the jitter amplitude (clamp 0–3 at
+	/// the consumer). 1.0 is the tuned default; 0 flattens the trace, higher
+	/// exaggerates the beat-to-beat undulation.</summary>
+	public double JitterExaggeration { get; set; } = 1.0;
 
 	/// <summary>
 	/// Advance the animation by <paramref name="dt"/> seconds: ease the marker
@@ -78,5 +83,5 @@ public sealed class RegulationFieldAnimator
 	/// <paramref name="quality"/> and lobe <paramref name="depth"/> so the line
 	/// looks "alive" only where there is healthy variability.</summary>
 	public double JitterOffset(int segmentIndex, double quality, double depth) =>
-		quality * JitterAmplitude * Math.Sin((AnimTime * JitterRate) + (segmentIndex * 0.7)) * depth;
+		quality * JitterAmplitude * JitterExaggeration * Math.Sin((AnimTime * JitterRate) + (segmentIndex * 0.7)) * depth;
 }
