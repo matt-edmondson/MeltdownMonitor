@@ -163,6 +163,7 @@ public sealed class RegulationField : Control
 
 		var ghost = LemniscateGeometry.Polyline(centreV, halfWidth, lobeHeight, LobeSegments);
 		DrawTrace(context, ghost, centreV, halfWidth, reading, confidence);
+		DrawAxisHistograms(context, centre, w, h, halfWidth, lobeHeight, confidence);
 		DrawTrail(context, centreV, halfWidth, confidence);
 		DrawMarker(context, centreV, halfWidth, confidence);
 
@@ -218,6 +219,80 @@ public sealed class RegulationField : Control
 
 			double thick = baseThick * (warm ? warmSwell : coolSwell);
 			context.DrawLine(new Pen(Brush(c, confidence), thick), P(a + n), P(b + n));
+		}
+	}
+
+	// Axis density histograms: how the samples currently in the trail window are distributed.
+	// X (arousal index) is a row of vertical bars below the field, each column aligned with the
+	// index it counts — left=cool/REST, right=warm/MELTDOWN. Y (variability quality) is a column
+	// of horizontal bars on the left margin, top=FRAGILE (low quality) to bottom=STEADY (high).
+	// Mirrors the desktop RegulationFieldView, computed from the same Core bucketing.
+	private void DrawAxisHistograms(DrawingContext context, Point centre, double w, double h, float halfWidth, float lobeHeight, double confidence)
+	{
+		var trail = Trail;
+		if (trail is null || trail.Count < 2)
+		{
+			return;
+		}
+
+		var xHist = RegulationFieldHistogram.IndexAxis(trail);
+		var yHist = RegulationFieldHistogram.QualityAxis(trail, 16);
+		var axisBrush = Brush(Overlay1, 0.22 * confidence);
+		var axisPen = new Pen(axisBrush, 1);
+
+		// X axis (arousal index), below the field, bars growing downward.
+		if (xHist.PeakCount > 0)
+		{
+			double baseY = centre.Y + lobeHeight + 16;
+			double maxH = Math.Min(20, (h - 6) - baseY);
+			if (maxH > 1)
+			{
+				int n = xHist.BucketCount;
+				double slot = (halfWidth * 2.0) / n;
+				double barW = Math.Max(1.0, slot - 1.5);
+				context.DrawLine(axisPen, new Point(centre.X - halfWidth, baseY), new Point(centre.X + halfWidth, baseY));
+				for (int b = 0; b < n; b++)
+				{
+					int c = xHist.Counts[b];
+					if (c == 0)
+					{
+						continue;
+					}
+
+					double bx = centre.X - halfWidth + ((b + 0.5) * slot);
+					Color hue = bx >= centre.X ? Peach : Sky;
+					double bh = maxH * (c / (double)xHist.PeakCount);
+					context.FillRectangle(Brush(hue, 0.55 * confidence), new Rect(bx - (barW / 2), baseY, barW, bh));
+				}
+			}
+		}
+
+		// Y axis (variability quality), on the left margin, bars growing rightward.
+		if (yHist.PeakCount > 0)
+		{
+			double axisX = 4;
+			double maxW = Math.Min(20, (centre.X - halfWidth - 30) - axisX);
+			if (maxW > 1)
+			{
+				int n = yHist.BucketCount;
+				double span = lobeHeight * 0.8;
+				double topY = centre.Y - span;
+				double slot = (2 * span) / n;
+				double barH = Math.Max(1.0, slot - 1.5);
+				context.DrawLine(axisPen, new Point(axisX, topY), new Point(axisX, centre.Y + span));
+				for (int b = 0; b < n; b++)
+				{
+					int c = yHist.Counts[b];
+					if (c == 0)
+					{
+						continue;
+					}
+
+					double by = topY + ((b + 0.5) * slot);
+					double bw = maxW * (c / (double)yHist.PeakCount);
+					context.FillRectangle(Brush(Lavender, 0.55 * confidence), new Rect(axisX, by - (barH / 2), bw, barH));
+				}
+			}
 		}
 	}
 

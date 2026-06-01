@@ -200,6 +200,7 @@ public sealed class RegulationFieldView : IDisposable
 		DrawLfHfHalo(draw, centre, halfWidth, disp, confidence);
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
 		DrawVagalAxis(draw, centre, markerYClamp, confidence);
+		DrawAxisHistograms(draw, origin, centre, halfWidth, labelClearHeight, markerYClamp, height, trail, confidence);
 		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, _playhead.Position, beatsAppended, confidence);
 		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, disp, confidence);
 		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, confidence);
@@ -531,6 +532,83 @@ public sealed class RegulationFieldView : IDisposable
 		Vector2 st = ImGui.CalcTextSize("STEADY");
 		draw.AddText(new Vector2(centre.X - (fr.X * 0.5f), centre.Y - yClamp - lineH - 2f), label, "FRAGILE");
 		draw.AddText(new Vector2(centre.X - (st.X * 0.5f), centre.Y + yClamp + 2f), label, "STEADY");
+	}
+
+	// Axis density histograms: how the samples currently in the trail window are distributed.
+	// X (arousal index) is a row of vertical bars below the field, each column aligned with the
+	// index it counts — left=cool/REST, right=warm/MELTDOWN, echoing the lobe colours. Y
+	// (variability quality) is a column of horizontal bars on the left margin, each row aligned
+	// with the marker's vagal-tone height — top=FRAGILE (low quality), bottom=STEADY (high).
+	private void DrawAxisHistograms(ImDrawListPtr draw, Vector2 origin, Vector2 centre, float halfWidth, float lobeClearHeight, float markerYClamp, float height, RegulationTrailPoint[] trail, float confidence)
+	{
+		if (trail.Length < 2)
+		{
+			return;
+		}
+
+		var xHist = RegulationFieldHistogram.IndexAxis(trail);
+		var yHist = RegulationFieldHistogram.QualityAxis(trail, 16);
+		uint axisCol = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Overlay1, 0.22f * confidence));
+
+		// X axis (arousal index), below the field, bars growing downward from a baseline that
+		// clears the lowest lobe tip. Clamp the strip so it never collides with the readout.
+		if (xHist.PeakCount > 0)
+		{
+			float baseY = centre.Y + lobeClearHeight + (16f * _drawScale);
+			float maxH = MathF.Max(0f, MathF.Min(22f * _drawScale, (origin.Y + height - 26f) - baseY));
+			if (maxH > 1f)
+			{
+				int n = xHist.BucketCount;
+				float slot = (halfWidth * 2f) / n;
+				float barW = MathF.Max(1f, slot - (1.5f * _drawScale));
+				draw.AddLine(new Vector2(centre.X - halfWidth, baseY), new Vector2(centre.X + halfWidth, baseY), axisCol, 1f * _drawScale);
+				for (int b = 0; b < n; b++)
+				{
+					int c = xHist.Counts[b];
+					if (c == 0)
+					{
+						continue;
+					}
+
+					float bx = centre.X - halfWidth + ((b + 0.5f) * slot);
+					Vector4 hue = bx >= centre.X ? MacchiatoPalette.Peach : MacchiatoPalette.Sky;
+					uint col = Col(MacchiatoPalette.WithAlpha(hue, 0.55f * confidence));
+					float bh = maxH * (c / (float)xHist.PeakCount);
+					draw.AddRectFilled(new Vector2(bx - (barW * 0.5f), baseY), new Vector2(bx + (barW * 0.5f), baseY + bh), col);
+				}
+			}
+		}
+
+		// Y axis (variability quality), on the left margin, bars growing rightward. The vertical
+		// position matches the marker's vagal-tone mapping: quality 0 (FRAGILE) at top, 1 (STEADY)
+		// at bottom — i.e. the same span the vagal axis labels bracket.
+		if (yHist.PeakCount > 0)
+		{
+			float axisX = origin.X + (4f * _drawScale);
+			float maxW = MathF.Max(0f, MathF.Min(22f * _drawScale, (centre.X - halfWidth - 40f) - axisX));
+			if (maxW > 1f)
+			{
+				int n = yHist.BucketCount;
+				float topY = centre.Y - markerYClamp;
+				float botY = centre.Y + markerYClamp;
+				float slot = (botY - topY) / n;
+				float barH = MathF.Max(1f, slot - (1.5f * _drawScale));
+				draw.AddLine(new Vector2(axisX, topY), new Vector2(axisX, botY), axisCol, 1f * _drawScale);
+				for (int b = 0; b < n; b++)
+				{
+					int c = yHist.Counts[b];
+					if (c == 0)
+					{
+						continue;
+					}
+
+					float by = topY + ((b + 0.5f) * slot);
+					uint col = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Lavender, 0.55f * confidence));
+					float bw = maxW * (c / (float)yHist.PeakCount);
+					draw.AddRectFilled(new Vector2(axisX, by - (barH * 0.5f)), new Vector2(axisX + bw, by + (barH * 0.5f)), col);
+				}
+			}
+		}
 	}
 
 	private void DrawLabelsAndLock(ImDrawListPtr draw, Vector2 origin, Vector2 centre, float halfWidth, float lobeClearHeight)
