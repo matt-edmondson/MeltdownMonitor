@@ -13,6 +13,7 @@ public static class RrTimeAxis
 	/// Returns one x position (seconds) per RR interval, newest at 0 and older beats
 	/// negative. Consecutive spacing equals the corresponding RR interval in seconds.
 	/// Returns an empty array for empty input.
+	/// The first interval is a gap from an unobserved earlier beat, so it does not contribute to the axis extent.
 	/// </summary>
 	public static double[] CumulativeSeconds(IReadOnlyList<double> rrMs)
 	{

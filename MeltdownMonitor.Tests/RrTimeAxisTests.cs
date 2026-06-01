@@ -51,4 +51,10 @@ public class RrTimeAxisTests
 
 		Assert.AreEqual(0, x.Length);
 	}
+
+	[TestMethod]
+	public void CumulativeSeconds_Null_Throws()
+	{
+		Assert.ThrowsExactly<ArgumentNullException>(() => RrTimeAxis.CumulativeSeconds(null!));
+	}
 }
