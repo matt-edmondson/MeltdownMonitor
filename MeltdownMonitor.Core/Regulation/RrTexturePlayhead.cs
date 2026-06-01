@@ -7,7 +7,7 @@ namespace MeltdownMonitor.Core.Regulation;
 /// Beats arrive from BLE in irregular batches — a single notification can carry several RR
 /// intervals stamped at one instant, followed by a gap — so any scroll tied to beat-<i>arrival</i>
 /// timing stutters (it jumps when a batch lands and freezes in the gap). Instead this dead-reckons
-/// forward at the real beat rate (constant velocity → smooth flow, like the breathing pulse) and
+/// forward at the real beat rate (constant velocity → smooth flow, like the marker's pulse halo) and
 /// is <i>gently</i> corrected toward the newest sample so it stays locked to the data without ever
 /// resetting per beat. The window it drives trails the newest sample by a small lag, and never
 /// scrolls past it, so fresh data always flows in at the edge and a dropout simply parks the
