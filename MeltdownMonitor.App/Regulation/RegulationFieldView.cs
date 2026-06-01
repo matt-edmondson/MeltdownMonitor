@@ -436,7 +436,12 @@ public sealed class RegulationFieldView : IDisposable
 		a.VariabilityQuality + ((b.VariabilityQuality - a.VariabilityQuality) * t),
 		a.Confidence + ((b.Confidence - a.Confidence) * t),
 		a.LobeRoundness + ((b.LobeRoundness - a.LobeRoundness) * t),
-		a.LfHfBalance + ((b.LfHfBalance - a.LfHfBalance) * t));
+		a.LfHfBalance + ((b.LfHfBalance - a.LfHfBalance) * t))
+	{
+		// Without this the interpolated trail readings would silently drop to Hypoarousal 0,
+		// so the collapse rendering would flicker out between keyframes.
+		Hypoarousal = a.Hypoarousal + ((b.Hypoarousal - a.Hypoarousal) * t),
+	};
 
 	// During an active alert, mark where the arousal marker must fall back below to clear the
 	// Warning condition (the warm-side warning boundary), and sweep a progress arc around the
@@ -686,6 +691,29 @@ public sealed class RegulationFieldView : IDisposable
 		if (state is DetectorState.Warning or DetectorState.Alerting)
 		{
 			draw.AddText(new Vector2(origin.X + 8f, origin.Y + 8f), Col(MacchiatoPalette.Overlay1), "BASELINE LOCKED");
+		}
+
+		// Low-arousal collapse sits on the cool side of the field, where a naive read mistakes it for
+		// calm REST. Tag the cool pole so a sustained shutdown reads as shutdown, not regulation
+		// (audit A(b)). Driven by the debounced detector state, not the raw scalar, to avoid flicker.
+		if (_pipeline.CurrentHypoarousalState == HypoarousalState.LowArousal)
+		{
+			const string tag = "SHUTDOWN";
+			Vector2 tagSize = ImGui.CalcTextSize(tag);
+			draw.AddText(
+				new Vector2(centre.X - halfWidth - poleGap - tagSize.X, midY + lineH + 2f),
+				Col(MacchiatoPalette.Lavender),
+				tag);
+		}
+
+		// A baseline self-calibrated cold (no personal history) may be measured against a
+		// possibly-activated state — surface the caveat rather than presenting a confident "calm" (audit B).
+		if (_pipeline.Baseline.IsColdCalibrated)
+		{
+			draw.AddText(
+				new Vector2(origin.X + 8f, origin.Y + 8f + lineH + 2f),
+				Col(MacchiatoPalette.Subtext0),
+				"BASELINE: COLD-CALIBRATED");
 		}
 	}
 

@@ -68,6 +68,23 @@
                            Foreground="#8A8F98"
                            FontSize="12"
                            HorizontalAlignment="Center" />
+                <!-- Low-arousal collapse reads as the cool/calm side of the field; this badge keeps it
+                     from being mistaken for regulation (audit A(b)). Lavender matches the desktop tag. -->
+                <TextBlock Text="Low arousal · shutdown — not calm rest"
+                           Foreground="#B7BDF8"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           HorizontalAlignment="Center"
+                           IsVisible="{Binding IsShutdown}" />
+                <TextBlock Text="Baseline calibrated cold — readings may be off if you started activated"
+                           Foreground="#8A8F98"
+                           FontSize="11"
+                           TextWrapping="Wrap"
+                           TextAlignment="Center"
+                           HorizontalAlignment="Center"
+                           IsVisible="{Binding IsColdCalibrated}" />
                 <StackPanel Orientation="Horizontal"
                             HorizontalAlignment="Center"
                             Spacing="8"

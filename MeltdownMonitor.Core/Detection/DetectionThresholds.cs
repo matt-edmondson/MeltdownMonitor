@@ -60,4 +60,31 @@ public record DetectionThresholds
 	/// condition to be satisfied. Default 50% (e.g. baseline 1.5 → current ≥ 2.25).
 	/// </summary>
 	public double LfHfWarningRiseFraction { get; init; } = 0.50;
+
+	/// <summary>
+	/// Whether LF/HF corroboration can veto a Warning or only strengthen it. Default
+	/// <see cref="LfHfCorroborationMode.Additive"/> per the 2026-06-01 clinical audit: the laggy
+	/// 5-minute LF/HF window must not suppress a core-satisfied early Warning (a missed early
+	/// warning is the more harmful error for an awareness tool). <see cref="LfHfCorroborationMode.Veto"/>
+	/// is the more specific but more suppressive prior behaviour. Only consulted when
+	/// <see cref="UseLfHfCorroboration"/> is true.
+	/// </summary>
+	public LfHfCorroborationMode LfHfCorroborationMode { get; init; } = LfHfCorroborationMode.Additive;
+
+	/// <summary>
+	/// Consecutive in-contact samples with an immediate-severe RMSSD drop required before the
+	/// immediate alert fires. Default 2 per the 2026-06-01 clinical audit: the immediate ≥50%-drop
+	/// path is the most false-positive-prone (a transient RSA regularisation — breath-hold, Valsalva —
+	/// can momentarily collapse RMSSD), so two consecutive in-contact samples (~10 s) reject those at
+	/// the cost of ~one sample of latency. 1 fires on the first qualifying sample (prior behaviour).
+	/// </summary>
+	public int SevereDropConfirmationCount { get; init; } = 2;
+
+	/// <summary>
+	/// Tuning for the <see cref="HypoarousalDetector"/> — the low-arousal/shutdown edge (audit A(b)).
+	/// Nested here so the whole detection configuration travels and serialises as one object and the
+	/// pipelines can wire the detector to live edits via <c>Thresholds.Hypoarousal</c>. The
+	/// dysregulation detector ignores it.
+	/// </summary>
+	public HypoarousalThresholds Hypoarousal { get; init; } = new();
 }

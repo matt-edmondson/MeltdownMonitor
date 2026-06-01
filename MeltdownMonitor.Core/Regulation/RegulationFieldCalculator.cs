@@ -73,6 +73,15 @@ public static class RegulationFieldCalculator
 			lfHfBalance = Math.Clamp(rise, -1.0, 1.0);
 		}
 
-		return new RegulationReading(index, quality, confidence, lobeRoundness, lfHfBalance);
+		// Hypoarousal: HR well below baseline, gated by *low* variability so genuine vagal rest
+		// (high RMSSD) does not read as collapse. Shared with HypoarousalDetector so display and
+		// detection never diverge.
+		double hypoarousal = HypoarousalSignal.Compute(
+			sample.Rmssd, sample.MeanHr, sample.BaselineRmssd, sample.BaselineHr);
+
+		return new RegulationReading(index, quality, confidence, lobeRoundness, lfHfBalance)
+		{
+			Hypoarousal = hypoarousal,
+		};
 	}
 }

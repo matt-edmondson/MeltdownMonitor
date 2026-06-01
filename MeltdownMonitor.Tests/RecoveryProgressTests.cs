@@ -18,6 +18,12 @@ public class RecoveryProgressTests
 		RmssdRecoveryDropFraction = 0.10,
 		HrRecoveryRiseFraction = 0.05,
 		RecoveryHoldDuration = TimeSpan.FromSeconds(10),
+		// These tests fire on a single severe sample; pin count 1 so they stay
+		// deterministic after the production default moves to 2. (No extended
+		// metrics here, so LfHfCorroborationMode is never consulted — pinned for
+		// parity with DetectionStateMachineTests.)
+		LfHfCorroborationMode = LfHfCorroborationMode.Veto,
+		SevereDropConfirmationCount = 1,
 	};
 
 	private static HrvSample Sample(

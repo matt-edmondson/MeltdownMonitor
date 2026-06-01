@@ -4,4 +4,5 @@ public record AlertPayload(
 	DateTimeOffset Timestamp,
 	string TriggerReason,
 	double RmssdAtTrigger,
-	double BaselineAtTrigger);
+	double BaselineAtTrigger,
+	AlertKind Kind = AlertKind.Hyperarousal);

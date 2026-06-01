@@ -53,6 +53,28 @@ public class MobileAlertDispatcherTests
 	}
 
 	[TestMethod]
+	public void HypoarousalAlert_DoesNotChime_ButStillNotifies()
+	{
+		var (pipeline, repo) = NewPipeline();
+		using (repo)
+		using (pipeline)
+		{
+			var chime = new RecordingChime();
+			var notifier = new RecordingNotifier();
+			using var _ = new MobileAlertDispatcher(
+				pipeline,
+				new MobileSettings { EnableChime = true, EnableNotifications = true },
+				notifier,
+				chime);
+
+			RaiseAlert(pipeline, AlertKind.Hypoarousal);
+
+			Assert.AreEqual(0, chime.Plays, "A low-arousal alert must not play the jarring chime.");
+			Assert.AreEqual(1, notifier.Alerts, "…but it must still post the (softened) notification.");
+		}
+	}
+
+	[TestMethod]
 	public void StateChanges_DoNotPlayChime()
 	{
 		// The detector fires AlertFired exactly once per episode (Warning →
@@ -87,6 +109,12 @@ public class MobileAlertDispatcherTests
 	private static void RaiseAlert(Pipeline pipeline)
 	{
 		var payload = new AlertPayload(DateTimeOffset.UtcNow, "test", 20, 50);
+		RaiseEvent<Action<AlertPayload>>(pipeline, "AlertFired", d => d(payload));
+	}
+
+	private static void RaiseAlert(Pipeline pipeline, AlertKind kind)
+	{
+		var payload = new AlertPayload(DateTimeOffset.UtcNow, "test", 20, 50, kind);
 		RaiseEvent<Action<AlertPayload>>(pipeline, "AlertFired", d => d(payload));
 	}
 

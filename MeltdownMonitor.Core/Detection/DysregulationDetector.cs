@@ -17,6 +17,7 @@ public class DysregulationDetector
 	private bool _warningConditionsActive;
 	private DateTimeOffset _recoveryHeldSince = DateTimeOffset.MinValue;
 	private bool _recoveryActive;
+	private int _severeDropStreak;
 	private RecoveryProgress _recovery = RecoveryProgress.Inactive;
 
 	private DetectionThresholds _thresholds => _thresholdsProvider();
@@ -69,6 +70,7 @@ public class DysregulationDetector
 		{
 			_warningConditionsActive = false;
 			_recoveryActive = false;
+			_severeDropStreak = 0;
 			_recovery = RecoveryProgress.Inactive;
 			return _state;
 		}
@@ -169,9 +171,9 @@ public class DysregulationDetector
 
 	private void ProcessWatching(HrvSample sample)
 	{
-		if (IsSevereDropping(sample))
+		if (IsSevereDropConfirmed(sample))
 		{
-			FireAlert(sample, "Immediate: RMSSD dropped ≥50% below baseline");
+			FireSevereAlert(sample, "Immediate");
 			Transition(DetectorState.Alerting, sample.Timestamp);
 			return;
 		}
@@ -198,9 +200,9 @@ public class DysregulationDetector
 
 	private void ProcessWarning(HrvSample sample)
 	{
-		if (IsSevereDropping(sample))
+		if (IsSevereDropConfirmed(sample))
 		{
-			FireAlert(sample, "Severe: RMSSD dropped ≥50% below baseline during Warning");
+			FireSevereAlert(sample, "Severe");
 			Transition(DetectorState.Alerting, sample.Timestamp);
 			return;
 		}
@@ -278,6 +280,7 @@ public class DysregulationDetector
 		// Optional LF/HF corroboration — only checked when enabled, baseline is ready,
 		// and extended metrics are present in this sample.
 		if (_thresholds.UseLfHfCorroboration
+			&& _thresholds.LfHfCorroborationMode == LfHfCorroborationMode.Veto
 			&& sample.BaselineLfHfRatio > 0
 			&& sample.Extended is { LfHfRatio: > 0 } extended)
 		{
@@ -320,13 +323,46 @@ public class DysregulationDetector
 		return rmssdDrop >= _thresholds.RmssdAlertingDropFraction;
 	}
 
-	private void FireAlert(HrvSample sample, string reason)
+	// Counts consecutive immediate-severe samples; fires only once the configured confirmation
+	// count is reached. Default count 1 → fires on the first qualifying sample (prior behaviour).
+	private bool IsSevereDropConfirmed(HrvSample sample)
+	{
+		if (IsSevereDropping(sample))
+		{
+			_severeDropStreak++;
+			return _severeDropStreak >= Math.Max(1, _thresholds.SevereDropConfirmationCount);
+		}
+
+		_severeDropStreak = 0;
+		return false;
+	}
+
+	// The immediate-severe path is intentionally HR-direction-agnostic for *detection* (so it also
+	// catches an RMSSD collapse during a low-arousal crash — see SevereDropConfirmationCount). But a
+	// collapse warrants a *gentle* response, not the jarring meltdown chime: when the severe drop
+	// fires with HR below baseline, route it as Hypoarousal. (See the hypoarousal-severe-path-preemption
+	// design note — without this the gentle alert never wins the race against the severe path.)
+	private void FireSevereAlert(HrvSample sample, string prefix)
+	{
+		bool hrBelowBaseline = sample.BaselineHr > 0 && sample.MeanHr < sample.BaselineHr;
+		if (hrBelowBaseline)
+		{
+			FireAlert(sample, $"{prefix}: RMSSD collapsed ≥50% below baseline with HR below baseline (low arousal)", AlertKind.Hypoarousal);
+		}
+		else
+		{
+			FireAlert(sample, $"{prefix}: RMSSD dropped ≥50% below baseline", AlertKind.Hyperarousal);
+		}
+	}
+
+	private void FireAlert(HrvSample sample, string reason, AlertKind kind = AlertKind.Hyperarousal)
 	{
 		var payload = new AlertPayload(
 			sample.Timestamp,
 			reason,
 			sample.Rmssd,
-			sample.BaselineRmssd);
+			sample.BaselineRmssd,
+			kind);
 		AlertFired?.Invoke(payload);
 	}
 
@@ -334,8 +370,9 @@ public class DysregulationDetector
 	{
 		_state = newState;
 		_stateEnteredAt = timestamp;
-		// Recovery is tracked per alert episode; never carry a streak across states.
+		// Recovery and severe-drop streaks are tracked per episode; never carry one across states.
 		_recoveryActive = false;
+		_severeDropStreak = 0;
 		StateChanged?.Invoke(newState);
 	}
 }

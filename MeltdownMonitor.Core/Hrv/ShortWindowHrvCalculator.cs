@@ -26,10 +26,28 @@ public class ShortWindowHrvCalculator
 	/// </summary>
 	public double EmitIntervalSeconds { get; set; } = 5.0;
 
+	/// <summary>
+	/// Minimum beats in the short window before any sample is emitted. RMSSD from 1–2 beats
+	/// is meaningless and volatile; this floor suppresses garbage from sparse/post-dropout data.
+	/// 5 never affects steady state (a 60 s window holds dozens of beats); higher = more stable,
+	/// less responsive. Not a clinical reliability threshold (that is ~20+). Lower it for
+	/// historical/sparse resampling (e.g. HealthKit warm-start).
+	/// </summary>
+	public int MinBeatsForMetrics { get; set; } = 5;
+
+	/// <summary>
+	/// If a beat arrives more than this many seconds after the previous clean beat, the rolling
+	/// windows are cleared so no successive difference bridges a dropout. Longer than any
+	/// physiological RR (MaxRrMs = 2 s), so only genuine gaps trip it. Set to
+	/// <see cref="double.MaxValue"/> to disable (e.g. for legitimately sparse historical samples).
+	/// </summary>
+	public double MaxBeatGapSeconds { get; set; } = 5.0;
+
 	private readonly LinkedList<Beat> _shortWindow = new();
 	private readonly LinkedList<Beat> _extendedWindow = new();
 	private DateTimeOffset _lastEmitTime = DateTimeOffset.MinValue;
 	private DateTimeOffset _lastExtendedComputeTime = DateTimeOffset.MinValue;
+	private DateTimeOffset _lastBeatTimestamp = DateTimeOffset.MinValue;
 	private ExtendedHrvMetrics? _latestExtended;
 
 	/// <summary>
@@ -49,6 +67,18 @@ public class ShortWindowHrvCalculator
 			return null;
 		}
 
+		// Reset the difference chain across a temporal gap so no successive difference
+		// bridges a dropout (which would inject a spurious large diff and inflate RMSSD).
+		if (_lastBeatTimestamp != DateTimeOffset.MinValue &&
+			(beat.Timestamp - _lastBeatTimestamp).TotalSeconds > MaxBeatGapSeconds)
+		{
+			_shortWindow.Clear();
+			_extendedWindow.Clear();
+			_latestExtended = null;
+		}
+
+		_lastBeatTimestamp = beat.Timestamp;
+
 		_shortWindow.AddLast(beat);
 		_extendedWindow.AddLast(beat);
 		EvictOldBeats(beat.Timestamp);
@@ -58,7 +88,7 @@ public class ShortWindowHrvCalculator
 			return null;
 		}
 
-		if (_shortWindow.Count < 2)
+		if (_shortWindow.Count < MinBeatsForMetrics)
 		{
 			return null;
 		}

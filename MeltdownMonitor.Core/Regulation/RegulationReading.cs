@@ -30,4 +30,13 @@ public readonly record struct RegulationReading(
 	double VariabilityQuality,
 	double Confidence,
 	double LobeRoundness,
-	double LfHfBalance);
+	double LfHfBalance)
+{
+	/// <summary>
+	/// [0, 1] low-arousal collapse signal: rises when HR is well below baseline AND variability
+	/// is not elevated (distinct from genuine high-vagal rest). 0 when activated, at rest with
+	/// healthy variability, or when the baseline is unusable. Display-only — does NOT drive the
+	/// detector (see audit A(b)). Provisional heuristic pending validation against real episodes.
+	/// </summary>
+	public double Hypoarousal { get; init; }
+}

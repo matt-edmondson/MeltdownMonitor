@@ -22,12 +22,21 @@ public sealed class Pipeline : IDisposable
 	private readonly ShortWindowHrvCalculator _hrv = new();
 	private readonly BaselineHrvTracker _baseline = new();
 	private readonly DysregulationDetector _detector;
+	private readonly HypoarousalDetector _hypoDetector;
 	private readonly RegulationVelocityTracker _velocity = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _runTask;
 
 	public DetectorState CurrentState => _detector.State;
+
+	/// <summary>Current low-arousal/shutdown state — a peer signal to <see cref="CurrentState"/>.</summary>
+	public HypoarousalState CurrentHypoarousalState => _hypoDetector.State;
+
+	/// <summary>True when the baseline was self-calibrated cold with no personal history anchor —
+	/// the UI surfaces this so a possibly-activated baseline isn't presented as confident calm.</summary>
+	public bool IsColdCalibrated => _baseline.IsColdCalibrated;
+
 	public HrvSample? LatestSample { get; private set; }
 
 	/// <summary>Latest sensor battery level (0–100), or null until the source reports one.</summary>
@@ -60,6 +69,10 @@ public sealed class Pipeline : IDisposable
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<DetectorState>? StateChanged;
+
+	/// <summary>Fires when the low-arousal/shutdown state changes, so the UI can render collapse
+	/// distinctly from the cool REST lobe.</summary>
+	public event Action<HypoarousalState>? HypoarousalStateChanged;
 
 	/// <summary>Fires when the sensor reports a fresh battery level (design: BLE
 	/// Battery Service 0x180F). Only ever raised when the injected source
@@ -95,6 +108,10 @@ public sealed class Pipeline : IDisposable
 		_detector = new DysregulationDetector(() => settings.Thresholds);
 		_detector.AlertFired += OnAlertFired;
 		_detector.StateChanged += OnStateChanged;
+
+		_hypoDetector = new HypoarousalDetector(() => settings.Thresholds.Hypoarousal);
+		_hypoDetector.AlertFired += OnAlertFired;
+		_hypoDetector.StateChanged += s => HypoarousalStateChanged?.Invoke(s);
 
 		// Battery and contact are optional source capabilities — wire each only when supported.
 		if (source is IBatterySource batterySource)
@@ -165,7 +182,16 @@ public sealed class Pipeline : IDisposable
 		}
 
 		var window = lookback ?? TimeSpan.FromHours(24);
-		var warmCalculator = new ShortWindowHrvCalculator();
+
+		// HealthKit HR samples are legitimately spaced seconds-to-minutes apart, so the live-stream
+		// guards (gap reset, min-beat floor) must be relaxed here or the warm-start would clear its
+		// window on every sample and never seed — re-introducing the cold-start blindness this exists
+		// to avoid. These protections apply to live BLE streams, not historical resampling.
+		var warmCalculator = new ShortWindowHrvCalculator
+		{
+			MaxBeatGapSeconds = double.MaxValue,
+			MinBeatsForMetrics = 2,
+		};
 
 		await foreach (var hr in healthStore.ReadRecentHeartRateAsync(window).WithCancellation(cancellationToken).ConfigureAwait(false))
 		{
@@ -174,6 +200,12 @@ public sealed class Pipeline : IDisposable
 				continue;
 			}
 
+			// CLINICAL CAVEAT (audit B, unresolved): one synthetic RR per HR sample (60000/bpm) carries
+			// no beat-to-beat detail, so the RMSSD the warm calculator derives reflects *inter-sample HR
+			// drift*, not true parasympathetic beat-to-beat variability. It seeds a parasympathetic
+			// baseline from a non-parasympathetic quantity — adequate to break the cold start, but it can
+			// bias the RMSSD baseline. Revisit needs on-device validation against a real RR stream; do not
+			// treat the HealthKit-seeded RMSSD baseline as clinically equivalent to a live-beat one.
 			int bpm = (int)Math.Round(hr.HeartRateBpm);
 			double rrMs = 60_000.0 / hr.HeartRateBpm;
 			var beat = new Beat(hr.Timestamp, rrMs, bpm, IsArtifact: false);
@@ -230,9 +262,17 @@ public sealed class Pipeline : IDisposable
 				continue;
 			}
 
-			_baseline.Update(sample, LatestContact);
+			// Freeze the baseline during a hypoarousal episode so it can't re-normalise toward the
+			// shutdown and blind the detectors. (Hyperarousal episodes are frozen inside Update via
+			// sample.State.) Gated on the prior-sample episode state, which keeps the dysregulation
+			// detector's IsWarm timing identical; a one-sample lag is negligible for a minutes-long EWMA.
+			if (!_hypoDetector.IsEpisodeActive)
+			{
+				_baseline.Update(sample, LatestContact);
+			}
 
 			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact);
+			_hypoDetector.Process(sample, _baseline.IsWarm, LatestContact);
 
 			var finalSample = sample with
 			{

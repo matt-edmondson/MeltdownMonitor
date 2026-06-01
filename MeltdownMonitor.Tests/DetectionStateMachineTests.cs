@@ -18,6 +18,11 @@ public class DetectionStateMachineTests
 		RmssdRecoveryDropFraction = 0.10,
 		HrRecoveryRiseFraction = 0.05,
 		RecoveryHoldDuration = TimeSpan.FromSeconds(10),
+		// Pin the pre-flip mechanics so these state-machine tests stay deterministic
+		// after the production defaults move to clinical best practice (Additive / 2).
+		// Veto + count 1 = the single-sample / veto behaviour these tests exercise.
+		LfHfCorroborationMode = LfHfCorroborationMode.Veto,
+		SevereDropConfirmationCount = 1,
 	};
 
 	private static HrvSample NormalSample(
@@ -391,5 +396,90 @@ public class DetectionStateMachineTests
 		detector.Process(NormalSample(start), baselineIsWarm: true);
 
 		Assert.IsTrue(states.Contains(DetectorState.Watching));
+	}
+
+	private static HrvSample StressedWithLfHf(DateTimeOffset ts, double lfHfRatio, double baselineLfHf)
+	{
+		// Core Warning conditions met (RMSSD 40% below, HR 20% above), with extended LF/HF present.
+		return new HrvSample(ts, 30, 20, 84, 50, 70, DetectorState.Watching)
+		{
+			BaselineLfHfRatio = baselineLfHf,
+			Extended = new ExtendedHrvMetrics(0, 0, lfHfRatio, 0, 0, 0.4, 0),
+		};
+	}
+
+	[TestMethod]
+	public void VetoMode_LfHfNotElevated_SuppressesWarning()
+	{
+		var detector = new DysregulationDetector(FastThresholds); // fixture pins LfHfCorroborationMode.Veto
+		var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+		detector.Process(NormalSample(start), baselineIsWarm: true);
+
+		// Core met but LF/HF flat (ratio == baseline) → veto blocks Warning.
+		DetectorState? last = null;
+		for (int i = 1; i <= 10; i++)
+		{
+			last = detector.Process(StressedWithLfHf(start.AddSeconds(i * 5), lfHfRatio: 1.5, baselineLfHf: 1.5), baselineIsWarm: true);
+		}
+
+		Assert.AreEqual(DetectorState.Watching, last, "Veto mode must suppress the Warning when LF/HF isn't elevated.");
+	}
+
+	[TestMethod]
+	public void AdditiveMode_LfHfNotElevated_StillWarns()
+	{
+		var thresholds = FastThresholds with { LfHfCorroborationMode = LfHfCorroborationMode.Additive };
+		var detector = new DysregulationDetector(thresholds);
+		var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+		detector.Process(NormalSample(start), baselineIsWarm: true);
+
+		DetectorState? last = null;
+		for (int i = 1; i <= 10; i++)
+		{
+			last = detector.Process(StressedWithLfHf(start.AddSeconds(i * 5), lfHfRatio: 1.5, baselineLfHf: 1.5), baselineIsWarm: true);
+		}
+
+		Assert.AreEqual(DetectorState.Warning, last, "Additive mode must not let a flat LF/HF veto a core-satisfied Warning.");
+	}
+
+	[TestMethod]
+	public void SevereDropConfirmation_One_FiresOnFirstSample()
+	{
+		var detector = new DysregulationDetector(FastThresholds); // fixture pins SevereDropConfirmationCount 1
+		var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+		detector.Process(NormalSample(start), baselineIsWarm: true);
+
+		var state = detector.Process(SeverelySample(start.AddSeconds(5)), baselineIsWarm: true);
+
+		Assert.AreEqual(DetectorState.Alerting, state);
+	}
+
+	[TestMethod]
+	public void ProductionDefaults_FollowClinicalBestPractice()
+	{
+		// The 2026-06-01 clinical audit flipped these defaults from preserve-today's-behaviour
+		// toward clinical best practice: LF/HF must not veto a core-satisfied early Warning, and
+		// the false-positive-prone immediate-severe path needs two consecutive in-contact samples.
+		var defaults = new DetectionThresholds();
+
+		Assert.AreEqual(LfHfCorroborationMode.Additive, defaults.LfHfCorroborationMode,
+			"LF/HF should strengthen confidence, not veto an early Warning (its 5-minute window lags onset).");
+		Assert.AreEqual(2, defaults.SevereDropConfirmationCount,
+			"Two consecutive severe samples reject a transient breath-hold/Valsalva RMSSD collapse.");
+	}
+
+	[TestMethod]
+	public void SevereDropConfirmation_Two_RequiresTwoConsecutive()
+	{
+		var thresholds = FastThresholds with { SevereDropConfirmationCount = 2 };
+		var detector = new DysregulationDetector(thresholds);
+		var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+		detector.Process(NormalSample(start), baselineIsWarm: true);
+
+		var afterFirst = detector.Process(SeverelySample(start.AddSeconds(5)), baselineIsWarm: true);
+		Assert.AreEqual(DetectorState.Watching, afterFirst, "One severe sample must not fire when confirmation is 2.");
+
+		var afterSecond = detector.Process(SeverelySample(start.AddSeconds(10)), baselineIsWarm: true);
+		Assert.AreEqual(DetectorState.Alerting, afterSecond, "Second consecutive severe sample fires.");
 	}
 }

@@ -34,6 +34,13 @@ public class BaselineHrvTracker
 	private double _anchorHr;
 	private double _anchorLfHfRatio;
 
+	// Warm-up-window buffer for a no-history cold start: the live EWMA anchors on the first sample,
+	// which is wrong if the user launches already dysregulated. We instead seed from the median of
+	// the whole warm-up window once it completes (audit B).
+	private readonly List<double> _warmUpRmssd = [];
+	private readonly List<double> _warmUpHr = [];
+	private bool _coldCalibrated;
+
 	public double BaselineRmssd => _baselineRmssd;
 	public double BaselineHr => _baselineHr;
 
@@ -42,6 +49,14 @@ public class BaselineHrvTracker
 	/// </summary>
 	public double BaselineLfHfRatio => _baselineLfHfRatio;
 	public bool IsWarm => _isWarm;
+
+	/// <summary>
+	/// True when the baseline was warm-started from this session's own warm-up window with no
+	/// personal history anchor — i.e. self-calibrated cold. A provenance fact (it does not fade):
+	/// if the whole warm-up was symptomatic, no self-calibration could correct it, so the UI should
+	/// flag that readings may be measured against a possibly-activated baseline (audit B).
+	/// </summary>
+	public bool IsColdCalibrated => _coldCalibrated;
 
 	/// <summary>0..1 progress toward the warm-up threshold, for UI display.</summary>
 	public double WarmUpProgress
@@ -119,11 +134,47 @@ public class BaselineHrvTracker
 
 			ClampToAnchor();
 
-			if (!_isWarm && (sample.Timestamp - _firstSampleTime).TotalMinutes >= WarmUpMinutes)
+			// Buffer the warm-up window so a no-history cold start can seed from its robust median
+			// rather than the (possibly symptomatic) first sample.
+			if (!_isWarm)
 			{
-				_isWarm = true;
+				_warmUpRmssd.Add(sample.Rmssd);
+				_warmUpHr.Add(sample.MeanHr);
+
+				if ((sample.Timestamp - _firstSampleTime).TotalMinutes >= WarmUpMinutes)
+				{
+					SeedColdBaselineFromWarmUp();
+					_isWarm = true;
+				}
 			}
 		}
+	}
+
+	// At the end of a cold warm-up with no personal history anchor, replace the first-sample-anchored
+	// EWMA baseline with the median of the whole warm-up window. The median is robust to a symptomatic
+	// first sample and to transient spikes — the "calibrate during a symptom" guard (audit B). When a
+	// history anchor exists, the EWMA + ClampToAnchor path already guards drift, so it is left untouched.
+	private void SeedColdBaselineFromWarmUp()
+	{
+		if (_anchorRmssd <= 0 && _anchorHr <= 0)
+		{
+			double rmssdSeed = Median([.. _warmUpRmssd.Where(v => v > 0)]);
+			double hrSeed = Median([.. _warmUpHr.Where(v => v > 0)]);
+			if (rmssdSeed > 0)
+			{
+				_baselineRmssd = rmssdSeed;
+			}
+
+			if (hrSeed > 0)
+			{
+				_baselineHr = hrSeed;
+			}
+
+			_coldCalibrated = true;
+		}
+
+		_warmUpRmssd.Clear();
+		_warmUpHr.Clear();
 	}
 
 	/// <summary>
@@ -222,5 +273,8 @@ public class BaselineHrvTracker
 		_anchorRmssd = 0;
 		_anchorHr = 0;
 		_anchorLfHfRatio = 0;
+		_warmUpRmssd.Clear();
+		_warmUpHr.Clear();
+		_coldCalibrated = false;
 	}
 }

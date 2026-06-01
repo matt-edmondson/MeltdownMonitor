@@ -84,6 +84,30 @@ public class PipelineWarmStartTests
 		Assert.AreEqual(0, BaselineHr(pipeline), 0.0001);
 	}
 
+	[TestMethod]
+	public async Task WarmStart_SparseHealthKitSamples_StillSeedsBaseline()
+	{
+		// Real HealthKit HR samples are spaced seconds-to-minutes apart, not 5 Hz. The live-stream
+		// gap-reset (MaxBeatGapSeconds) and min-beat floor must be relaxed for historical resampling,
+		// or warm-start clears its window on every sparse sample and never seeds. Regression guard.
+		using var repo = NewRepo();
+		using var pipeline = new Pipeline(new MobileSettings(), repo, new EmptyBeatSource());
+
+		// 30 minutes of samples one every 10 seconds (180 samples) — far sparser than the gap threshold.
+		var start = DateTimeOffset.UtcNow.AddMinutes(-30);
+		var samples = new List<HrSample>();
+		for (int i = 0; i < 180; i++)
+		{
+			samples.Add(new HrSample(start.AddSeconds(i * 10), HeartRateBpm: 72));
+		}
+
+		await pipeline.WarmStartAsync(new FakeHealthStore(samples));
+
+		double baselineHr = BaselineHr(pipeline);
+		Assert.IsTrue(baselineHr > 60 && baselineHr < 85,
+			$"Sparse HealthKit samples must still seed the baseline; got {baselineHr:F1}.");
+	}
+
 	private static MeltdownRepository NewRepo() =>
 		new(":memory:");
 

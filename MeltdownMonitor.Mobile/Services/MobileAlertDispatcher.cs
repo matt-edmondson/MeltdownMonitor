@@ -33,7 +33,9 @@ public sealed class MobileAlertDispatcher : IDisposable
 
 	private void OnAlertFired(AlertPayload payload)
 	{
-		if (_settings.EnableChime)
+		// A jarring chime can deepen a shutdown (sensory overload), so the low-arousal alert stays
+		// silent and leans on the softened notification; the hyperarousal meltdown alert keeps its chime.
+		if (_settings.EnableChime && payload.Kind != AlertKind.Hypoarousal)
 		{
 			try
 			{

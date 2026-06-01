@@ -57,15 +57,26 @@ public sealed class NotificationDispatcher : INotificationDispatcher
 
 	public Task PostAlertAsync(AlertPayload payload)
 	{
+		// A jarring, time-sensitive alert can deepen a shutdown (sensory overload), so a low-arousal
+		// alert is silent, softly worded, and does NOT escalate to a time-sensitive interruption — it
+		// stays at the content default (Active) so it won't break through Focus. The hyperarousal
+		// meltdown alert keeps the loud, time-sensitive treatment.
+		bool gentle = payload.Kind == AlertKind.Hypoarousal;
 		var content = new UNMutableNotificationContent
 		{
 			Title = "Meltdown Monitor",
-			Body = _settings.AlertSuggestion,
+			Body = gentle
+				? "A low, flat moment. When you're ready, a small movement or a sip of water can help you re-engage."
+				: _settings.AlertSuggestion,
 			Subtitle = $"RMSSD {payload.RmssdAtTrigger:F1} ms (baseline {payload.BaselineAtTrigger:F1} ms)",
 			CategoryIdentifier = AlertCategoryId,
-			Sound = UNNotificationSound.Default,
-			InterruptionLevel = UNNotificationInterruptionLevel.TimeSensitive2,
+			Sound = gentle ? null : UNNotificationSound.Default,
 		};
+
+		if (!gentle)
+		{
+			content.InterruptionLevel = UNNotificationInterruptionLevel.TimeSensitive2;
+		}
 
 		// Immediate delivery — no trigger.
 		var request = UNNotificationRequest.FromIdentifier(

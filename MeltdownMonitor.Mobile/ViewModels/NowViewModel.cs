@@ -32,8 +32,11 @@ public sealed class NowViewModel : ViewModelBase
 	private readonly Func<int>? _trailLengthProvider;
 	private readonly Func<double>? _jitterExaggerationProvider;
 	private readonly Func<double>? _lobeThicknessProvider;
+	private Func<bool>? _coldCalibratedProvider;
 
 	private DetectorState _state = DetectorState.Idle;
+	private bool _isShutdown;
+	private bool _isColdCalibrated;
 	private bool _isPaused;
 	private double _heartRate;
 	private double _rmssd;
@@ -145,6 +148,22 @@ public sealed class NowViewModel : ViewModelBase
 
 	/// <summary>Whether to show the recovery readout — only during an active episode.</summary>
 	public bool IsRecoveryVisible => _recovery.IsActive;
+
+	/// <summary>True during a sustained low-arousal/shutdown episode, so the Now screen can flag
+	/// collapse distinctly from calm REST (audit A(b)). Driven by the debounced detector state.</summary>
+	public bool IsShutdown
+	{
+		get => _isShutdown;
+		private set => SetField(ref _isShutdown, value);
+	}
+
+	/// <summary>True when the baseline was self-calibrated cold with no personal history anchor, so
+	/// the UI can flag that readings may be measured against a possibly-activated baseline (audit B).</summary>
+	public bool IsColdCalibrated
+	{
+		get => _isColdCalibrated;
+		private set => SetField(ref _isColdCalibrated, value);
+	}
 
 	/// <summary>Recent trail points (oldest first) drawn as the field's comet trail, each
 	/// carrying the detector state it was captured under so segments keep their original
@@ -400,13 +419,16 @@ public sealed class NowViewModel : ViewModelBase
 		ArgumentNullException.ThrowIfNull(pipeline);
 		pipeline.SampleUpdated += OnSampleUpdated;
 		pipeline.StateChanged += OnStateChanged;
+		pipeline.HypoarousalStateChanged += OnHypoarousalStateChanged;
 		pipeline.ReadingUpdated += OnReadingUpdated;
 		pipeline.DynamicsUpdated += OnDynamicsUpdated;
 		pipeline.RecoveryUpdated += OnRecoveryUpdated;
 		pipeline.BatteryUpdated += OnBatteryUpdated;
 		pipeline.ContactChanged += OnContactChanged;
 		pipeline.DeviceInfoUpdated += OnDeviceInfoUpdated;
+		_coldCalibratedProvider = () => pipeline.IsColdCalibrated;
 		OnStateChanged(pipeline.CurrentState);
+		OnHypoarousalStateChanged(pipeline.CurrentHypoarousalState);
 		OnContactChanged(pipeline.LatestContact);
 
 		// Reflect a battery level the source may have already reported before we subscribed.
@@ -435,6 +457,9 @@ public sealed class NowViewModel : ViewModelBase
 		Rmssd = sample.Rmssd;
 		BaselineRmssd = sample.BaselineRmssd;
 		State = sample.State;
+		// Cold-calibration is a stable provenance flag (it flips once at warm-completion); read it
+		// off the pipeline each sample rather than threading a dedicated event.
+		IsColdCalibrated = _coldCalibratedProvider?.Invoke() ?? false;
 
 		_rmssdHistory.Add(sample.Rmssd);
 		_baselineHistory.Add(sample.BaselineRmssd);
@@ -453,6 +478,13 @@ public sealed class NowViewModel : ViewModelBase
 	/// independently of <see cref="OnSampleUpdated"/>.
 	/// </summary>
 	public void OnStateChanged(DetectorState state) => RunOnUi(() => State = state);
+
+	/// <summary>
+	/// Reflect a low-arousal/shutdown state change from <see cref="Pipeline.HypoarousalStateChanged"/>.
+	/// Marshalled to the UI thread. Public so tests can drive it without a live pipeline.
+	/// </summary>
+	public void OnHypoarousalStateChanged(HypoarousalState state) =>
+		RunOnUi(() => IsShutdown = state == HypoarousalState.LowArousal);
 
 	/// <summary>
 	/// Push a fresh sensor battery level into the VM. Wired to

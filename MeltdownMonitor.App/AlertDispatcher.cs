@@ -19,7 +19,9 @@ public class AlertDispatcher
 
 	public void Dispatch(AlertPayload payload)
 	{
-		if (_settings.EnableChime)
+		// A jarring chime can deepen a shutdown, so a low-arousal alert stays silent and relies on
+		// the quiet toast; the hyperarousal meltdown alert keeps its chime.
+		if (_settings.EnableChime && payload.Kind != AlertKind.Hypoarousal)
 		{
 			PlayChime();
 		}
@@ -54,9 +56,15 @@ public class AlertDispatcher
 	{
 		try
 		{
+			bool gentle = payload.Kind == AlertKind.Hypoarousal;
+			string headline = gentle ? "A low, flat moment" : "Meltdown Monitor";
+			string suggestion = gentle
+				? "When you're ready, a small movement or a sip of water can help you re-engage."
+				: _settings.AlertSuggestion;
+
 			new ToastContentBuilder()
-				.AddText("Meltdown Monitor")
-				.AddText(_settings.AlertSuggestion)
+				.AddText(headline)
+				.AddText(suggestion)
 				.AddText($"RMSSD {payload.RmssdAtTrigger:F1} ms (baseline {payload.BaselineAtTrigger:F1} ms)")
 				.SetToastDuration(ToastDuration.Long)
 				.Show();

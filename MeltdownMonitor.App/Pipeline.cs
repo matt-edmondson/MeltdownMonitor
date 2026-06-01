@@ -19,12 +19,16 @@ public sealed class Pipeline : IDisposable
 	private readonly ShortWindowHrvCalculator _hrv = new();
 	private readonly BaselineHrvTracker _baseline = new();
 	private readonly DysregulationDetector _detector;
+	private readonly HypoarousalDetector _hypoDetector;
 	private readonly RegulationVelocityTracker _velocity = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _pipelineTask;
 
 	public DetectorState CurrentState => _detector.State;
+
+	/// <summary>Current low-arousal/shutdown state — a peer signal to <see cref="CurrentState"/>.</summary>
+	public HypoarousalState CurrentHypoarousalState => _hypoDetector.State;
 	public DetectionThresholds LatestThresholds => _settings.Thresholds;
 	public HrvSample? LatestSample { get; private set; }
 	public BaselineHrvTracker Baseline => _baseline;
@@ -89,6 +93,9 @@ public sealed class Pipeline : IDisposable
 		_detector = new DysregulationDetector(() => _settings.Thresholds);
 		_detector.AlertFired += OnAlertFired;
 		_detector.StateChanged += _ => StateEnteredAt = DateTimeOffset.UtcNow;
+
+		_hypoDetector = new HypoarousalDetector(() => _settings.Thresholds.Hypoarousal);
+		_hypoDetector.AlertFired += OnAlertFired;
 	}
 
 	public void Start()
@@ -208,9 +215,17 @@ public sealed class Pipeline : IDisposable
 				continue;
 			}
 
-			_baseline.Update(sample, LatestContact);
+			// Freeze the baseline during a hypoarousal episode so it can't re-normalise toward the
+			// shutdown and blind the detectors. (Hyperarousal episodes are frozen inside Update via
+			// sample.State.) Gated on the prior-sample episode state, which keeps the dysregulation
+			// detector's IsWarm timing identical; a one-sample lag is negligible for a minutes-long EWMA.
+			if (!_hypoDetector.IsEpisodeActive)
+			{
+				_baseline.Update(sample, LatestContact);
+			}
 
 			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact);
+			_hypoDetector.Process(sample, _baseline.IsWarm, LatestContact);
 
 			var finalSample = sample with
 			{
