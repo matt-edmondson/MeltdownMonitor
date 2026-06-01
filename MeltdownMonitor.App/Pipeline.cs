@@ -21,6 +21,7 @@ public sealed class Pipeline : IDisposable
 	private readonly DysregulationDetector _detector;
 	private readonly HypoarousalDetector _hypoDetector;
 	private readonly RegulationVelocityTracker _velocity = new();
+	private readonly RegulationVelocityTracker _hypoVelocity = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _pipelineTask;
@@ -53,6 +54,11 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Latest escalation/de-escalation velocity + trend of the arousal index.
 	/// <see cref="RegulationDynamics.Steady"/> until the baseline is warm.</summary>
 	public RegulationDynamics LatestDynamics { get; private set; } = RegulationDynamics.Steady;
+
+	/// <summary>Velocity/trend of the <c>Hypoarousal</c> scalar — the rate of approach to (or
+	/// retreat from) low-arousal collapse. <see cref="RegulationDynamics.Steady"/> until the
+	/// baseline is warm. Peer to <see cref="LatestDynamics"/> (which tracks the arousal index).</summary>
+	public RegulationDynamics LatestHypoarousalDynamics { get; private set; } = RegulationDynamics.Steady;
 
 	/// <summary>How close the body is to clearing the current episode (two-stage: metrics
 	/// return to baseline, then hold). <see cref="RecoveryProgress.Inactive"/> outside an
@@ -245,17 +251,22 @@ public sealed class Pipeline : IDisposable
 				_baseline.WarmUpProgress,
 				_baseline.IsWarm);
 
-			// Velocity/trend of the arousal index — see the mobile pipeline for the gating rationale.
+			// Velocity/trend of the arousal index and the Hypoarousal scalar — see the mobile
+			// pipeline for the gating rationale. The two trackers move together so the index and
+			// collapse trajectories stay phase-aligned.
 			if (_baseline.IsWarm && LatestContact != SensorContactStatus.NotDetected)
 			{
 				_velocity.Update(LatestReading.Index, finalSample.Timestamp);
+				_hypoVelocity.Update(LatestReading.Hypoarousal, finalSample.Timestamp);
 			}
 			else
 			{
 				_velocity.Reset();
+				_hypoVelocity.Reset();
 			}
 
 			LatestDynamics = _velocity.Latest;
+			LatestHypoarousalDynamics = _hypoVelocity.Latest;
 		}
 	}
 

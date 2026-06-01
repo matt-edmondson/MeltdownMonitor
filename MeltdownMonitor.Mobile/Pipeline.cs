@@ -24,6 +24,7 @@ public sealed class Pipeline : IDisposable
 	private readonly DysregulationDetector _detector;
 	private readonly HypoarousalDetector _hypoDetector;
 	private readonly RegulationVelocityTracker _velocity = new();
+	private readonly RegulationVelocityTracker _hypoVelocity = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _runTask;
@@ -61,6 +62,11 @@ public sealed class Pipeline : IDisposable
 	/// <see cref="RegulationDynamics.Steady"/> until the baseline is warm.</summary>
 	public RegulationDynamics LatestDynamics { get; private set; } = RegulationDynamics.Steady;
 
+	/// <summary>Velocity/trend of the <c>Hypoarousal</c> scalar — the rate of approach to (or
+	/// retreat from) low-arousal collapse. <see cref="RegulationDynamics.Steady"/> until the
+	/// baseline is warm. Peer to <see cref="LatestDynamics"/> (which tracks the arousal index).</summary>
+	public RegulationDynamics LatestHypoarousalDynamics { get; private set; } = RegulationDynamics.Steady;
+
 	/// <summary>How close the body is to clearing the current episode (two-stage: metrics
 	/// return to baseline, then hold). <see cref="RecoveryProgress.Inactive"/> outside an
 	/// active Warning/Alerting episode.</summary>
@@ -95,6 +101,10 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Fires after <see cref="ReadingUpdated"/> with the velocity/trend of the
 	/// arousal index, derived from the same sample. Steady while calibrating or off-contact.</summary>
 	public event Action<RegulationDynamics>? DynamicsUpdated;
+
+	/// <summary>Fires after <see cref="DynamicsUpdated"/> with the velocity/trend of the
+	/// Hypoarousal scalar, derived from the same sample. Steady while calibrating or off-contact.</summary>
+	public event Action<RegulationDynamics>? HypoarousalDynamicsUpdated;
 
 	/// <summary>Fires after <see cref="DynamicsUpdated"/> with the two-stage recovery progress
 	/// for the current episode, derived from the same sample. Inactive outside Warning/Alerting.</summary>
@@ -294,20 +304,27 @@ public sealed class Pipeline : IDisposable
 			LatestReading = reading;
 			ReadingUpdated?.Invoke(reading);
 
-			// Velocity/trend of the arousal index. Only fold usable samples (baseline warm,
-			// sensor in contact) into the tracker; otherwise reset it so the resumed stream
-			// re-seeds rather than computing a spike across the gap or off the cold->warm jump.
+			// Velocity/trend of the arousal index and of the Hypoarousal scalar. Only fold usable
+			// samples (baseline warm, sensor in contact) into the trackers; otherwise reset them so
+			// the resumed stream re-seeds rather than computing a spike across the gap or off the
+			// cold->warm jump. The two trackers move together so the index and collapse trajectories
+			// stay phase-aligned.
 			if (_baseline.IsWarm && LatestContact != SensorContactStatus.NotDetected)
 			{
 				_velocity.Update(reading.Index, finalSample.Timestamp);
+				_hypoVelocity.Update(reading.Hypoarousal, finalSample.Timestamp);
 			}
 			else
 			{
 				_velocity.Reset();
+				_hypoVelocity.Reset();
 			}
 
 			LatestDynamics = _velocity.Latest;
 			DynamicsUpdated?.Invoke(LatestDynamics);
+
+			LatestHypoarousalDynamics = _hypoVelocity.Latest;
+			HypoarousalDynamicsUpdated?.Invoke(LatestHypoarousalDynamics);
 
 			RecoveryUpdated?.Invoke(_detector.Recovery);
 		}
