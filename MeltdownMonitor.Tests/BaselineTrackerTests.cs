@@ -137,4 +137,62 @@ public class BaselineTrackerTests
 		Assert.IsFalse(tracker.IsWarm);
 		Assert.AreEqual(0, tracker.BaselineRmssd);
 	}
+
+	[TestMethod]
+	public void ColdStart_SymptomaticFirstSample_SeedsFromWarmUpMedian_NotFirstSample()
+	{
+		// Audit B: launching already dysregulated must not bake the symptom into the baseline.
+		// The first sample is symptomatic (low RMSSD, high HR); the rest of the warm-up is healthy.
+		var tracker = new BaselineHrvTracker();
+		var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+		tracker.Update(MakeSample(rmssd: 15, meanHr: 95, timestamp: start)); // activated at launch
+
+		for (int i = 1; i <= 130; i++) // ~10.8 min of healthy data → completes the warm-up
+		{
+			tracker.Update(MakeSample(rmssd: 50, meanHr: 70, timestamp: start.AddSeconds(i * 5)));
+		}
+
+		Assert.IsTrue(tracker.IsWarm);
+		Assert.IsTrue(tracker.IsColdCalibrated, "A no-history cold start that self-calibrates must flag it.");
+		// The robust median of the warm-up window is the healthy 50/70, NOT the EWMA value
+		// (~31 ms) that the symptomatic first sample would otherwise drag the baseline to.
+		Assert.AreEqual(50.0, tracker.BaselineRmssd, 0.001, "Cold baseline must be the warm-up median, not the symptomatic first sample.");
+		Assert.AreEqual(70.0, tracker.BaselineHr, 0.001);
+	}
+
+	[TestMethod]
+	public void WarmStartedFromHistory_IsNotColdCalibrated()
+	{
+		// A history anchor means we are NOT self-calibrating cold; the EWMA + anchor guardrail
+		// already protects the baseline, so the cold-seed path (and its flag) must not engage.
+		var tracker = new BaselineHrvTracker();
+		var now = DateTimeOffset.UtcNow;
+		var history = new List<HrvSample>();
+		for (int i = 0; i < 20; i++)
+		{
+			history.Add(MakeSample(rmssd: 50, meanHr: 70, timestamp: now.AddMinutes(-30).AddSeconds(i)));
+		}
+
+		tracker.SeedFromHistory(history);
+
+		Assert.IsTrue(tracker.IsWarm);
+		Assert.IsFalse(tracker.IsColdCalibrated, "Warm-started from history is anchored, not cold-calibrated.");
+	}
+
+	[TestMethod]
+	public void Reset_ClearsColdCalibration()
+	{
+		var tracker = new BaselineHrvTracker();
+		var start = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+		for (int i = 0; i <= 130; i++)
+		{
+			tracker.Update(MakeSample(rmssd: 50, meanHr: 70, timestamp: start.AddSeconds(i * 5)));
+		}
+		Assert.IsTrue(tracker.IsColdCalibrated);
+
+		tracker.Reset();
+
+		Assert.IsFalse(tracker.IsColdCalibrated, "Reset must clear the cold-calibration provenance flag.");
+	}
 }

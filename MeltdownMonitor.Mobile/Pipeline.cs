@@ -196,6 +196,12 @@ public sealed class Pipeline : IDisposable
 				continue;
 			}
 
+			// CLINICAL CAVEAT (audit B, unresolved): one synthetic RR per HR sample (60000/bpm) carries
+			// no beat-to-beat detail, so the RMSSD the warm calculator derives reflects *inter-sample HR
+			// drift*, not true parasympathetic beat-to-beat variability. It seeds a parasympathetic
+			// baseline from a non-parasympathetic quantity — adequate to break the cold start, but it can
+			// bias the RMSSD baseline. Revisit needs on-device validation against a real RR stream; do not
+			// treat the HealthKit-seeded RMSSD baseline as clinically equivalent to a live-beat one.
 			int bpm = (int)Math.Round(hr.HeartRateBpm);
 			double rrMs = 60_000.0 / hr.HeartRateBpm;
 			var beat = new Beat(hr.Timestamp, rrMs, bpm, IsArtifact: false);
