@@ -919,7 +919,7 @@ public sealed class StatusWindow : IDisposable
 		HelpMarker("How much history the live charts show. Higher = longer trends visible; lower = more recent detail.");
 
 		int trail = _settings.RegulationTrailLength;
-		if (ImGuiWidgets.Knob("Trail (pts)", ref trail, 12, 240, format: "%d pts", flags: ImGuiKnobOptions.ValueTooltip))
+		if (ImGuiWidgets.Knob("Trail (pts)", ref trail, 12, 2160, format: "%d pts", flags: ImGuiKnobOptions.ValueTooltip))
 		{
 			_settings.RegulationTrailLength = trail;
 			_settingsDirty = true;

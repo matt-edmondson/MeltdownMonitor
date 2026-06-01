@@ -337,15 +337,21 @@ public class NowViewModelTests
 	public void Trail_ClampsProviderToValidRange()
 	{
 		var tiny = new NowViewModel(trailLengthProvider: () => 3);     // below 12 floor
-		var huge = new NowViewModel(trailLengthProvider: () => 99999); // above 240 ceiling
 		for (int i = 0; i < 300; i++)
 		{
 			tiny.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
-			huge.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
 		}
 
 		Assert.AreEqual(12, tiny.RegulationTrail.Count, "below-floor cap clamps to 12");
-		Assert.AreEqual(240, huge.RegulationTrail.Count, "above-ceiling cap clamps to 240");
+
+		// Push past the ceiling so the buffer actually reaches the clamped maximum.
+		var huge = new NowViewModel(trailLengthProvider: () => 99999); // above 2160 ceiling
+		for (int i = 0; i < 2200; i++)
+		{
+			huge.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+		}
+
+		Assert.AreEqual(2160, huge.RegulationTrail.Count, "above-ceiling cap clamps to 2160");
 	}
 
 	private static HrvSample Sample(double rmssd, double meanHr, double baseline, DetectorState state) =>

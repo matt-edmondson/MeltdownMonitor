@@ -45,8 +45,8 @@ public sealed class Pipeline : IDisposable
 	/// <see cref="RegulationDynamics.Steady"/> until the baseline is warm.</summary>
 	public RegulationDynamics LatestDynamics { get; private set; } = RegulationDynamics.Steady;
 
-	/// <summary>Configured comet-trail length (clamped 12–240), read live by the field view.</summary>
-	public int RegulationTrailLength => Math.Clamp(_settings.RegulationTrailLength, 12, 240);
+	/// <summary>Configured comet-trail length (clamped 12–2160), read live by the field view.</summary>
+	public int RegulationTrailLength => Math.Clamp(_settings.RegulationTrailLength, 12, 2160);
 
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;

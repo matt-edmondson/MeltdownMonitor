@@ -28,7 +28,7 @@ public class SettingsViewModelTests
 		Assert.AreEqual(12, settings.RegulationTrailLength, "below floor clamps to 12");
 
 		vm.RegulationTrailLength = 9999;
-		Assert.AreEqual(240, settings.RegulationTrailLength, "above ceiling clamps to 240");
+		Assert.AreEqual(2160, settings.RegulationTrailLength, "above ceiling clamps to 2160");
 	}
 
 	[TestMethod]

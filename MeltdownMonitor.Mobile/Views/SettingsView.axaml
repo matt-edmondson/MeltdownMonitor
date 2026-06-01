@@ -44,7 +44,7 @@
                     <TextBlock Grid.Column="1"
                                Text="{Binding RegulationTrailLength, StringFormat='{}{0} pts'}" />
                 </Grid>
-                <Slider Minimum="12" Maximum="240"
+                <Slider Minimum="12" Maximum="2160"
                         Value="{Binding RegulationTrailLength, Mode=TwoWay}" />
                 <TextBlock Text="How many recent readings the comet trail shows."
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />

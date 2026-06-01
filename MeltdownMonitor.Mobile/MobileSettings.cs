@@ -56,6 +56,6 @@ public sealed class MobileSettings
 	public bool EnableLiveActivity { get; set; }
 
 	/// <summary>Number of recent readings drawn as the Regulation Field comet trail
-	/// (12–240; clamped at the consumer). Default 48 ≈ 4 min at the 5 s emit cadence.</summary>
+	/// (12–2160; clamped at the consumer). Default 48 ≈ 4 min, max ≈ 3 h at the 5 s emit cadence.</summary>
 	public int RegulationTrailLength { get; set; } = 48;
 }

@@ -167,7 +167,7 @@ public sealed class SettingsViewModel : ViewModelBase
 		get => _settings.RegulationTrailLength;
 		set
 		{
-			int clamped = Math.Clamp(value, 12, 240);
+			int clamped = Math.Clamp(value, 12, 2160);
 			if (_settings.RegulationTrailLength != clamped)
 			{
 				_settings.RegulationTrailLength = clamped;

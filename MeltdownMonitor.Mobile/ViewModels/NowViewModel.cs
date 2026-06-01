@@ -425,7 +425,7 @@ public sealed class NowViewModel : ViewModelBase
 		Raise(nameof(IsTrendVisible));
 
 		_regulationTrail.Add(reading);
-		int cap = Math.Clamp(_trailLengthProvider?.Invoke() ?? 48, 12, 240);
+		int cap = Math.Clamp(_trailLengthProvider?.Invoke() ?? 48, 12, 2160);
 		while (_regulationTrail.Count > cap)
 		{
 			_regulationTrail.RemoveAt(0);
