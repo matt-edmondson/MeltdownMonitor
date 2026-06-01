@@ -272,6 +272,35 @@ public class HypoarousalDetectorTests
 	}
 
 	[TestMethod]
+	public void ProductionDefault_EnterSignal_CatchesSubSevereLowArousal()
+	{
+		// Decision A: the default enter threshold sits below 0.5 so the detector catches sustained
+		// *sub-severe* low arousal — the regime the severe dysregulation path never reaches.
+		Assert.AreEqual(0.35, new HypoarousalThresholds().EnterSignal, 1e-9);
+
+		var thresholds = new HypoarousalThresholds // production signal levels, fast timing for the test
+		{
+			EnterHoldDuration = TimeSpan.FromSeconds(30),
+			RecoveryDuration = TimeSpan.FromSeconds(30),
+		};
+		var detector = new HypoarousalDetector(thresholds);
+
+		// RMSSD 38% below baseline (31 ms) — never trips the 50% severe path — with HR 25% below
+		// (52.5 bpm). Signal ≈ 0.38, above the 0.35 default.
+		HrvSample SubSevere(DateTimeOffset ts) => Sample(ts, rmssd: 31, meanHr: 52.5);
+
+		detector.Process(Normal(Start), baselineIsWarm: true);
+		HypoarousalState? last = null;
+		for (int i = 1; i <= 7; i++)
+		{
+			last = detector.Process(SubSevere(Start.AddSeconds(i * 5)), baselineIsWarm: true);
+		}
+
+		Assert.AreEqual(HypoarousalState.LowArousal, last,
+			"The default threshold must catch sustained sub-severe low arousal.");
+	}
+
+	[TestMethod]
 	public void AlertPayload_DefaultsToHyperarousalKind()
 	{
 		// The additive default keeps DysregulationDetector's 4-arg construction (and the persisted

@@ -10,17 +10,21 @@ public record HypoarousalThresholds
 {
 	/// <summary>
 	/// The <see cref="HypoarousalSignal"/> level [0,1] that, once sustained, enters a LowArousal
-	/// episode. The signal is a product of an HR-fall ramp and a low-variability gate, so 0.5
-	/// requires a clear, joint collapse — e.g. HR ~20–25% below baseline <i>and</i> RMSSD around
-	/// 25–50% of baseline. A milder bar would fire on ordinary calm.
+	/// episode. Deliberately below 0.5: at 0.5 the signal can only be reached when RMSSD is ≥50%
+	/// below baseline, which already trips the immediate-severe dysregulation path — so the detector
+	/// would never fire on anything the severe path didn't catch first. 0.35 carves out the
+	/// <i>sub-severe</i> regime this detector is for — sustained mild low arousal, e.g. HR ~25%
+	/// below baseline with RMSSD ~35–40% below (never tripping severe) — while staying clear of
+	/// ordinary calm (which keeps RMSSD high, so the signal stays near 0). See the
+	/// hypoarousal-severe-path-preemption design note.
 	/// </summary>
-	public double EnterSignal { get; init; } = 0.5;
+	public double EnterSignal { get; init; } = 0.35;
 
 	/// <summary>
 	/// The signal level the episode must fall to/below (sustained) to exit. Hysteresis below
 	/// <see cref="EnterSignal"/> stops the state flapping around a single threshold.
 	/// </summary>
-	public double ExitSignal { get; init; } = 0.3;
+	public double ExitSignal { get; init; } = 0.20;
 
 	/// <summary>
 	/// The enter signal must hold continuously for this long before entering LowArousal. Shutdown

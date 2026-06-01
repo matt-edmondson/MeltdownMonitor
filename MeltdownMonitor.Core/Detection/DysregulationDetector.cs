@@ -173,7 +173,7 @@ public class DysregulationDetector
 	{
 		if (IsSevereDropConfirmed(sample))
 		{
-			FireAlert(sample, "Immediate: RMSSD dropped ≥50% below baseline");
+			FireSevereAlert(sample, "Immediate");
 			Transition(DetectorState.Alerting, sample.Timestamp);
 			return;
 		}
@@ -202,7 +202,7 @@ public class DysregulationDetector
 	{
 		if (IsSevereDropConfirmed(sample))
 		{
-			FireAlert(sample, "Severe: RMSSD dropped ≥50% below baseline during Warning");
+			FireSevereAlert(sample, "Severe");
 			Transition(DetectorState.Alerting, sample.Timestamp);
 			return;
 		}
@@ -337,13 +337,32 @@ public class DysregulationDetector
 		return false;
 	}
 
-	private void FireAlert(HrvSample sample, string reason)
+	// The immediate-severe path is intentionally HR-direction-agnostic for *detection* (so it also
+	// catches an RMSSD collapse during a low-arousal crash — see SevereDropConfirmationCount). But a
+	// collapse warrants a *gentle* response, not the jarring meltdown chime: when the severe drop
+	// fires with HR below baseline, route it as Hypoarousal. (See the hypoarousal-severe-path-preemption
+	// design note — without this the gentle alert never wins the race against the severe path.)
+	private void FireSevereAlert(HrvSample sample, string prefix)
+	{
+		bool hrBelowBaseline = sample.BaselineHr > 0 && sample.MeanHr < sample.BaselineHr;
+		if (hrBelowBaseline)
+		{
+			FireAlert(sample, $"{prefix}: RMSSD collapsed ≥50% below baseline with HR below baseline (low arousal)", AlertKind.Hypoarousal);
+		}
+		else
+		{
+			FireAlert(sample, $"{prefix}: RMSSD dropped ≥50% below baseline", AlertKind.Hyperarousal);
+		}
+	}
+
+	private void FireAlert(HrvSample sample, string reason, AlertKind kind = AlertKind.Hyperarousal)
 	{
 		var payload = new AlertPayload(
 			sample.Timestamp,
 			reason,
 			sample.Rmssd,
-			sample.BaselineRmssd);
+			sample.BaselineRmssd,
+			kind);
 		AlertFired?.Invoke(payload);
 	}
 

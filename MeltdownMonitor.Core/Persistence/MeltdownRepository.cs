@@ -95,7 +95,8 @@ public class MeltdownRepository : IDisposable
 				ts                  INTEGER PRIMARY KEY,
 				trigger_reason      TEXT    NOT NULL,
 				rmssd_at_trigger    REAL,
-				baseline_at_trigger REAL
+				baseline_at_trigger REAL,
+				kind                TEXT
 			);
 			CREATE TABLE IF NOT EXISTS annotations (
 				ts    INTEGER PRIMARY KEY,
@@ -111,6 +112,20 @@ public class MeltdownRepository : IDisposable
 
 		// Migrate: add extended HRV columns to hrv_samples if this is an older database
 		MigrateHrvSamples();
+		// Migrate: add the alert-kind column to alerts if this is an older database
+		MigrateAlerts();
+	}
+
+	private void MigrateAlerts()
+	{
+		// Nullable, no default: existing rows read back as null → AlertKind.Hyperarousal (the
+		// original, and only, kind before the 2026-06-01 hypoarousal work).
+		if (!GetColumnNames("alerts").Contains("kind"))
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = "ALTER TABLE alerts ADD COLUMN kind TEXT";
+			cmd.ExecuteNonQuery();
+		}
 	}
 
 	private void MigrateHrvSamples()
@@ -226,15 +241,52 @@ public class MeltdownRepository : IDisposable
 		{
 			using var cmd = _connection.CreateCommand();
 			cmd.CommandText = """
-				INSERT OR IGNORE INTO alerts (ts, trigger_reason, rmssd_at_trigger, baseline_at_trigger)
-				VALUES ($ts, $reason, $rmssd, $baseline)
+				INSERT OR IGNORE INTO alerts (ts, trigger_reason, rmssd_at_trigger, baseline_at_trigger, kind)
+				VALUES ($ts, $reason, $rmssd, $baseline, $kind)
 				""";
 			cmd.Parameters.AddWithValue("$ts", alert.Timestamp.ToUnixTimeMilliseconds());
 			cmd.Parameters.AddWithValue("$reason", alert.TriggerReason);
 			cmd.Parameters.AddWithValue("$rmssd", alert.RmssdAtTrigger);
 			cmd.Parameters.AddWithValue("$baseline", alert.BaselineAtTrigger);
+			cmd.Parameters.AddWithValue("$kind", alert.Kind.ToString());
 			cmd.ExecuteNonQuery();
 		}
+	}
+
+	/// <summary>
+	/// Reads persisted alerts in the window via a short-lived read-only connection, mirroring
+	/// <see cref="ReadAnnotations"/>. The <c>kind</c> column is parsed case-insensitively; a null
+	/// (pre-migration row) or unrecognised value reads back as <see cref="AlertKind.Hyperarousal"/>.
+	/// </summary>
+	public static IReadOnlyList<AlertPayload> ReadAlerts(string databasePath, DateTimeOffset from, DateTimeOffset to)
+	{
+		using var conn = new SqliteConnection($"Data Source={databasePath};Mode=ReadOnly");
+		conn.Open();
+		using var cmd = conn.CreateCommand();
+		cmd.CommandText = """
+			SELECT ts, trigger_reason, rmssd_at_trigger, baseline_at_trigger, kind
+			FROM alerts
+			WHERE ts >= $from AND ts <= $to
+			ORDER BY ts
+			""";
+		cmd.Parameters.AddWithValue("$from", from.ToUnixTimeMilliseconds());
+		cmd.Parameters.AddWithValue("$to", to.ToUnixTimeMilliseconds());
+
+		var results = new List<AlertPayload>();
+		using var reader = cmd.ExecuteReader();
+		while (reader.Read())
+		{
+			var ts = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0));
+			string reason = reader.GetString(1);
+			double rmssd = reader.IsDBNull(2) ? 0.0 : reader.GetDouble(2);
+			double baseline = reader.IsDBNull(3) ? 0.0 : reader.GetDouble(3);
+			AlertKind kind = !reader.IsDBNull(4) && Enum.TryParse(reader.GetString(4), ignoreCase: true, out AlertKind parsed)
+				? parsed
+				: AlertKind.Hyperarousal;
+			results.Add(new AlertPayload(ts, reason, rmssd, baseline, kind));
+		}
+
+		return results;
 	}
 
 	public void InsertAnnotation(DateTimeOffset timestamp, AnnotationLabel label, string? notes = null)
