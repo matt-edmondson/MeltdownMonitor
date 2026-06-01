@@ -918,6 +918,15 @@ public sealed class StatusWindow : IDisposable
 		ImGui.SameLine();
 		HelpMarker("How much history the live charts show. Higher = longer trends visible; lower = more recent detail.");
 
+		int trail = _settings.RegulationTrailLength;
+		if (ImGuiWidgets.Knob("Trail (pts)", ref trail, 12, 240, format: "%d pts", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.RegulationTrailLength = trail;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How many recent readings the Regulation Field comet trail shows. Higher = longer tail; lower = shorter.");
+
 		// ── Detection thresholds ─────────────────────────────────────────
 		// Fraction knobs work in percent (0..100) and divide on assign so the
 		// %% formatter renders sane values; the underlying field stays a fraction.
@@ -1346,6 +1355,7 @@ public sealed class StatusWindow : IDisposable
 				_settings.HrvTuning = new HrvTuning();
 				_settings.HrvEmitIntervalSeconds = 5.0;
 				_settings.SparklineWindowMinutes = 60;
+				_settings.RegulationTrailLength = 48;
 				_settings.Save();
 				_pipeline.ReseedBaseline();
 				ImGui.CloseCurrentPopup();

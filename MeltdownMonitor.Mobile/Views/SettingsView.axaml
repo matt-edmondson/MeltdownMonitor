@@ -38,6 +38,19 @@
             </StackPanel>
 
             <StackPanel Spacing="6">
+                <TextBlock Text="Regulation field" FontWeight="SemiBold" />
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Comet trail length" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding RegulationTrailLength, StringFormat='{}{0} pts'}" />
+                </Grid>
+                <Slider Minimum="12" Maximum="240"
+                        Value="{Binding RegulationTrailLength, Mode=TwoWay}" />
+                <TextBlock Text="How many recent readings the comet trail shows."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
                 <TextBlock Text="Sensitivity" FontWeight="SemiBold" />
                 <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="RMSSD drop to warn" />

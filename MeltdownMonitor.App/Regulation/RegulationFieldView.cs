@@ -17,7 +17,6 @@ namespace MeltdownMonitor.App.Regulation;
 /// </summary>
 public sealed class RegulationFieldView : IDisposable
 {
-	private const int TrailLength = 48;          // ~last few minutes at the emit cadence
 	private const int RrBufferLength = 160;      // recent RR intervals for the live trace texture
 	private const int MinRrForJitter = 8;        // below this, draw a smooth (flat) trace
 	private const int LobeSegments = 96;
@@ -30,8 +29,7 @@ public sealed class RegulationFieldView : IDisposable
 
 	private readonly Pipeline _pipeline;
 	private readonly object _lock = new();
-	private readonly TrailPoint[] _trail = new TrailPoint[TrailLength];
-	private int _trailCount;
+	private readonly List<TrailPoint> _trail = [];
 	private readonly double[] _rr = new double[RrBufferLength];
 	private int _rrCount;
 	private long _beatsAppended;   // total non-artifact beats ever appended; the absolute timeline the texture scrolls along
@@ -93,15 +91,11 @@ public sealed class RegulationFieldView : IDisposable
 			_segStart = now;
 			_lastArrival = now;
 
-			var point = new TrailPoint(now, reading);
-			if (_trailCount < TrailLength)
+			_trail.Add(new TrailPoint(now, reading));
+			int cap = _pipeline.RegulationTrailLength;
+			while (_trail.Count > cap)
 			{
-				_trail[_trailCount++] = point;
-			}
-			else
-			{
-				Array.Copy(_trail, 1, _trail, 0, TrailLength - 1);
-				_trail[^1] = point;
+				_trail.RemoveAt(0);
 			}
 		}
 	}
@@ -136,8 +130,8 @@ public sealed class RegulationFieldView : IDisposable
 	{
 		lock (_lock)
 		{
-			var trail = new RegulationReading[_trailCount];
-			for (int i = 0; i < _trailCount; i++)
+			var trail = new RegulationReading[_trail.Count];
+			for (int i = 0; i < _trail.Count; i++)
 			{
 				trail[i] = _trail[i].Reading;
 			}

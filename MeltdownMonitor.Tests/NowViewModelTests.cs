@@ -292,6 +292,62 @@ public class NowViewModelTests
 		Assert.IsFalse(vm.IsTrendVisible);
 	}
 
+	[TestMethod]
+	public void Trail_CapsAtProvidedLength()
+	{
+		var vm = new NowViewModel(trailLengthProvider: () => 20);
+		for (int i = 0; i < 50; i++)
+		{
+			vm.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+		}
+
+		Assert.AreEqual(20, vm.RegulationTrail.Count);
+	}
+
+	[TestMethod]
+	public void Trail_NullProvider_CapsAtDefault48()
+	{
+		var vm = new NowViewModel();
+		for (int i = 0; i < 100; i++)
+		{
+			vm.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+		}
+
+		Assert.AreEqual(48, vm.RegulationTrail.Count);
+	}
+
+	[TestMethod]
+	public void Trail_LoweringCap_TrimsKeepingNewest()
+	{
+		int cap = 40;
+		var vm = new NowViewModel(trailLengthProvider: () => cap);
+		for (int i = 0; i < 40; i++)
+		{
+			vm.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+		}
+
+		cap = 20;
+		vm.OnReadingUpdated(new RegulationReading(0.9, 1.0, 1.0, 0.5, 0.0)); // newest, distinct
+
+		Assert.AreEqual(20, vm.RegulationTrail.Count);
+		Assert.AreEqual(0.9, vm.RegulationTrail[^1].Index, 1e-9, "the newest reading must be kept");
+	}
+
+	[TestMethod]
+	public void Trail_ClampsProviderToValidRange()
+	{
+		var tiny = new NowViewModel(trailLengthProvider: () => 3);     // below 12 floor
+		var huge = new NowViewModel(trailLengthProvider: () => 99999); // above 240 ceiling
+		for (int i = 0; i < 300; i++)
+		{
+			tiny.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+			huge.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+		}
+
+		Assert.AreEqual(12, tiny.RegulationTrail.Count, "below-floor cap clamps to 12");
+		Assert.AreEqual(240, huge.RegulationTrail.Count, "above-ceiling cap clamps to 240");
+	}
+
 	private static HrvSample Sample(double rmssd, double meanHr, double baseline, DetectorState state) =>
 		new(
 			DateTimeOffset.UtcNow,

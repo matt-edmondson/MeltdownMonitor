@@ -63,7 +63,9 @@ public static class IosCompositionRoot
 		_healthStore = new HealthKitStore();
 		var exporter = new ShareSheetDatabaseExporter();
 
-		_now = new NowViewModel(onAnnotate: RecordAnnotationAsync);
+		_now = new NowViewModel(
+			onAnnotate: RecordAnnotationAsync,
+			trailLengthProvider: () => settings.RegulationTrailLength);
 		_history = new HistoryViewModel();
 
 		var settingsTab = new SettingsViewModel(
