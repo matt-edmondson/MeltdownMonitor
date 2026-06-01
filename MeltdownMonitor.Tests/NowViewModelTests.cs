@@ -446,6 +446,24 @@ public class NowViewModelTests
 		Assert.AreEqual(360, vm.RmssdTimestamps.Count, "trimmed to exactly the 360-point cap");
 	}
 
+	[TestMethod]
+	public void HypoarousalDynamics_IsSteady_ByDefault()
+	{
+		var vm = new NowViewModel();
+		Assert.AreEqual(RegulationDynamics.Steady, vm.HypoarousalDynamics);
+	}
+
+	[TestMethod]
+	public void OnHypoarousalDynamicsUpdated_PublishesAFreshValue()
+	{
+		var vm = new NowViewModel();
+		var rising = new RegulationDynamics(0.03, RegulationTrend.Escalating, 0.6);
+
+		vm.OnHypoarousalDynamicsUpdated(rising);
+
+		Assert.AreEqual(rising, vm.HypoarousalDynamics);
+	}
+
 	private static HrvSample Sample(double rmssd, double meanHr, double baseline, DetectorState state) =>
 		new(
 			DateTimeOffset.UtcNow,

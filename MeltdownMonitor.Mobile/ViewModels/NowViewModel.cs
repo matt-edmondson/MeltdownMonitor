@@ -36,6 +36,7 @@ public sealed class NowViewModel : ViewModelBase
 
 	private DetectorState _state = DetectorState.Idle;
 	private bool _isShutdown;
+	private RegulationDynamics _hypoarousalDynamics = RegulationDynamics.Steady;
 	private bool _isColdCalibrated;
 	private bool _isPaused;
 	private double _heartRate;
@@ -103,6 +104,14 @@ public sealed class NowViewModel : ViewModelBase
 				Raise(nameof(IsTrendVisible));
 			}
 		}
+	}
+
+	/// <summary>Velocity/trend of the Hypoarousal scalar — the rate of approach to collapse —
+	/// for the Regulation Field's collapse arrow. Bound to <c>RegulationField.HypoarousalDynamics</c>.</summary>
+	public RegulationDynamics HypoarousalDynamics
+	{
+		get => _hypoarousalDynamics;
+		private set => SetField(ref _hypoarousalDynamics, value);
 	}
 
 	/// <summary>Human-readable trend word for the readout.</summary>
@@ -420,6 +429,7 @@ public sealed class NowViewModel : ViewModelBase
 		pipeline.SampleUpdated += OnSampleUpdated;
 		pipeline.StateChanged += OnStateChanged;
 		pipeline.HypoarousalStateChanged += OnHypoarousalStateChanged;
+		pipeline.HypoarousalDynamicsUpdated += OnHypoarousalDynamicsUpdated;
 		pipeline.ReadingUpdated += OnReadingUpdated;
 		pipeline.DynamicsUpdated += OnDynamicsUpdated;
 		pipeline.RecoveryUpdated += OnRecoveryUpdated;
@@ -429,6 +439,7 @@ public sealed class NowViewModel : ViewModelBase
 		_coldCalibratedProvider = () => pipeline.IsColdCalibrated;
 		OnStateChanged(pipeline.CurrentState);
 		OnHypoarousalStateChanged(pipeline.CurrentHypoarousalState);
+		OnHypoarousalDynamicsUpdated(pipeline.LatestHypoarousalDynamics);
 		OnContactChanged(pipeline.LatestContact);
 
 		// Reflect a battery level the source may have already reported before we subscribed.
@@ -485,6 +496,10 @@ public sealed class NowViewModel : ViewModelBase
 	/// </summary>
 	public void OnHypoarousalStateChanged(HypoarousalState state) =>
 		RunOnUi(() => IsShutdown = state == HypoarousalState.LowArousal);
+
+	/// <summary>Reflect the Hypoarousal-scalar velocity from <see cref="Pipeline.HypoarousalDynamicsUpdated"/>.</summary>
+	public void OnHypoarousalDynamicsUpdated(RegulationDynamics dynamics) =>
+		RunOnUi(() => HypoarousalDynamics = dynamics);
 
 	/// <summary>
 	/// Push a fresh sensor battery level into the VM. Wired to
