@@ -737,7 +737,7 @@ public sealed class StatusWindow : IDisposable
 			ImPlot.SetupAxisLimits(ImAxis.Y1, 0.0, 1.0, ImPlotCond.Always);
 			if (contact.Length >= 2)
 			{
-				ImPlot.PlotLine("Sensor contact (1=OK 0=no contact)", ref contact[0], contact.Length);
+				ImPlot.PlotStairs("Sensor contact (1=OK 0=no contact)", ref contact[0], contact.Length);
 			}
 			ImPlot.EndPlot();
 		}
