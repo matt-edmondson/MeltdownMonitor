@@ -44,8 +44,8 @@ public sealed class RegulationField : Control
 		AvaloniaProperty.Register<RegulationField, RegulationReading>(
 			nameof(Reading), new RegulationReading(0.0, 1.0, 0.0, 0.5, 0.0));
 
-	public static readonly StyledProperty<IReadOnlyList<RegulationReading>?> TrailProperty =
-		AvaloniaProperty.Register<RegulationField, IReadOnlyList<RegulationReading>?>(nameof(Trail));
+	public static readonly StyledProperty<IReadOnlyList<RegulationTrailPoint>?> TrailProperty =
+		AvaloniaProperty.Register<RegulationField, IReadOnlyList<RegulationTrailPoint>?>(nameof(Trail));
 
 	public static readonly StyledProperty<Color> StateColorProperty =
 		AvaloniaProperty.Register<RegulationField, Color>(
@@ -81,9 +81,10 @@ public sealed class RegulationField : Control
 		set => SetValue(ReadingProperty, value);
 	}
 
-	/// <summary>Recent readings, oldest first, drawn as a fading comet trail
-	/// along the major axis.</summary>
-	public IReadOnlyList<RegulationReading>? Trail
+	/// <summary>Recent trail points, oldest first, drawn as a fading comet trail along the
+	/// major axis. Each carries the detector state it was captured under so the segment keeps
+	/// its original colour rather than recolouring to the current state.</summary>
+	public IReadOnlyList<RegulationTrailPoint>? Trail
 	{
 		get => GetValue(TrailProperty);
 		set => SetValue(TrailProperty, value);
@@ -232,15 +233,18 @@ public sealed class RegulationField : Control
 		for (int i = 0; i < trail.Count - 1; i++)
 		{
 			double frac = i / (double)(trail.Count - 1);
-			Vector2 p = LemniscateGeometry.MarkerPoint((float)trail[i].Index, centre, halfWidth);
+			Vector2 p = LemniscateGeometry.MarkerPoint((float)trail[i].Reading.Index, centre, halfWidth);
 			double radius = 1.5 + (3.0 * frac);
+			// Each point keeps the colour of the state it was captured under, so the trail
+			// records the journey through states rather than recolouring to the current one.
+			Color stateCol = MeltdownMonitor.Mobile.StateColors.ColorFor(trail[i].State);
 			// Leading edge (newest, frac->1) brightens with speed and tints by trend so the
-			// comet visibly "leans" the way arousal is heading; the tail stays the state colour.
+			// comet visibly "leans" the way arousal is heading; older segments stay their own colour.
 			Color tint = Dynamics.Trend switch
 			{
-				RegulationTrend.Escalating => Lerp(StateColor, Peach, frac * _animator.DisplayedSpeed),
-				RegulationTrend.DeEscalating => Lerp(StateColor, Sky, frac * _animator.DisplayedSpeed),
-				_ => StateColor,
+				RegulationTrend.Escalating => Lerp(stateCol, Peach, frac * _animator.DisplayedSpeed),
+				RegulationTrend.DeEscalating => Lerp(stateCol, Sky, frac * _animator.DisplayedSpeed),
+				_ => stateCol,
 			};
 			double alpha = (0.5 + (0.3 * _animator.DisplayedSpeed)) * frac * confidence;
 			context.DrawEllipse(Brush(tint, alpha), null, P(p), radius, radius);

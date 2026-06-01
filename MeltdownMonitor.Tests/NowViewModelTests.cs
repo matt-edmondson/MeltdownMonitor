@@ -197,7 +197,7 @@ public class NowViewModelTests
 
 		Assert.AreEqual(0.42, vm.Reading.Index, 0.001);
 		Assert.AreEqual(1, vm.RegulationTrail.Count);
-		Assert.AreEqual(0.42, vm.RegulationTrail[^1].Index, 0.001);
+		Assert.AreEqual(0.42, vm.RegulationTrail[^1].Reading.Index, 0.001);
 	}
 
 	[TestMethod]
@@ -214,9 +214,9 @@ public class NowViewModelTests
 		Assert.IsTrue(vm.RegulationTrail.Count is > 0 and <= 48,
 			$"trail should be capped at 48, was {vm.RegulationTrail.Count}");
 		// Newest reading is retained at the end of the trail.
-		Assert.AreEqual(199 / 200.0, vm.RegulationTrail[^1].Index, 0.001);
+		Assert.AreEqual(199 / 200.0, vm.RegulationTrail[^1].Reading.Index, 0.001);
 		// Oldest retained entry is newer than the very first push (which fell off).
-		Assert.IsTrue(vm.RegulationTrail[0].Index > 0.0, "the oldest readings should have been trimmed");
+		Assert.IsTrue(vm.RegulationTrail[0].Reading.Index > 0.0, "the oldest readings should have been trimmed");
 	}
 
 	[TestMethod]
@@ -330,7 +330,25 @@ public class NowViewModelTests
 		vm.OnReadingUpdated(new RegulationReading(0.9, 1.0, 1.0, 0.5, 0.0)); // newest, distinct
 
 		Assert.AreEqual(20, vm.RegulationTrail.Count);
-		Assert.AreEqual(0.9, vm.RegulationTrail[^1].Index, 1e-9, "the newest reading must be kept");
+		Assert.AreEqual(0.9, vm.RegulationTrail[^1].Reading.Index, 1e-9, "the newest reading must be kept");
+	}
+
+	[TestMethod]
+	public void Trail_FreezesDetectorStateAtCaptureTime()
+	{
+		var vm = new NowViewModel();
+
+		vm.OnStateChanged(DetectorState.Warning);
+		vm.OnReadingUpdated(new RegulationReading(0.3, 1.0, 1.0, 0.5, 0.0));
+
+		vm.OnStateChanged(DetectorState.Alerting);
+		vm.OnReadingUpdated(new RegulationReading(0.6, 1.0, 1.0, 0.5, 0.0));
+
+		Assert.AreEqual(2, vm.RegulationTrail.Count);
+		Assert.AreEqual(DetectorState.Warning, vm.RegulationTrail[0].State,
+			"the first point must keep the state it was captured under");
+		Assert.AreEqual(DetectorState.Alerting, vm.RegulationTrail[1].State,
+			"the second point captures the later state");
 	}
 
 	[TestMethod]

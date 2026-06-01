@@ -23,7 +23,7 @@ public sealed class NowViewModel : ViewModelBase
 
 	private readonly ObservableCollection<double> _rmssdHistory = [];
 	private readonly ObservableCollection<double> _baselineHistory = [];
-	private readonly List<RegulationReading> _regulationTrail = [];
+	private readonly List<RegulationTrailPoint> _regulationTrail = [];
 
 	private readonly Func<Task>? _onConnect;
 	private readonly Func<Task>? _onDisconnect;
@@ -42,7 +42,7 @@ public sealed class NowViewModel : ViewModelBase
 	private ConnectionState _connection = ConnectionState.Disconnected;
 	private RegulationReading _reading = new(0.0, 1.0, 0.0, 0.5, 0.0);
 	private RegulationDynamics _dynamics = RegulationDynamics.Steady;
-	private IReadOnlyList<RegulationReading> _regulationTrailSnapshot = [];
+	private IReadOnlyList<RegulationTrailPoint> _regulationTrailSnapshot = [];
 	private bool _isAnnotationSheetOpen;
 	private string _annotationNotes = string.Empty;
 
@@ -107,9 +107,10 @@ public sealed class NowViewModel : ViewModelBase
 	/// <summary>Whether to show the trend readout — only when moving and the baseline is warm.</summary>
 	public bool IsTrendVisible => _dynamics.Trend != RegulationTrend.Steady && _reading.Confidence >= 0.999;
 
-	/// <summary>Recent readings (oldest first) drawn as the field's comet trail.
-	/// Replaced with a fresh snapshot on each update so the control re-renders.</summary>
-	public IReadOnlyList<RegulationReading> RegulationTrail
+	/// <summary>Recent trail points (oldest first) drawn as the field's comet trail, each
+	/// carrying the detector state it was captured under so segments keep their original
+	/// colour. Replaced with a fresh snapshot on each update so the control re-renders.</summary>
+	public IReadOnlyList<RegulationTrailPoint> RegulationTrail
 	{
 		get => _regulationTrailSnapshot;
 		private set => SetField(ref _regulationTrailSnapshot, value);
@@ -424,7 +425,9 @@ public sealed class NowViewModel : ViewModelBase
 		Reading = reading;
 		Raise(nameof(IsTrendVisible));
 
-		_regulationTrail.Add(reading);
+		// Capture the current detector state with the point so the segment keeps the
+		// colour it was drawn in, rather than recolouring as the state later advances.
+		_regulationTrail.Add(new RegulationTrailPoint(reading, _state));
 		int cap = Math.Clamp(_trailLengthProvider?.Invoke() ?? 48, 12, 2160);
 		while (_regulationTrail.Count > cap)
 		{

@@ -29,7 +29,7 @@ public sealed class RegulationFieldView : IDisposable
 
 	private readonly Pipeline _pipeline;
 	private readonly object _lock = new();
-	private readonly List<TrailPoint> _trail = [];
+	private readonly List<RegulationTrailPoint> _trail = [];
 	private readonly double[] _rr = new double[RrBufferLength];
 	private int _rrCount;
 	private long _beatsAppended;   // total non-artifact beats ever appended; the absolute timeline the texture scrolls along
@@ -52,8 +52,6 @@ public sealed class RegulationFieldView : IDisposable
 	private float _hrDisplay = 60f;          // eased HR for a smooth breathing cadence
 	private RrTexturePlayhead _playhead;     // free-running smooth scroll for the live RR texture
 	private float _arrowSpeed;               // eased displayed normalized speed for the velocity arrow
-
-	private readonly record struct TrailPoint(DateTimeOffset Time, RegulationReading Reading);
 
 	public RegulationFieldView(Pipeline pipeline)
 	{
@@ -91,7 +89,9 @@ public sealed class RegulationFieldView : IDisposable
 			_segStart = now;
 			_lastArrival = now;
 
-			_trail.Add(new TrailPoint(now, reading));
+			// Capture the detector state with the point so each segment keeps the colour it
+			// was drawn in, rather than the whole trail recolouring as the state advances.
+			_trail.Add(new RegulationTrailPoint(reading, sample.State));
 			int cap = _pipeline.RegulationTrailLength;
 			while (_trail.Count > cap)
 			{
@@ -126,15 +126,11 @@ public sealed class RegulationFieldView : IDisposable
 		}
 	}
 
-	private (RegulationReading from, RegulationReading to, DateTimeOffset segStart, double segDuration, RegulationReading[] trail, double[] rr, long beatsAppended) Snapshot()
+	private (RegulationReading from, RegulationReading to, DateTimeOffset segStart, double segDuration, RegulationTrailPoint[] trail, double[] rr, long beatsAppended) Snapshot()
 	{
 		lock (_lock)
 		{
-			var trail = new RegulationReading[_trail.Count];
-			for (int i = 0; i < _trail.Count; i++)
-			{
-				trail[i] = _trail[i].Reading;
-			}
+			var trail = _trail.ToArray();
 
 			var rr = new double[_rrCount];
 			Array.Copy(_rr, rr, _rrCount);
@@ -352,7 +348,7 @@ public sealed class RegulationFieldView : IDisposable
 		return dev;
 	}
 
-	private void DrawTrail(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading[] trail, RegulationReading disp, float confidence)
+	private void DrawTrail(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationTrailPoint[] trail, RegulationReading disp, float confidence)
 	{
 		if (trail.Length < 2)
 		{
@@ -362,12 +358,11 @@ public sealed class RegulationFieldView : IDisposable
 		// Map every trail reading to its 2D field position, using the same X = arousal index,
 		// Y = vagal tone mapping as the live marker.
 		float clamp = liveLobeHeight * MarkerYSpan;
-		Vector4 stateCol = MacchiatoPalette.State(_pipeline.CurrentState);
 		var pts = new Vector2[trail.Length];
 		for (int i = 0; i < trail.Length; i++)
 		{
-			Vector2 p = LemniscateGeometry.MarkerPoint((float)trail[i].Index, centre, halfWidth);
-			float yOff = ((float)trail[i].VariabilityQuality - 0.5f) * liveLobeHeight * MarkerYSpan;
+			Vector2 p = LemniscateGeometry.MarkerPoint((float)trail[i].Reading.Index, centre, halfWidth);
+			float yOff = ((float)trail[i].Reading.VariabilityQuality - 0.5f) * liveLobeHeight * MarkerYSpan;
 			p.Y += Math.Clamp(yOff, -clamp, clamp);
 			pts[i] = p;
 		}
@@ -390,6 +385,10 @@ public sealed class RegulationFieldView : IDisposable
 			Vector2 p2 = pts[i + 1];
 			Vector2 p3 = pts[Math.Min(count - 1, i + 2)];
 
+			// Each segment keeps the colour of the state it was captured under, so the trail
+			// records the journey through states rather than recolouring to the current one.
+			Vector4 segBase = MacchiatoPalette.State(trail[i].State);
+
 			Vector2 prev = p1;
 			for (int s = 1; s <= sub; s++)
 			{
@@ -398,13 +397,12 @@ public sealed class RegulationFieldView : IDisposable
 				float frac = (i + t) / (count - 1);
 				float width = 1f + (2.5f * frac);
 				// Leading edge (newest, frac->1) brightens with speed and tints by trend so the
-				// comet visibly "leans" the way arousal is heading; the tail stays the state colour.
-				// At _arrowSpeed == 0 (steady) this reduces to the original stateCol at 0.55*frac alpha.
+				// comet visibly "leans" the way arousal is heading; older segments keep their own colour.
 				Vector4 segCol = _pipeline.LatestDynamics.Trend switch
 				{
-					RegulationTrend.Escalating => MacchiatoPalette.Lerp(stateCol, MacchiatoPalette.Peach, frac * _arrowSpeed),
-					RegulationTrend.DeEscalating => MacchiatoPalette.Lerp(stateCol, MacchiatoPalette.Sky, frac * _arrowSpeed),
-					_ => stateCol,
+					RegulationTrend.Escalating => MacchiatoPalette.Lerp(segBase, MacchiatoPalette.Peach, frac * _arrowSpeed),
+					RegulationTrend.DeEscalating => MacchiatoPalette.Lerp(segBase, MacchiatoPalette.Sky, frac * _arrowSpeed),
+					_ => segBase,
 				};
 				float segAlpha = (0.55f + (0.3f * _arrowSpeed)) * frac * confidence;
 				draw.AddLine(prev, cur, Col(MacchiatoPalette.WithAlpha(segCol, segAlpha)), width);
