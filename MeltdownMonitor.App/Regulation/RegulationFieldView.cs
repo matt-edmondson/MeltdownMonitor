@@ -52,6 +52,7 @@ public sealed class RegulationFieldView : IDisposable
 	private float _hrDisplay = 60f;          // eased HR for a smooth breathing cadence
 	private RrTexturePlayhead _playhead;     // free-running smooth scroll for the live RR texture
 	private float _arrowSpeed;               // eased displayed normalized speed for the velocity arrow
+	private float _recoveryDisplay;          // eased recovery progress [0,1] for the gate arc
 	private float _drawScale = 1f;           // indicator size multiplier; grows with the field, never below 1
 
 	public RegulationFieldView(Pipeline pipeline)
@@ -197,13 +198,17 @@ public sealed class RegulationFieldView : IDisposable
 		var dynamics = _pipeline.LatestDynamics;
 		_arrowSpeed += ((float)dynamics.NormalizedSpeed - _arrowSpeed) * (1f - MathF.Exp(-dt * 6f));
 
+		// Ease the recovery progress so the gate arc sweeps smoothly between samples.
+		float recoveryTarget = (float)_pipeline.LatestRecovery.Overall;
+		_recoveryDisplay += (recoveryTarget - _recoveryDisplay) * (1f - MathF.Exp(-dt * 4f));
+
 		DrawLfHfHalo(draw, centre, halfWidth, disp, confidence);
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
 		DrawVagalAxis(draw, centre, markerYClamp, confidence);
 		DrawAxisHistograms(draw, origin, centre, halfWidth, labelClearHeight, markerYClamp, height, trail, confidence);
 		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, _playhead.Position, beatsAppended, confidence);
 		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, disp, confidence);
-		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, confidence);
+		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, _recoveryDisplay, confidence);
 		DrawMarker(draw, centre, halfWidth, liveLobeHeight, disp, confidence);
 		DrawVelocityArrow(draw, centre, halfWidth, liveLobeHeight, disp, dynamics, confidence);
 		DrawCrossover(draw, centre, confidence);
@@ -436,9 +441,9 @@ public sealed class RegulationFieldView : IDisposable
 		a.LfHfBalance + ((b.LfHfBalance - a.LfHfBalance) * t));
 
 	// During an active alert, mark where the arousal marker must fall back below to clear the
-	// Warning condition (the warm-side warning boundary). Recovery also needs the cooldown
-	// timer, so this is the metric target — "which way, and how far", not the whole story.
-	private void DrawRecoveryTarget(ImDrawListPtr draw, Vector2 centre, float halfWidth, float lobeHeight, float confidence)
+	// Warning condition (the warm-side warning boundary), and sweep a progress arc around the
+	// gate showing how close the body is to actually recovering (metrics back in band, then held).
+	private void DrawRecoveryTarget(ImDrawListPtr draw, Vector2 centre, float halfWidth, float lobeHeight, float recovery, float confidence)
 	{
 		if (_pipeline.CurrentState is not (DetectorState.Warning or DetectorState.Alerting))
 		{
@@ -450,8 +455,18 @@ public sealed class RegulationFieldView : IDisposable
 		uint goalDim = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Green, 0.45f * confidence));
 
 		float ring = (11f + (2f * MathF.Sin(_animTime * 3f))) * _drawScale;
-		draw.AddCircle(gate, ring, goal, 24, 2f * _drawScale);
+		draw.AddCircle(gate, ring, goalDim, 24, 1.5f * _drawScale);
 		draw.AddCircleFilled(gate, 2.5f * _drawScale, goal);
+
+		// Two-stage recovery progress sweeping clockwise from 12 o'clock around the gate.
+		float prog = Math.Clamp(recovery, 0f, 1f);
+		DrawArc(draw, gate, ring + (3f * _drawScale), prog, goal, 2.5f * _drawScale);
+		if (prog > 0.005f)
+		{
+			string pct = $"{prog * 100:F0}%";
+			Vector2 ps = ImGui.CalcTextSize(pct);
+			draw.AddText(new Vector2(gate.X - (ps.X * 0.5f), gate.Y + ring + (4f * _drawScale)), goal, pct);
+		}
 
 		float ay = gate.Y - (lobeHeight * 0.5f) - (6f * _drawScale);
 		draw.AddTriangleFilled(
@@ -461,6 +476,30 @@ public sealed class RegulationFieldView : IDisposable
 
 		Vector2 lbl = ImGui.CalcTextSize("RECOVER");
 		draw.AddText(new Vector2(gate.X - (lbl.X * 0.5f), ay - ImGui.GetTextLineHeight() - 3f), goalDim, "RECOVER");
+	}
+
+	// A circular progress arc, clockwise from 12 o'clock, drawn as connected segments — matches
+	// the manual point-and-AddLine idiom the lemniscate trace uses rather than path helpers.
+	private static void DrawArc(ImDrawListPtr draw, Vector2 centre, float radius, float fraction, uint col, float thickness)
+	{
+		fraction = Math.Clamp(fraction, 0f, 1f);
+		if (fraction <= 0.005f)
+		{
+			return;
+		}
+
+		const int maxSegments = 48;
+		int segments = Math.Max(1, (int)MathF.Ceiling(maxSegments * fraction));
+		float a0 = -MathF.PI / 2f;
+		float sweep = fraction * MathF.Tau;
+		Vector2 prev = centre + (new Vector2(MathF.Cos(a0), MathF.Sin(a0)) * radius);
+		for (int i = 1; i <= segments; i++)
+		{
+			float a = a0 + (sweep * i / segments);
+			Vector2 p = centre + (new Vector2(MathF.Cos(a), MathF.Sin(a)) * radius);
+			draw.AddLine(prev, p, col, thickness);
+			prev = p;
+		}
 	}
 
 	private static Vector2 MarkerScreenPos(Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp)
@@ -659,7 +698,9 @@ public sealed class RegulationFieldView : IDisposable
 			RegulationTrend.DeEscalating => $"v easing {dyn.Velocity:+0.00;-0.00}/s",
 			_ => "- steady",
 		};
-		ImGui.Text($"HR {s.MeanHr:F0} bpm    RMSSD {s.Rmssd:F0} ms ({rel})    {_pipeline.CurrentState}    {trend}");
+		var recovery = _pipeline.LatestRecovery;
+		string rec = recovery.IsActive ? $"    recovery {recovery.Overall * 100:F0}%" : "";
+		ImGui.Text($"HR {s.MeanHr:F0} bpm    RMSSD {s.Rmssd:F0} ms ({rel})    {_pipeline.CurrentState}    {trend}{rec}");
 	}
 
 	private static void DrawCalibratingOverlay(ImDrawListPtr draw, Vector2 centre, float confidence)

@@ -44,6 +44,23 @@ public class NowViewModelTests
 	}
 
 	[TestMethod]
+	public void OnRecoveryUpdated_SurfacesRecoveryReadout()
+	{
+		var vm = new NowViewModel();
+		Assert.IsFalse(vm.IsRecoveryVisible, "No episode → nothing to recover from.");
+
+		// Metrics in band, 50% through the hold → two-stage Overall of 0.75.
+		vm.OnRecoveryUpdated(new RecoveryProgress(MetricProximity: 1.0, HoldProgress: 0.5, IsActive: true));
+
+		Assert.IsTrue(vm.IsRecoveryVisible);
+		Assert.AreEqual(0.75, vm.RecoveryFraction, 1e-9);
+		StringAssert.Contains(vm.RecoveryText, "75");
+
+		vm.OnRecoveryUpdated(RecoveryProgress.Inactive);
+		Assert.IsFalse(vm.IsRecoveryVisible);
+	}
+
+	[TestMethod]
 	public void StateLabel_ReflectsPauseOverride()
 	{
 		var vm = new NowViewModel();
