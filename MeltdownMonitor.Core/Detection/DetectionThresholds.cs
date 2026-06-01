@@ -63,17 +63,20 @@ public record DetectionThresholds
 
 	/// <summary>
 	/// Whether LF/HF corroboration can veto a Warning or only strengthen it. Default
-	/// <see cref="LfHfCorroborationMode.Veto"/> preserves prior behaviour; the 2026-06-01 clinical
-	/// audit recommends <see cref="LfHfCorroborationMode.Additive"/> so the laggy 5-minute LF/HF
-	/// signal can't suppress a core-satisfied early Warning. Only consulted when
+	/// <see cref="LfHfCorroborationMode.Additive"/> per the 2026-06-01 clinical audit: the laggy
+	/// 5-minute LF/HF window must not suppress a core-satisfied early Warning (a missed early
+	/// warning is the more harmful error for an awareness tool). <see cref="LfHfCorroborationMode.Veto"/>
+	/// is the more specific but more suppressive prior behaviour. Only consulted when
 	/// <see cref="UseLfHfCorroboration"/> is true.
 	/// </summary>
-	public LfHfCorroborationMode LfHfCorroborationMode { get; init; } = LfHfCorroborationMode.Veto;
+	public LfHfCorroborationMode LfHfCorroborationMode { get; init; } = LfHfCorroborationMode.Additive;
 
 	/// <summary>
 	/// Consecutive in-contact samples with an immediate-severe RMSSD drop required before the
-	/// immediate alert fires. Default 1 (fire on the first qualifying sample). 2 rejects a
-	/// transient regularisation (a breath-hold, Valsalva) at the cost of ~one sample of latency.
+	/// immediate alert fires. Default 2 per the 2026-06-01 clinical audit: the immediate ≥50%-drop
+	/// path is the most false-positive-prone (a transient RSA regularisation — breath-hold, Valsalva —
+	/// can momentarily collapse RMSSD), so two consecutive in-contact samples (~10 s) reject those at
+	/// the cost of ~one sample of latency. 1 fires on the first qualifying sample (prior behaviour).
 	/// </summary>
-	public int SevereDropConfirmationCount { get; init; } = 1;
+	public int SevereDropConfirmationCount { get; init; } = 2;
 }

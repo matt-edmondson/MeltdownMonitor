@@ -18,6 +18,11 @@ public class DetectionStateMachineTests
 		RmssdRecoveryDropFraction = 0.10,
 		HrRecoveryRiseFraction = 0.05,
 		RecoveryHoldDuration = TimeSpan.FromSeconds(10),
+		// Pin the pre-flip mechanics so these state-machine tests stay deterministic
+		// after the production defaults move to clinical best practice (Additive / 2).
+		// Veto + count 1 = the single-sample / veto behaviour these tests exercise.
+		LfHfCorroborationMode = LfHfCorroborationMode.Veto,
+		SevereDropConfirmationCount = 1,
 	};
 
 	private static HrvSample NormalSample(
@@ -406,7 +411,7 @@ public class DetectionStateMachineTests
 	[TestMethod]
 	public void VetoMode_LfHfNotElevated_SuppressesWarning()
 	{
-		var detector = new DysregulationDetector(FastThresholds); // default LfHfCorroborationMode.Veto
+		var detector = new DysregulationDetector(FastThresholds); // fixture pins LfHfCorroborationMode.Veto
 		var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 		detector.Process(NormalSample(start), baselineIsWarm: true);
 
@@ -438,15 +443,29 @@ public class DetectionStateMachineTests
 	}
 
 	[TestMethod]
-	public void SevereDropConfirmation_DefaultOne_FiresOnFirstSample()
+	public void SevereDropConfirmation_One_FiresOnFirstSample()
 	{
-		var detector = new DysregulationDetector(FastThresholds); // SevereDropConfirmationCount default 1
+		var detector = new DysregulationDetector(FastThresholds); // fixture pins SevereDropConfirmationCount 1
 		var start = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 		detector.Process(NormalSample(start), baselineIsWarm: true);
 
 		var state = detector.Process(SeverelySample(start.AddSeconds(5)), baselineIsWarm: true);
 
 		Assert.AreEqual(DetectorState.Alerting, state);
+	}
+
+	[TestMethod]
+	public void ProductionDefaults_FollowClinicalBestPractice()
+	{
+		// The 2026-06-01 clinical audit flipped these defaults from preserve-today's-behaviour
+		// toward clinical best practice: LF/HF must not veto a core-satisfied early Warning, and
+		// the false-positive-prone immediate-severe path needs two consecutive in-contact samples.
+		var defaults = new DetectionThresholds();
+
+		Assert.AreEqual(LfHfCorroborationMode.Additive, defaults.LfHfCorroborationMode,
+			"LF/HF should strengthen confidence, not veto an early Warning (its 5-minute window lags onset).");
+		Assert.AreEqual(2, defaults.SevereDropConfirmationCount,
+			"Two consecutive severe samples reject a transient breath-hold/Valsalva RMSSD collapse.");
 	}
 
 	[TestMethod]

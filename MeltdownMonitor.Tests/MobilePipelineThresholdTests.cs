@@ -39,8 +39,14 @@ public class MobilePipelineThresholdTests
 			State: DetectorState.Idle);
 
 		// User lowers the severe-drop threshold in Settings AFTER the pipeline
-		// (and its detector) were constructed.
-		settings.Thresholds = settings.Thresholds with { RmssdAlertingDropFraction = 0.05 };
+		// (and its detector) were constructed. Pin SevereDropConfirmationCount = 1 so
+		// the single qualifying sample below fires immediately — this test exercises
+		// live threshold reading, not the (default 2) severe-confirmation mechanic.
+		settings.Thresholds = settings.Thresholds with
+		{
+			RmssdAlertingDropFraction = 0.05,
+			SevereDropConfirmationCount = 1,
+		};
 
 		bool alertFired = false;
 		pipeline.AlertFired += _ => alertFired = true;
