@@ -84,4 +84,37 @@ public class RrArtifactFilterTests
 		// (still within absolute bounds) and should be accepted.
 		Assert.IsFalse(filter.IsArtifact(400));
 	}
+
+	[TestMethod]
+	public void SustainedRegimeShift_RecoversAfterConsecutiveRejections()
+	{
+		var filter = new RrArtifactFilter();
+		// Establish a stable ~800ms median.
+		filter.IsArtifact(800);
+		filter.IsArtifact(810);
+		filter.IsArtifact(790);
+
+		// An abrupt sustained drop to 590ms (≈26% step, in absolute bounds). The first few
+		// are rejected; after MaxConsecutiveRejections (4) the filter re-seeds and accepts.
+		Assert.IsTrue(filter.IsArtifact(590), "1st rejected");
+		Assert.IsTrue(filter.IsArtifact(590), "2nd rejected");
+		Assert.IsTrue(filter.IsArtifact(590), "3rd rejected");
+		Assert.IsFalse(filter.IsArtifact(590), "4th accepted — regime shift, median re-seeded");
+
+		// New level is now the baseline; subsequent 590s are clean.
+		Assert.IsFalse(filter.IsArtifact(590));
+	}
+
+	[TestMethod]
+	public void LoneEctopic_StillRejected_AfterRegimeShiftLogicAdded()
+	{
+		var filter = new RrArtifactFilter();
+		filter.IsArtifact(800);
+		filter.IsArtifact(810);
+		filter.IsArtifact(790);
+		Assert.IsTrue(filter.IsArtifact(400), "A single ectopic is still rejected.");
+		// A clean beat resets the streak, so the next ectopic is again rejected.
+		Assert.IsFalse(filter.IsArtifact(805));
+		Assert.IsTrue(filter.IsArtifact(400));
+	}
 }
