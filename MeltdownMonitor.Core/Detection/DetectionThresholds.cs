@@ -79,4 +79,12 @@ public record DetectionThresholds
 	/// the cost of ~one sample of latency. 1 fires on the first qualifying sample (prior behaviour).
 	/// </summary>
 	public int SevereDropConfirmationCount { get; init; } = 2;
+
+	/// <summary>
+	/// Tuning for the <see cref="HypoarousalDetector"/> — the low-arousal/shutdown edge (audit A(b)).
+	/// Nested here so the whole detection configuration travels and serialises as one object and the
+	/// pipelines can wire the detector to live edits via <c>Thresholds.Hypoarousal</c>. The
+	/// dysregulation detector ignores it.
+	/// </summary>
+	public HypoarousalThresholds Hypoarousal { get; init; } = new();
 }

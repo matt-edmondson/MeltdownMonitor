@@ -22,12 +22,17 @@ public sealed class Pipeline : IDisposable
 	private readonly ShortWindowHrvCalculator _hrv = new();
 	private readonly BaselineHrvTracker _baseline = new();
 	private readonly DysregulationDetector _detector;
+	private readonly HypoarousalDetector _hypoDetector;
 	private readonly RegulationVelocityTracker _velocity = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _runTask;
 
 	public DetectorState CurrentState => _detector.State;
+
+	/// <summary>Current low-arousal/shutdown state — a peer signal to <see cref="CurrentState"/>.</summary>
+	public HypoarousalState CurrentHypoarousalState => _hypoDetector.State;
+
 	public HrvSample? LatestSample { get; private set; }
 
 	/// <summary>Latest sensor battery level (0–100), or null until the source reports one.</summary>
@@ -60,6 +65,10 @@ public sealed class Pipeline : IDisposable
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<DetectorState>? StateChanged;
+
+	/// <summary>Fires when the low-arousal/shutdown state changes, so the UI can render collapse
+	/// distinctly from the cool REST lobe.</summary>
+	public event Action<HypoarousalState>? HypoarousalStateChanged;
 
 	/// <summary>Fires when the sensor reports a fresh battery level (design: BLE
 	/// Battery Service 0x180F). Only ever raised when the injected source
@@ -95,6 +104,10 @@ public sealed class Pipeline : IDisposable
 		_detector = new DysregulationDetector(() => settings.Thresholds);
 		_detector.AlertFired += OnAlertFired;
 		_detector.StateChanged += OnStateChanged;
+
+		_hypoDetector = new HypoarousalDetector(() => settings.Thresholds.Hypoarousal);
+		_hypoDetector.AlertFired += OnAlertFired;
+		_hypoDetector.StateChanged += s => HypoarousalStateChanged?.Invoke(s);
 
 		// Battery and contact are optional source capabilities — wire each only when supported.
 		if (source is IBatterySource batterySource)
@@ -239,9 +252,17 @@ public sealed class Pipeline : IDisposable
 				continue;
 			}
 
-			_baseline.Update(sample, LatestContact);
+			// Freeze the baseline during a hypoarousal episode so it can't re-normalise toward the
+			// shutdown and blind the detectors. (Hyperarousal episodes are frozen inside Update via
+			// sample.State.) Gated on the prior-sample episode state, which keeps the dysregulation
+			// detector's IsWarm timing identical; a one-sample lag is negligible for a minutes-long EWMA.
+			if (!_hypoDetector.IsEpisodeActive)
+			{
+				_baseline.Update(sample, LatestContact);
+			}
 
 			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact);
+			_hypoDetector.Process(sample, _baseline.IsWarm, LatestContact);
 
 			var finalSample = sample with
 			{
