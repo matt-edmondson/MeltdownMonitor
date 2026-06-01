@@ -12,9 +12,11 @@ changes, update both.
 **Body.** MeltdownMonitor is an informational wellness tool. It is not a
 medical device and does not diagnose, treat, or manage any condition. It
 estimates short-window heart-rate variability from a Polar chest strap and
-tells you when your own baseline shifts — the rest is up to you. If
-something feels wrong physically or mentally, talk to a qualified
-clinician, not an app.
+tells you when your own baseline shifts — the rest is up to you. It watches
+only one signal, so it can miss things — especially shutdown, freeze, or
+dissociation, which may not change your HRV at all. A calm screen is never a
+guarantee. Trust your own felt sense over the app. If something feels wrong
+physically or mentally, talk to a qualified clinician, not an app.
 
 **Privacy block.** Your data stays on this device. The app reads recent
 heart-rate samples from Apple Health only after you grant permission, and
