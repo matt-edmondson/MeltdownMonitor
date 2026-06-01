@@ -30,6 +30,8 @@ public sealed class NowViewModel : ViewModelBase
 	private readonly Func<Task>? _onDisconnect;
 	private readonly Func<AnnotationLabel, string?, Task>? _onAnnotate;
 	private readonly Func<int>? _trailLengthProvider;
+	private readonly Func<double>? _jitterExaggerationProvider;
+	private readonly Func<double>? _lobeThicknessProvider;
 
 	private DetectorState _state = DetectorState.Idle;
 	private bool _isPaused;
@@ -47,17 +49,23 @@ public sealed class NowViewModel : ViewModelBase
 	private IReadOnlyList<RegulationTrailPoint> _regulationTrailSnapshot = [];
 	private bool _isAnnotationSheetOpen;
 	private string _annotationNotes = string.Empty;
+	private double _jitterExaggeration = 1.0;
+	private double _lobeThickness = 1.0;
 
 	public NowViewModel(
 		Func<Task>? onConnect = null,
 		Func<Task>? onDisconnect = null,
 		Func<AnnotationLabel, string?, Task>? onAnnotate = null,
-		Func<int>? trailLengthProvider = null)
+		Func<int>? trailLengthProvider = null,
+		Func<double>? jitterExaggerationProvider = null,
+		Func<double>? lobeThicknessProvider = null)
 	{
 		_onConnect = onConnect;
 		_onDisconnect = onDisconnect;
 		_onAnnotate = onAnnotate;
 		_trailLengthProvider = trailLengthProvider;
+		_jitterExaggerationProvider = jitterExaggerationProvider;
+		_lobeThicknessProvider = lobeThicknessProvider;
 		ToggleConnectionCommand = new RelayCommand(ToggleConnection);
 		OpenAnnotationCommand = new RelayCommand(() => IsAnnotationSheetOpen = true);
 		CancelAnnotationCommand = new RelayCommand(CloseAnnotationSheet);
@@ -145,6 +153,24 @@ public sealed class NowViewModel : ViewModelBase
 	{
 		get => _regulationTrailSnapshot;
 		private set => SetField(ref _regulationTrailSnapshot, value);
+	}
+
+	/// <summary>Configured Regulation Field jitter exaggeration multiplier (clamped 0–3),
+	/// driving the live trace's variability undulation. Refreshed on each reading so a
+	/// setting change applies live, mirroring the comet-trail length.</summary>
+	public double JitterExaggeration
+	{
+		get => _jitterExaggeration;
+		private set => SetField(ref _jitterExaggeration, value);
+	}
+
+	/// <summary>Configured Regulation Field lobe stroke-thickness multiplier (clamped 0.5–3),
+	/// driving the live trace's stroke width. Refreshed on each reading so a setting change
+	/// applies live, mirroring the comet-trail length.</summary>
+	public double LobeThickness
+	{
+		get => _lobeThickness;
+		private set => SetField(ref _lobeThickness, value);
 	}
 
 	/// <summary>The detector-state accent the field's marker and trail take.</summary>
@@ -470,6 +496,11 @@ public sealed class NowViewModel : ViewModelBase
 
 		// Hand the control a fresh list instance so its AffectsRender binding fires.
 		RegulationTrail = _regulationTrail.ToArray();
+
+		// Pick up any live Regulation Field display changes the same way (settings can
+		// be adjusted while the Now screen is open).
+		JitterExaggeration = Math.Clamp(_jitterExaggerationProvider?.Invoke() ?? 1.0, 0.0, 3.0);
+		LobeThickness = Math.Clamp(_lobeThicknessProvider?.Invoke() ?? 1.0, 0.5, 3.0);
 	});
 
 	/// <summary>
