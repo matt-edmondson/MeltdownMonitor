@@ -24,6 +24,8 @@
                                    Margin="0,8,0,0"
                                    Values="{Binding RmssdHistory}"
                                    BaselineValues="{Binding BaselineHistory}"
+                                   Timestamps="{Binding RmssdTimestamps}"
+                                   WindowSeconds="60"
                                    LineThickness="2" />
                     <TextBlock Grid.Row="2"
                                Text="Regulation field · RMSSD vs baseline"
