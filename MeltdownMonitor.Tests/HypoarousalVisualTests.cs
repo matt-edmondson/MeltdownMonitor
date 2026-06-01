@@ -30,6 +30,7 @@ public class HypoarousalVisualTests
 	{
 		Assert.AreEqual(0.0, HypoarousalVisual.Intensity(double.NaN), 1e-9);
 		Assert.AreEqual(0.0, HypoarousalVisual.Intensity(double.PositiveInfinity), 1e-9);
+		Assert.AreEqual(0.0, HypoarousalVisual.Intensity(double.NegativeInfinity), 1e-9);
 	}
 
 	[TestMethod]
@@ -47,5 +48,6 @@ public class HypoarousalVisualTests
 		Assert.IsTrue(HypoarousalVisual.SuppressIndexArrow(0.7, Falling));
 		Assert.IsFalse(HypoarousalVisual.SuppressIndexArrow(0.0, Falling));
 		Assert.IsFalse(HypoarousalVisual.SuppressIndexArrow(0.7, Rising));
+		Assert.IsFalse(HypoarousalVisual.SuppressIndexArrow(0.7, Flat));
 	}
 }

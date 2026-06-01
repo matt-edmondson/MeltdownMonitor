@@ -14,6 +14,7 @@ public static class HypoarousalVisual
 	/// Scalar at or below which collapse cues stay fully dormant — a deadband so beat-to-beat
 	/// noise and genuine cool-but-steady rest never tint the field. Matches the spirit of
 	/// <c>HypoarousalThresholds.EnterSignal</c> but is a display floor, not a detection threshold.
+	/// Exclusive lower bound: all three members treat a scalar exactly at <see cref="Floor"/> as dormant.
 	/// </summary>
 	public const double Floor = 0.15;
 
