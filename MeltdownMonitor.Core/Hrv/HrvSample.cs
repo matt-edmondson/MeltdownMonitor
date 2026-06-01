@@ -1,3 +1,4 @@
+using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 
 namespace MeltdownMonitor.Core.Hrv;
@@ -22,4 +23,8 @@ public record HrvSample(
 	/// observed enough extended metrics samples to be meaningful.
 	/// </summary>
 	public double BaselineLfHfRatio { get; init; }
+
+	/// <summary>Sensor skin/electrode contact at this sample's moment. Default
+	/// <see cref="SensorContactStatus.NotSupported"/> (sensor not reporting contact).</summary>
+	public SensorContactStatus SensorContact { get; init; } = SensorContactStatus.NotSupported;
 }
