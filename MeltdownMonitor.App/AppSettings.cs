@@ -49,4 +49,8 @@ public class AppSettings : AppData<AppSettings>
 
 	/// <summary>How much history the status-window sparklines display (1–360 min).</summary>
 	public int SparklineWindowMinutes { get; set; } = 60;
+
+	/// <summary>Number of recent readings drawn as the Regulation Field comet trail
+	/// (12–240; clamped at the consumer). Default 48 ≈ 4 min at the 5 s emit cadence.</summary>
+	public int RegulationTrailLength { get; set; } = 48;
 }

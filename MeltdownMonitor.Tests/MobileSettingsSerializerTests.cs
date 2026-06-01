@@ -65,4 +65,21 @@ public class MobileSettingsSerializerTests
 		Assert.IsTrue(MobileSettingsSerializer.Deserialize("").EnableChime);
 		Assert.IsTrue(MobileSettingsSerializer.Deserialize("{not json").EnableChime);
 	}
+
+	[TestMethod]
+	public void RoundTrip_PreservesRegulationTrailLength()
+	{
+		var settings = new MobileSettings { RegulationTrailLength = 96 };
+
+		string json = MobileSettingsSerializer.Serialize(settings);
+		MobileSettings restored = MobileSettingsSerializer.Deserialize(json);
+
+		Assert.AreEqual(96, restored.RegulationTrailLength);
+	}
+
+	[TestMethod]
+	public void Default_RegulationTrailLength_Is48()
+	{
+		Assert.AreEqual(48, new MobileSettings().RegulationTrailLength);
+	}
 }
