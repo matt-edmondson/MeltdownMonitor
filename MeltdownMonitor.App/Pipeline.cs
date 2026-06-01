@@ -29,6 +29,11 @@ public sealed class Pipeline : IDisposable
 	public HrvSample? LatestSample { get; private set; }
 	public BaselineHrvTracker Baseline => _baseline;
 
+	/// <summary>Wall-clock time the detector entered <see cref="CurrentState"/>, used by the
+	/// status header to show how long the current state has been held. Tracked here rather than
+	/// from sample timestamps so the displayed duration ticks smoothly between samples.</summary>
+	public DateTimeOffset StateEnteredAt { get; private set; } = DateTimeOffset.UtcNow;
+
 	/// <summary>Latest sensor battery level (0–100), or null until the device reports one.</summary>
 	public int? LatestBatteryPercent { get; private set; }
 
@@ -70,10 +75,12 @@ public sealed class Pipeline : IDisposable
 		_repository = repository;
 		_detector = new DysregulationDetector(() => _settings.Thresholds);
 		_detector.AlertFired += OnAlertFired;
+		_detector.StateChanged += _ => StateEnteredAt = DateTimeOffset.UtcNow;
 	}
 
 	public void Start()
 	{
+		StateEnteredAt = DateTimeOffset.UtcNow;
 		SeedBaselineFromHistory();
 		_cts = new CancellationTokenSource();
 		_pipelineTask = RunAsync(_cts.Token);
