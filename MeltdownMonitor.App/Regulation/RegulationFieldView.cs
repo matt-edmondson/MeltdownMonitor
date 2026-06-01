@@ -52,6 +52,7 @@ public sealed class RegulationFieldView : IDisposable
 	private float _hrDisplay = 60f;          // eased HR for a smooth breathing cadence
 	private RrTexturePlayhead _playhead;     // free-running smooth scroll for the live RR texture
 	private float _arrowSpeed;               // eased displayed normalized speed for the velocity arrow
+	private float _drawScale = 1f;           // indicator size multiplier; grows with the field, never below 1
 
 	public RegulationFieldView(Pipeline pipeline)
 	{
@@ -168,6 +169,9 @@ public sealed class RegulationFieldView : IDisposable
 		var draw = ImGui.GetWindowDrawList();
 		Vector2 centre = origin + new Vector2(width * 0.5f, height * 0.46f);
 		float halfWidth = width * 0.34f;
+		// Indicators (marker, crossover, arrow, labels, strokes) are tuned in pixels for a ~240px
+		// half-width field; scale them up so they stay legible as the widget grows, never below 1x.
+		_drawScale = MathF.Max(1f, halfWidth / 240f);
 		float baseLobeHeight = MathF.Min(height * 0.28f, halfWidth * 0.62f);
 
 		// Poincaré SD1/SD2 ratio shapes the live lobe height; the ghost stays at base height.
@@ -254,7 +258,7 @@ public sealed class RegulationFieldView : IDisposable
 		uint ghostCol = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Overlay1, 0.28f * confidence));
 		for (int i = 0; i < ghost.Count; i++)
 		{
-			draw.AddLine(ghost[i], ghost[(i + 1) % ghost.Count], ghostCol, 2f);
+			draw.AddLine(ghost[i], ghost[(i + 1) % ghost.Count], ghostCol, 2f * _drawScale);
 		}
 
 		// Live two-tone trace at the Poincaré-shaped height, textured with the real signal.
@@ -262,7 +266,7 @@ public sealed class RegulationFieldView : IDisposable
 		float[] dev = BuildRrDeviations(rr);
 		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * LobeSwellFactor);
 		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * LobeSwellFactor);
-		float baseThick = 4f + (6f * (float)r.VariabilityQuality);
+		float baseThick = (4f + (6f * (float)r.VariabilityQuality)) * _drawScale;
 		int n = live.Count;
 
 		// Jitter each VERTEX once (along the smoothed vertex normal) so adjacent segments
@@ -395,7 +399,7 @@ public sealed class RegulationFieldView : IDisposable
 				float t = s / (float)sub;
 				Vector2 cur = CatmullRom(p0, p1, p2, p3, t);
 				float frac = (i + t) / (count - 1);
-				float width = 1f + (2.5f * frac);
+				float width = (1f + (2.5f * frac)) * _drawScale;
 				// Leading edge (newest, frac->1) brightens with speed and tints by trend so the
 				// comet visibly "leans" the way arousal is heading; older segments keep their own colour.
 				Vector4 segCol = _pipeline.LatestDynamics.Trend switch
@@ -444,18 +448,19 @@ public sealed class RegulationFieldView : IDisposable
 		uint goal = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Green, confidence));
 		uint goalDim = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Green, 0.45f * confidence));
 
-		float ring = 11f + (2f * MathF.Sin(_animTime * 3f));
-		draw.AddCircle(gate, ring, goal, 24, 2f);
-		draw.AddCircleFilled(gate, 2.5f, goal);
+		float ring = (11f + (2f * MathF.Sin(_animTime * 3f))) * _drawScale;
+		draw.AddCircle(gate, ring, goal, 24, 2f * _drawScale);
+		draw.AddCircleFilled(gate, 2.5f * _drawScale, goal);
 
-		float ay = gate.Y - (lobeHeight * 0.5f) - 6f;
+		float ay = gate.Y - (lobeHeight * 0.5f) - (6f * _drawScale);
 		draw.AddTriangleFilled(
-			new Vector2(gate.X - 11f, ay),
-			new Vector2(gate.X - 3f, ay - 5f),
-			new Vector2(gate.X - 3f, ay + 5f), goal);
+			new Vector2(gate.X - (11f * _drawScale), ay),
+			new Vector2(gate.X - (3f * _drawScale), ay - (5f * _drawScale)),
+			new Vector2(gate.X - (3f * _drawScale), ay + (5f * _drawScale)), goal);
 
+		float fontSize = ImGui.GetFontSize() * _drawScale;
 		Vector2 lbl = ImGui.CalcTextSize("RECOVER");
-		draw.AddText(new Vector2(gate.X - (lbl.X * 0.5f), ay - ImGui.GetTextLineHeight() - 3f), goalDim, "RECOVER");
+		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(gate.X - (lbl.X * 0.5f * _drawScale), ay - (ImGui.GetTextLineHeight() * _drawScale) - (3f * _drawScale)), goalDim, "RECOVER");
 	}
 
 	private static Vector2 MarkerScreenPos(Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp)
@@ -480,13 +485,13 @@ public sealed class RegulationFieldView : IDisposable
 		float alpha = confidence * (0.35f + (0.65f * _arrowSpeed));
 		uint col = Col(MacchiatoPalette.WithAlpha(hue, alpha));
 
-		float gap = 12f;
-		float len = 10f + (_arrowSpeed * 46f);
+		float gap = 12f * _drawScale;
+		float len = (10f + (_arrowSpeed * 46f)) * _drawScale;
 		Vector2 start = p + new Vector2(dir * gap, 0f);
 		Vector2 tip = start + new Vector2(dir * len, 0f);
-		draw.AddLine(start, tip, col, 3f);
+		draw.AddLine(start, tip, col, 3f * _drawScale);
 
-		const float head = 7f;
+		float head = 7f * _drawScale;
 		draw.AddTriangleFilled(
 			tip,
 			tip + new Vector2(-dir * head, -head * 0.7f),
@@ -502,31 +507,32 @@ public sealed class RegulationFieldView : IDisposable
 
 		Vector4 stateCol = MacchiatoPalette.State(_pipeline.CurrentState);
 		float pulse = 1f + (0.18f * MathF.Sin(_breathPhase));
-		draw.AddCircleFilled(p, 16f * pulse, Col(MacchiatoPalette.WithAlpha(stateCol, 0.18f * confidence)));
-		draw.AddCircleFilled(p, 6.5f, Col(MacchiatoPalette.WithAlpha(stateCol, confidence)));
-		draw.AddCircleFilled(p, 2.6f, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Base, confidence)));
+		draw.AddCircleFilled(p, 16f * _drawScale * pulse, Col(MacchiatoPalette.WithAlpha(stateCol, 0.18f * confidence)));
+		draw.AddCircleFilled(p, 6.5f * _drawScale, Col(MacchiatoPalette.WithAlpha(stateCol, confidence)));
+		draw.AddCircleFilled(p, 2.6f * _drawScale, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Base, confidence)));
 	}
 
-	private static void DrawCrossover(ImDrawListPtr draw, Vector2 centre, float confidence)
+	private void DrawCrossover(ImDrawListPtr draw, Vector2 centre, float confidence)
 	{
-		draw.AddCircleFilled(centre, 7f, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Lavender, confidence)));
-		draw.AddCircleFilled(centre, 3f, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Text, confidence)));
+		draw.AddCircleFilled(centre, 7f * _drawScale, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Lavender, confidence)));
+		draw.AddCircleFilled(centre, 3f * _drawScale, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Text, confidence)));
 	}
 
 	// Vertical-axis legend for the marker's Y dimension (vagal tone / HRV amount): the marker
 	// rides low when HRV is healthy (steady) and lifts as it collapses (fragile).
-	private static void DrawVagalAxis(ImDrawListPtr draw, Vector2 centre, float yClamp, float confidence)
+	private void DrawVagalAxis(ImDrawListPtr draw, Vector2 centre, float yClamp, float confidence)
 	{
 		uint axis = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Overlay1, 0.22f * confidence));
 		uint label = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Subtext0, 0.8f * confidence));
-		float lineH = ImGui.GetTextLineHeight();
+		float lineH = ImGui.GetTextLineHeight() * _drawScale;
+		float fontSize = ImGui.GetFontSize() * _drawScale;
 
-		draw.AddLine(new Vector2(centre.X, centre.Y - yClamp), new Vector2(centre.X, centre.Y + yClamp), axis, 1f);
+		draw.AddLine(new Vector2(centre.X, centre.Y - yClamp), new Vector2(centre.X, centre.Y + yClamp), axis, 1f * _drawScale);
 
 		Vector2 fr = ImGui.CalcTextSize("FRAGILE");
 		Vector2 st = ImGui.CalcTextSize("STEADY");
-		draw.AddText(new Vector2(centre.X - (fr.X * 0.5f), centre.Y - yClamp - lineH - 2f), label, "FRAGILE");
-		draw.AddText(new Vector2(centre.X - (st.X * 0.5f), centre.Y + yClamp + 2f), label, "STEADY");
+		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X - (fr.X * 0.5f * _drawScale), centre.Y - yClamp - lineH - (2f * _drawScale)), label, "FRAGILE");
+		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X - (st.X * 0.5f * _drawScale), centre.Y + yClamp + (2f * _drawScale)), label, "STEADY");
 	}
 
 	private void DrawLabelsAndLock(ImDrawListPtr draw, Vector2 origin, Vector2 centre, float halfWidth, float lobeClearHeight)
@@ -538,16 +544,17 @@ public sealed class RegulationFieldView : IDisposable
 		// Pole labels sit clear of the lobe tips: REST right-aligned just left of the cool
 		// tip, MELTDOWN just right of the warm tip, both vertically centred on the tip line.
 		// WINDOW OF TOLERANCE is horizontally centred above the tallest possible lobe.
-		float lineH = ImGui.GetTextLineHeight();
+		float lineH = ImGui.GetTextLineHeight() * _drawScale;
 		float midY = centre.Y - (lineH * 0.5f);
-		const float poleGap = 16f;
+		float poleGap = 16f * _drawScale;
+		float fontSize = ImGui.GetFontSize() * _drawScale;
 
 		Vector2 restSize = ImGui.CalcTextSize("REST");
-		draw.AddText(new Vector2(centre.X - halfWidth - poleGap - restSize.X, midY), rest, "REST");
-		draw.AddText(new Vector2(centre.X + halfWidth + poleGap, midY), melt, "MELTDOWN");
+		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X - halfWidth - poleGap - (restSize.X * _drawScale), midY), rest, "REST");
+		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X + halfWidth + poleGap, midY), melt, "MELTDOWN");
 
 		Vector2 wotSize = ImGui.CalcTextSize("WINDOW OF TOLERANCE");
-		draw.AddText(new Vector2(centre.X - (wotSize.X * 0.5f), centre.Y - lobeClearHeight - lineH - 10f), dim, "WINDOW OF TOLERANCE");
+		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X - (wotSize.X * 0.5f * _drawScale), centre.Y - lobeClearHeight - lineH - (10f * _drawScale)), dim, "WINDOW OF TOLERANCE");
 
 		var state = _pipeline.CurrentState;
 		if (state is DetectorState.Warning or DetectorState.Alerting)
@@ -580,10 +587,11 @@ public sealed class RegulationFieldView : IDisposable
 		ImGui.Text($"HR {s.MeanHr:F0} bpm    RMSSD {s.Rmssd:F0} ms ({rel})    {_pipeline.CurrentState}    {trend}");
 	}
 
-	private static void DrawCalibratingOverlay(ImDrawListPtr draw, Vector2 centre, float confidence)
+	private void DrawCalibratingOverlay(ImDrawListPtr draw, Vector2 centre, float confidence)
 	{
 		string msg = $"Calibrating baseline… {confidence * 100:F0}%";
-		draw.AddText(new Vector2(centre.X - 70f, centre.Y + 30f), Col(MacchiatoPalette.Subtext0), msg);
+		float fontSize = ImGui.GetFontSize() * _drawScale;
+		draw.AddText(ImGui.GetFont(), fontSize, new Vector2(centre.X - (70f * _drawScale), centre.Y + (30f * _drawScale)), Col(MacchiatoPalette.Subtext0), msg);
 	}
 
 	private static Vector2 Normal(Vector2 a, Vector2 b)
