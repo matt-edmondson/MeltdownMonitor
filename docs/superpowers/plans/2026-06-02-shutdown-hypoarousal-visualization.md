@@ -782,6 +782,7 @@ Per the BLE/visual rule, none of the render behaviour is gated by tests. After m
 - Confirm the shutdown zone deepens smoothly as the collapse signal climbs (no flicker; opacity ramp readable on the dark overlay).
 - Confirm the Slate collapse halo is distinguishable from the pulsing state halo, and that the two layers don't blur.
 - Confirm a slide into collapse shows the Slate warning arrow (toward the cool/upper-left), never a calming Sky arrow.
+- **Reconcile the static SHUTDOWN label visibility across heads (known, deliberate divergence — decide live).** Desktop shows a dim static SHUTDOWN quadrant label whenever the episode is *not* latched (always-on — it pre-labels the cool/upper region as collapse territory); mobile shows its quadrant label only once the collapse signal is present (`intensity > 0.01`, i.e. it appears with the zone fill). Pick the right UX for this population — *always-clear* (the territory is named even at rest) vs. *calm-until-relevant* (nothing extra on a regulated screen) — then make both heads match. Left divergent intentionally because it can only be judged in the live app.
 - Tune: the `HypoarousalVisual.Floor`, zone opacity (`0.22`), halo opacity/radius (`0.30` / `+10`), and the `Slate` shade (`#5D6A9E`) are first-cut values.
 - Separately, validate the provisional signature itself with `AnalyzeHypoarousal` against real `Shutdown` check-ins (out of scope here).
 

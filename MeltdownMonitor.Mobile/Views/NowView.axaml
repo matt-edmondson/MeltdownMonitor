@@ -72,8 +72,7 @@
                            HorizontalAlignment="Center" />
                 <!-- Low-arousal collapse reads as the cool/calm side of the field; this badge keeps it
                      from being mistaken for regulation (audit A(b)). Slate (#5D6A9E) matches the
-                     shutdown zone fill colour in RegulationField. NOTE: the desktop head's shutdown tag
-                     may still use Lavender — reconcile during live-tuning to keep both heads consistent. -->
+                     shutdown zone fill in RegulationField and the desktop head's collapse cues. -->
                 <TextBlock Text="Low arousal · shutdown — not calm rest"
                            Foreground="#5D6A9E"
                            FontSize="13"
