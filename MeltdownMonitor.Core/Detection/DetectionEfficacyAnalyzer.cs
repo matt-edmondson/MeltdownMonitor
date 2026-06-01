@@ -21,20 +21,46 @@ public sealed record AlertEfficacyResult(
 /// </summary>
 public static class DetectionEfficacyAnalyzer
 {
-	/// <summary>Self-report labels treated as "the user felt escalated".</summary>
+	/// <summary>Self-report labels treated as "the user felt escalated" (hyperarousal ground truth).</summary>
 	private static bool IsEscalation(AnnotationLabel label) =>
 		label is AnnotationLabel.Escalating or AnnotationLabel.Blown;
 
+	/// <summary>
+	/// Hyperarousal efficacy: how well the supplied alerts preceded a felt escalation
+	/// (<see cref="AnnotationLabel.Escalating"/>/<see cref="AnnotationLabel.Blown"/>). Pass the
+	/// dysregulation (hyperarousal-kind) alert times.
+	/// </summary>
 	/// <param name="alertTimes">Alert timestamps (any order).</param>
 	/// <param name="annotations">Self check-ins (any order).</param>
 	/// <param name="leadWindow">How long before an escalation an alert may fire and still "count".</param>
 	public static AlertEfficacyResult Analyze(
 		IReadOnlyList<DateTimeOffset> alertTimes,
 		IReadOnlyList<AnnotationRecord> annotations,
-		TimeSpan leadWindow)
+		TimeSpan leadWindow) =>
+		AnalyzeAgainst(alertTimes, annotations, leadWindow, IsEscalation);
+
+	/// <summary>
+	/// Hypoarousal efficacy: how well the supplied alerts preceded a felt <see cref="AnnotationLabel.Shutdown"/>
+	/// (the low-arousal/collapse ground truth — audit A(b)). Pass the hypoarousal-kind alert times
+	/// (e.g. <c>MeltdownRepository.ReadAlerts(...).Where(a =&gt; a.Kind == AlertKind.Hypoarousal)</c>).
+	/// Validates whether the provisional HRV signature actually precedes felt shutdown before it is trusted.
+	/// </summary>
+	public static AlertEfficacyResult AnalyzeHypoarousal(
+		IReadOnlyList<DateTimeOffset> alertTimes,
+		IReadOnlyList<AnnotationRecord> annotations,
+		TimeSpan leadWindow) =>
+		AnalyzeAgainst(alertTimes, annotations, leadWindow, label => label is AnnotationLabel.Shutdown);
+
+	// Shared lead-time / sensitivity / false-alarm computation, parameterised by which self-report
+	// labels are the "adverse event" the alerts are meant to precede.
+	private static AlertEfficacyResult AnalyzeAgainst(
+		IReadOnlyList<DateTimeOffset> alertTimes,
+		IReadOnlyList<AnnotationRecord> annotations,
+		TimeSpan leadWindow,
+		Func<AnnotationLabel, bool> isGroundTruth)
 	{
 		List<DateTimeOffset> alerts = [.. alertTimes.OrderBy(t => t)];
-		List<AnnotationRecord> escalations = [.. annotations.Where(a => IsEscalation(a.Label))];
+		List<AnnotationRecord> escalations = [.. annotations.Where(a => isGroundTruth(a.Label))];
 
 		var leads = new List<TimeSpan>();
 		foreach (AnnotationRecord e in escalations)

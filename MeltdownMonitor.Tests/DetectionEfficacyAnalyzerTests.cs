@@ -72,6 +72,58 @@ public class DetectionEfficacyAnalyzerTests
 	}
 
 	[TestMethod]
+	public void Hypoarousal_AlertBeforeShutdown_CountsAsPrecededWithLeadTime()
+	{
+		var alerts = new[] { T0.AddMinutes(2) };
+		var annotations = new[] { Ann(5, AnnotationLabel.Shutdown) };
+
+		var r = DetectionEfficacyAnalyzer.AnalyzeHypoarousal(alerts, annotations, TimeSpan.FromMinutes(10));
+
+		Assert.AreEqual(1, r.EscalationAnnotations);
+		Assert.AreEqual(1, r.PrecededByAlert);
+		Assert.AreEqual(1.0, r.Sensitivity, 0.001);
+		Assert.AreEqual(TimeSpan.FromMinutes(3), r.MedianLeadTime);
+	}
+
+	[TestMethod]
+	public void Hypoarousal_IgnoresHyperarousalLabels()
+	{
+		// Escalating/Blown/Edged are hyperarousal direction — not the shutdown ground truth.
+		var annotations = new[]
+		{
+			Ann(5, AnnotationLabel.Escalating),
+			Ann(6, AnnotationLabel.Blown),
+			Ann(7, AnnotationLabel.Edged),
+		};
+
+		var r = DetectionEfficacyAnalyzer.AnalyzeHypoarousal([], annotations, TimeSpan.FromMinutes(10));
+
+		Assert.AreEqual(0, r.EscalationAnnotations, "Only Shutdown is hypoarousal ground truth.");
+	}
+
+	[TestMethod]
+	public void Hyperarousal_IgnoresShutdownLabel()
+	{
+		// The two analyses must not cross-count: Shutdown is not a hyperarousal escalation.
+		var annotations = new[] { Ann(5, AnnotationLabel.Shutdown) };
+
+		var r = DetectionEfficacyAnalyzer.Analyze([T0.AddMinutes(2)], annotations, TimeSpan.FromMinutes(10));
+
+		Assert.AreEqual(0, r.EscalationAnnotations, "Shutdown is not a hyperarousal escalation.");
+	}
+
+	[TestMethod]
+	public void Hypoarousal_AlertWithNoFollowingShutdown_IsFalseAlarmProxy()
+	{
+		var alerts = new[] { T0, T0.AddMinutes(40) };
+		var annotations = new[] { Ann(5, AnnotationLabel.Shutdown) }; // follows the first alert only
+
+		var r = DetectionEfficacyAnalyzer.AnalyzeHypoarousal(alerts, annotations, TimeSpan.FromMinutes(10));
+
+		Assert.AreEqual(1, r.AlertsWithNoFollowingEscalation);
+	}
+
+	[TestMethod]
 	public void MedianLeadTime_IsTrueMedianAcrossMultiple()
 	{
 		var alerts = new[] { T0.AddMinutes(1), T0.AddMinutes(11), T0.AddMinutes(21) };
