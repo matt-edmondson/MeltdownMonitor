@@ -40,27 +40,30 @@ public sealed class StatusWindow : IDisposable
 	private int _subscriptionsReleased;
 	private bool _settingsDirty;
 
-	private readonly RingBuffer<float> _rmssd = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _baselineRmssd = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _pnn50 = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _sdnn = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _meanHr = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _baselineHr = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _lfPower = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _hfPower = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _lfHfRatio = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _baselineLfHf = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _sd1 = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _sd2 = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _sd1Sd2 = new(InitialSparklineCapacity);
-	private readonly RingBuffer<float> _contact = new(InitialSparklineCapacity);
+	private readonly TimedSeries _rmssd = new(InitialSparklineCapacity);
+	private readonly TimedSeries _baselineRmssd = new(InitialSparklineCapacity);
+	private readonly TimedSeries _pnn50 = new(InitialSparklineCapacity);
+	private readonly TimedSeries _sdnn = new(InitialSparklineCapacity);
+	private readonly TimedSeries _meanHr = new(InitialSparklineCapacity);
+	private readonly TimedSeries _baselineHr = new(InitialSparklineCapacity);
+	private readonly TimedSeries _lfPower = new(InitialSparklineCapacity);
+	private readonly TimedSeries _hfPower = new(InitialSparklineCapacity);
+	private readonly TimedSeries _lfHfRatio = new(InitialSparklineCapacity);
+	private readonly TimedSeries _baselineLfHf = new(InitialSparklineCapacity);
+	private readonly TimedSeries _sd1 = new(InitialSparklineCapacity);
+	private readonly TimedSeries _sd2 = new(InitialSparklineCapacity);
+	private readonly TimedSeries _sd1Sd2 = new(InitialSparklineCapacity);
+	private readonly TimedSeries _contact = new(InitialSparklineCapacity);
+
+	// Raw per-beat RR intervals (ms). No usable per-beat timestamp (batched beats share
+	// one arrival time), so its x axis is reconstructed via RrTimeAxis at snapshot time.
 	private readonly RingBuffer<double> _recentRr = new(InitialSparklineCapacity);
 
 	// Battery is updated on its own slow cadence (a read on connect plus occasional
 	// notifications), so it lives outside AllSparklines and isn't resampled with them.
-	private readonly RingBuffer<float> _battery = new(InitialSparklineCapacity);
+	private readonly TimedSeries _battery = new(InitialSparklineCapacity);
 
-	private RingBuffer<float>[] AllSparklines => [
+	private TimedSeries[] AllSparklines => [
 		_rmssd, _baselineRmssd, _pnn50, _sdnn,
 		_meanHr, _baselineHr,
 		_lfPower, _hfPower, _lfHfRatio, _baselineLfHf,
@@ -233,23 +236,23 @@ public sealed class StatusWindow : IDisposable
 		{
 			ApplyCapacityIfChanged();
 
-			_rmssd.PushBack((float)sample.Rmssd);
-			_baselineRmssd.PushBack((float)sample.BaselineRmssd);
-			_pnn50.PushBack((float)sample.Pnn50);
-			_meanHr.PushBack((float)sample.MeanHr);
-			_baselineHr.PushBack((float)sample.BaselineHr);
-			_baselineLfHf.PushBack((float)sample.BaselineLfHfRatio);
-			_contact.PushBack(ContactToValue(sample.SensorContact));
+			_rmssd.PushBack(sample.Timestamp, (float)sample.Rmssd);
+			_baselineRmssd.PushBack(sample.Timestamp, (float)sample.BaselineRmssd);
+			_pnn50.PushBack(sample.Timestamp, (float)sample.Pnn50);
+			_meanHr.PushBack(sample.Timestamp, (float)sample.MeanHr);
+			_baselineHr.PushBack(sample.Timestamp, (float)sample.BaselineHr);
+			_baselineLfHf.PushBack(sample.Timestamp, (float)sample.BaselineLfHfRatio);
+			_contact.PushBack(sample.Timestamp, ContactToValue(sample.SensorContact));
 
 			if (sample.Extended is { } ext)
 			{
-				_sdnn.PushBack((float)ext.Sdnn);
-				_lfPower.PushBack((float)ext.LfPowerMs2);
-				_hfPower.PushBack((float)ext.HfPowerMs2);
-				_lfHfRatio.PushBack((float)ext.LfHfRatio);
-				_sd1.PushBack((float)ext.SD1);
-				_sd2.PushBack((float)ext.SD2);
-				_sd1Sd2.PushBack((float)ext.SD1SD2Ratio);
+				_sdnn.PushBack(sample.Timestamp, (float)ext.Sdnn);
+				_lfPower.PushBack(sample.Timestamp, (float)ext.LfPowerMs2);
+				_hfPower.PushBack(sample.Timestamp, (float)ext.HfPowerMs2);
+				_lfHfRatio.PushBack(sample.Timestamp, (float)ext.LfHfRatio);
+				_sd1.PushBack(sample.Timestamp, (float)ext.SD1);
+				_sd2.PushBack(sample.Timestamp, (float)ext.SD2);
+				_sd1Sd2.PushBack(sample.Timestamp, (float)ext.SD1SD2Ratio);
 			}
 		}
 	}
@@ -271,7 +274,7 @@ public sealed class StatusWindow : IDisposable
 	{
 		lock (_historyLock)
 		{
-			_battery.PushBack(reading.Percent);
+			_battery.PushBack(reading.Timestamp, reading.Percent);
 		}
 	}
 
@@ -311,30 +314,30 @@ public sealed class StatusWindow : IDisposable
 
 			foreach (var s in samples.TakeLast(desired))
 			{
-				_rmssd.PushBack((float)s.Rmssd);
-				_baselineRmssd.PushBack((float)s.BaselineRmssd);
-				_pnn50.PushBack((float)s.Pnn50);
-				_meanHr.PushBack((float)s.MeanHr);
-				_baselineHr.PushBack((float)s.BaselineHr);
-				_baselineLfHf.PushBack((float)s.BaselineLfHfRatio);
-				_contact.PushBack(ContactToValue(s.SensorContact));
+				_rmssd.PushBack(s.Timestamp, (float)s.Rmssd);
+				_baselineRmssd.PushBack(s.Timestamp, (float)s.BaselineRmssd);
+				_pnn50.PushBack(s.Timestamp, (float)s.Pnn50);
+				_meanHr.PushBack(s.Timestamp, (float)s.MeanHr);
+				_baselineHr.PushBack(s.Timestamp, (float)s.BaselineHr);
+				_baselineLfHf.PushBack(s.Timestamp, (float)s.BaselineLfHfRatio);
+				_contact.PushBack(s.Timestamp, ContactToValue(s.SensorContact));
 
 				if (s.Extended is { } ext)
 				{
-					_sdnn.PushBack((float)ext.Sdnn);
-					_lfPower.PushBack((float)ext.LfPowerMs2);
-					_hfPower.PushBack((float)ext.HfPowerMs2);
-					_lfHfRatio.PushBack((float)ext.LfHfRatio);
-					_sd1.PushBack((float)ext.SD1);
-					_sd2.PushBack((float)ext.SD2);
-					_sd1Sd2.PushBack((float)ext.SD1SD2Ratio);
+					_sdnn.PushBack(s.Timestamp, (float)ext.Sdnn);
+					_lfPower.PushBack(s.Timestamp, (float)ext.LfPowerMs2);
+					_hfPower.PushBack(s.Timestamp, (float)ext.HfPowerMs2);
+					_lfHfRatio.PushBack(s.Timestamp, (float)ext.LfHfRatio);
+					_sd1.PushBack(s.Timestamp, (float)ext.SD1);
+					_sd2.PushBack(s.Timestamp, (float)ext.SD2);
+					_sd1Sd2.PushBack(s.Timestamp, (float)ext.SD1SD2Ratio);
 				}
 			}
 
 			_battery.Resize(desired);
 			foreach (var b in batteries.TakeLast(desired))
 			{
-				_battery.PushBack(b.Percent);
+				_battery.PushBack(b.Timestamp, b.Percent);
 			}
 		}
 	}
@@ -342,17 +345,6 @@ public sealed class StatusWindow : IDisposable
 	// 1 = signal trustworthy (Detected or NotSupported), 0 = NotDetected (readings gated).
 	private static float ContactToValue(SensorContactStatus contact) =>
 		contact == SensorContactStatus.NotDetected ? 0f : 1f;
-
-	private static float[] SnapshotF(RingBuffer<float> rb)
-	{
-		var arr = new float[rb.Count];
-		for (int i = 0; i < rb.Count; i++)
-		{
-			arr[i] = rb.At(i);
-		}
-
-		return arr;
-	}
 
 	private static double[] SnapshotD(RingBuffer<double> rb)
 	{
@@ -664,52 +656,52 @@ public sealed class StatusWindow : IDisposable
 
 		ImGui.Separator();
 
-		float[] rmssd, baseRmssd, pnn50, sdnn, hr, baseHr, lf, hf, lfhf, baseLfhf, sd1, sd2, sd1sd2, battery, contact;
+		double now = NowEpochSeconds();
+		float[] rmssdX, rmssdY, baseRmssdX, baseRmssdY, pnn50X, pnn50Y, sdnnX, sdnnY,
+			hrX, hrY, baseHrX, baseHrY, lfX, lfY, hfX, hfY, lfhfX, lfhfY,
+			baseLfhfX, baseLfhfY, sd1X, sd1Y, sd2X, sd2Y, sd1sd2X, sd1sd2Y,
+			batteryX, batteryY, contactX, contactY;
 		double[] rrsD;
 		lock (_historyLock)
 		{
-			rmssd = SnapshotF(_rmssd);
-			baseRmssd = SnapshotF(_baselineRmssd);
-			pnn50 = SnapshotF(_pnn50);
-			sdnn = SnapshotF(_sdnn);
-			hr = SnapshotF(_meanHr);
-			baseHr = SnapshotF(_baselineHr);
-			lf = SnapshotF(_lfPower);
-			hf = SnapshotF(_hfPower);
-			lfhf = SnapshotF(_lfHfRatio);
-			baseLfhf = SnapshotF(_baselineLfHf);
-			sd1 = SnapshotF(_sd1);
-			sd2 = SnapshotF(_sd2);
-			sd1sd2 = SnapshotF(_sd1Sd2);
-			battery = SnapshotF(_battery);
-			contact = SnapshotF(_contact);
+			_rmssd.Snapshot(now, out rmssdX, out rmssdY);
+			_baselineRmssd.Snapshot(now, out baseRmssdX, out baseRmssdY);
+			_pnn50.Snapshot(now, out pnn50X, out pnn50Y);
+			_sdnn.Snapshot(now, out sdnnX, out sdnnY);
+			_meanHr.Snapshot(now, out hrX, out hrY);
+			_baselineHr.Snapshot(now, out baseHrX, out baseHrY);
+			_lfPower.Snapshot(now, out lfX, out lfY);
+			_hfPower.Snapshot(now, out hfX, out hfY);
+			_lfHfRatio.Snapshot(now, out lfhfX, out lfhfY);
+			_baselineLfHf.Snapshot(now, out baseLfhfX, out baseLfhfY);
+			_sd1.Snapshot(now, out sd1X, out sd1Y);
+			_sd2.Snapshot(now, out sd2X, out sd2Y);
+			_sd1Sd2.Snapshot(now, out sd1sd2X, out sd1sd2Y);
+			_battery.Snapshot(now, out batteryX, out batteryY);
+			_contact.Snapshot(now, out contactX, out contactY);
 			rrsD = SnapshotD(_recentRr);
 		}
 
-		float[] rr = new float[rrsD.Length];
-		for (int i = 0; i < rrsD.Length; i++)
-		{
-			rr[i] = (float)rrsD[i];
-		}
+		(float[] rrX, float[] rrY) = RrSeries(rrsD);
 
 		// Every metric at full chart size, laid out with the ktsu.ImGui.Widgets grid,
 		// which fits as many columns as the window width allows. Baselines overlay
 		// where available; the Poincaré scatter is included as a square cell.
 		OverviewChart[] charts =
 		[
-			new("RMSSD vs baseline (ms)", rmssd, baseRmssd),
-			new("Heart rate vs baseline (bpm)", hr, baseHr),
-			new("LF/HF ratio (sympathovagal balance)", lfhf, baseLfhf),
-			new("pNN50 (%)", pnn50, null),
-			new("SDNN (ms)", sdnn, null),
-			new("LF power (ms²)", lf, null),
-			new("HF power (ms²)", hf, null),
-			new("SD1 (ms)", sd1, null),
-			new("SD2 (ms)", sd2, null),
-			new("SD1/SD2 ratio (parasympathetic index)", sd1sd2, null),
-			new("RR intervals (ms)", rr, null),
-			new("Battery (%)", battery, null),
-			new("Poincaré (RR[i] vs RR[i+1])", rr, null, IsScatter: true),
+			new("RMSSD vs baseline (ms)", rmssdX, rmssdY, baseRmssdX, baseRmssdY),
+			new("Heart rate vs baseline (bpm)", hrX, hrY, baseHrX, baseHrY),
+			new("LF/HF ratio (sympathovagal balance)", lfhfX, lfhfY, baseLfhfX, baseLfhfY),
+			new("pNN50 (%)", pnn50X, pnn50Y, null, null),
+			new("SDNN (ms)", sdnnX, sdnnY, null, null),
+			new("LF power (ms²)", lfX, lfY, null, null),
+			new("HF power (ms²)", hfX, hfY, null, null),
+			new("SD1 (ms)", sd1X, sd1Y, null, null),
+			new("SD2 (ms)", sd2X, sd2Y, null, null),
+			new("SD1/SD2 ratio (parasympathetic index)", sd1sd2X, sd1sd2Y, null, null),
+			new("RR intervals (ms)", rrX, rrY, null, null),
+			new("Battery (%)", batteryX, batteryY, null, null),
+			new("Poincaré (RR[i] vs RR[i+1])", rrX, rrY, null, null, IsScatter: true),
 		];
 
 		// Fit as many columns as the preferred width allows, then stretch the cells to fill
@@ -721,7 +713,7 @@ public sealed class StatusWindow : IDisposable
 		float cellH = cellW * 0.55f;
 		ImGuiWidgets.RowMajorGrid("overview-charts", charts,
 			_ => new Vector2(cellW, cellH),
-			static (chart, cellSize, itemSize) => DrawOverviewChart(chart, itemSize));
+			(chart, cellSize, itemSize) => DrawOverviewChart(chart, itemSize));
 
 		// Contact step-strip: binary 0/1 signal, fixed Y range so a single value
 		// of 1 fills the bar and a single value of 0 is clearly at the floor.
@@ -731,44 +723,44 @@ public sealed class StatusWindow : IDisposable
 		if (ImPlot.BeginPlot("Sensor contact", new Vector2(contactW, contactH),
 				ImPlotFlags.NoLegend | ImPlotFlags.NoMouseText))
 		{
-			ImPlot.SetupAxes(string.Empty, string.Empty,
-				ImPlotAxisFlags.AutoFit | ImPlotAxisFlags.NoTickLabels,
-				ImPlotAxisFlags.Lock | ImPlotAxisFlags.NoTickLabels);
+			SetupTimeAxis(ImPlotAxisFlags.Lock | ImPlotAxisFlags.NoTickLabels);
 			ImPlot.SetupAxisLimits(ImAxis.Y1, 0.0, 1.0, ImPlotCond.Always);
-			if (contact.Length >= 2)
+			if (contactY.Length >= 2)
 			{
-				ImPlot.PlotStairs("Sensor contact (1=OK 0=no contact)", ref contact[0], contact.Length);
+				ImPlot.PlotStairs("Sensor contact (1=OK 0=no contact)", ref contactX[0], ref contactY[0], contactY.Length);
 			}
+
 			ImPlot.EndPlot();
 		}
 	}
 
-	private sealed record OverviewChart(string Title, float[] Data, float[]? Baseline, bool IsScatter = false);
+	private sealed record OverviewChart(
+		string Title, float[] DataXs, float[] DataYs,
+		float[]? BaselineXs, float[]? BaselineYs, bool IsScatter = false);
 
-	private static void DrawOverviewChart(OverviewChart chart, Vector2 size)
+	private void DrawOverviewChart(OverviewChart chart, Vector2 size)
 	{
 		if (chart.IsScatter)
 		{
-			DrawScatterPlot(chart.Title, chart.Data, size);
+			DrawScatterPlot(chart.Title, chart.DataYs, size);
 			return;
 		}
 
-		ImPlotFlags flags = chart.Baseline is null
+		ImPlotFlags flags = chart.BaselineYs is null
 			? ImPlotFlags.NoMouseText | ImPlotFlags.NoLegend
 			: ImPlotFlags.NoMouseText;
 
 		if (ImPlot.BeginPlot(chart.Title, size, flags))
 		{
-			ImPlot.SetupAxes(string.Empty, string.Empty,
-				ImPlotAxisFlags.AutoFit | ImPlotAxisFlags.NoTickLabels, ImPlotAxisFlags.AutoFit);
+			SetupTimeAxis();
 
-			if (chart.Baseline is { Length: >= 2 } baseline)
+			if (chart.BaselineYs is { Length: >= 2 } by && chart.BaselineXs is { } bx)
 			{
-				ImPlot.PlotLine("baseline", ref baseline[0], baseline.Length);
+				ImPlot.PlotLine("baseline", ref bx[0], ref by[0], by.Length);
 			}
-			if (chart.Data.Length >= 2)
+			if (chart.DataYs.Length >= 2)
 			{
-				ImPlot.PlotLine(chart.Title, ref chart.Data[0], chart.Data.Length);
+				ImPlot.PlotLine(chart.Title, ref chart.DataXs[0], ref chart.DataYs[0], chart.DataYs.Length);
 			}
 
 			ImPlot.EndPlot();
@@ -777,59 +769,59 @@ public sealed class StatusWindow : IDisposable
 
 	private void DrawHeartRateTab()
 	{
-		float[] hr; float[] baseHr; double[] rrsD;
+		double now = NowEpochSeconds();
+		float[] hrX, hrY, baseHrX, baseHrY;
+		double[] rrsD;
 		lock (_historyLock)
 		{
-			hr = SnapshotF(_meanHr);
-			baseHr = SnapshotF(_baselineHr);
+			_meanHr.Snapshot(now, out hrX, out hrY);
+			_baselineHr.Snapshot(now, out baseHrX, out baseHrY);
 			rrsD = SnapshotD(_recentRr);
 		}
 
-		float[] rrs = new float[rrsD.Length];
-		for (int i = 0; i < rrsD.Length; i++)
-		{
-			rrs[i] = (float)rrsD[i];
-		}
+		(float[] rrX, float[] rrY) = RrSeries(rrsD);
 
 		float h = FillRowHeight(2);
-		PlotPair(h, "Heart rate vs baseline (bpm)", "HR", hr, "Baseline HR", baseHr);
-		PlotRow(h, ("RR intervals (ms, last received beats)", rrs));
+		PlotPair(h, "Heart rate vs baseline (bpm)", "HR", hrX, hrY, "Baseline HR", baseHrX, baseHrY);
+		PlotRow(h, ("RR intervals (ms, last received beats)", rrX, rrY));
 	}
 
 	private void DrawTimeDomainTab()
 	{
-		float[] rmssd; float[] baseRmssd; float[] pnn50; float[] sdnn;
+		double now = NowEpochSeconds();
+		float[] rmssdX, rmssdY, baseX, baseY, pnnX, pnnY, sdnnX, sdnnY;
 		lock (_historyLock)
 		{
-			rmssd = SnapshotF(_rmssd);
-			baseRmssd = SnapshotF(_baselineRmssd);
-			pnn50 = SnapshotF(_pnn50);
-			sdnn = SnapshotF(_sdnn);
+			_rmssd.Snapshot(now, out rmssdX, out rmssdY);
+			_baselineRmssd.Snapshot(now, out baseX, out baseY);
+			_pnn50.Snapshot(now, out pnnX, out pnnY);
+			_sdnn.Snapshot(now, out sdnnX, out sdnnY);
 		}
 
 		float h = FillRowHeight(2);
-		PlotPair(h, "RMSSD (ms)", "RMSSD", rmssd, "Baseline", baseRmssd);
-		PlotRow(h, ("pNN50 (%)", pnn50), ("SDNN (ms)", sdnn));
+		PlotPair(h, "RMSSD (ms)", "RMSSD", rmssdX, rmssdY, "Baseline", baseX, baseY);
+		PlotRow(h, ("pNN50 (%)", pnnX, pnnY), ("SDNN (ms)", sdnnX, sdnnY));
 	}
 
 	private void DrawFrequencyTab()
 	{
-		float[] lf; float[] hf; float[] ratio; float[] baseRatio;
+		double now = NowEpochSeconds();
+		float[] lfX, lfY, hfX, hfY, ratioX, ratioY, baseRX, baseRY;
 		lock (_historyLock)
 		{
-			lf = SnapshotF(_lfPower);
-			hf = SnapshotF(_hfPower);
-			ratio = SnapshotF(_lfHfRatio);
-			baseRatio = SnapshotF(_baselineLfHf);
+			_lfPower.Snapshot(now, out lfX, out lfY);
+			_hfPower.Snapshot(now, out hfX, out hfY);
+			_lfHfRatio.Snapshot(now, out ratioX, out ratioY);
+			_baselineLfHf.Snapshot(now, out baseRX, out baseRY);
 		}
 
 		float h = FillRowHeight(2, ImGui.GetTextLineHeightWithSpacing());
-		PlotPair(h, "LF/HF ratio (sympathovagal balance)", "LF/HF", ratio, "Baseline LF/HF", baseRatio);
+		PlotPair(h, "LF/HF ratio (sympathovagal balance)", "LF/HF", ratioX, ratioY, "Baseline LF/HF", baseRX, baseRY);
 		PlotRow(h,
-			("LF power (ms², 0.04–0.15 Hz)", lf),
-			("HF power (ms², 0.15–0.40 Hz)", hf));
+			("LF power (ms², 0.04–0.15 Hz)", lfX, lfY),
+			("HF power (ms², 0.15–0.40 Hz)", hfX, hfY));
 
-		if (ratio.Length < 2)
+		if (ratioY.Length < 2)
 		{
 			ImGui.TextDisabled("Frequency metrics need ≥2 minutes of clean beats to populate.");
 		}
@@ -837,12 +829,14 @@ public sealed class StatusWindow : IDisposable
 
 	private void DrawPoincareTab()
 	{
-		float[] sd1; float[] sd2; float[] ratio; double[] rrsD;
+		double now = NowEpochSeconds();
+		float[] sd1X, sd1Y, sd2X, sd2Y, ratioX, ratioY;
+		double[] rrsD;
 		lock (_historyLock)
 		{
-			sd1 = SnapshotF(_sd1);
-			sd2 = SnapshotF(_sd2);
-			ratio = SnapshotF(_sd1Sd2);
+			_sd1.Snapshot(now, out sd1X, out sd1Y);
+			_sd2.Snapshot(now, out sd2X, out sd2Y);
+			_sd1Sd2.Snapshot(now, out ratioX, out ratioY);
 			rrsD = SnapshotD(_recentRr);
 		}
 
@@ -853,12 +847,12 @@ public sealed class StatusWindow : IDisposable
 		}
 
 		float h = FillRowHeight(3);
-		DrawPoincareScatter(rrs, h);
+		DrawPoincareScatter(rrs, h); // unchanged: scatter, not a time series
 
 		PlotRow(h,
-			("SD1 (short-term variability, ms)", sd1),
-			("SD2 (long-term variability, ms)", sd2));
-		PlotRow(h, ("SD1/SD2 ratio (parasympathetic index)", ratio));
+			("SD1 (short-term variability, ms)", sd1X, sd1Y),
+			("SD2 (long-term variability, ms)", sd2X, sd2Y));
+		PlotRow(h, ("SD1/SD2 ratio (parasympathetic index)", ratioX, ratioY));
 	}
 
 	private static void DrawPoincareScatter(float[] rrs, float maxSide)
@@ -1399,41 +1393,83 @@ public sealed class StatusWindow : IDisposable
 		}
 	}
 
-	private static void Plot(string title, float[] data, Vector2 size)
+	// Seconds of history the live charts span — the fixed, scrolling x-window width.
+	private double WindowSeconds => Math.Max(1.0, _settings.SparklineWindowMinutes * 60.0);
+
+	private static double NowEpochSeconds() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+
+	// Configure the shared time-relative x-axis: a fixed window [-window, +pad] re-asserted
+	// every frame (so it scrolls with 'now' even when no new data arrives), with relative
+	// tick labels. The Y axis flags are caller-chosen (auto-fit for value charts; locked
+	// 0..1 with no labels for the contact strip).
+	private void SetupTimeAxis(ImPlotAxisFlags yFlags = ImPlotAxisFlags.AutoFit)
+	{
+		double window = WindowSeconds;
+		double rightPad = window * 0.02; // headroom so the newest point doesn't hug the edge
+
+		ImPlot.SetupAxis(ImAxis.X1, string.Empty, ImPlotAxisFlags.None);
+		ImPlot.SetupAxis(ImAxis.Y1, string.Empty, yFlags);
+		ImPlot.SetupAxisLimits(ImAxis.X1, -window, rightPad, ImPlotCond.Always);
+
+		(double[] positions, string[] labels) = RelativeTimeAxis.Ticks(window);
+		if (positions.Length > 0)
+		{
+			ImPlot.SetupAxisTicks(ImAxis.X1, ref positions[0], positions.Length, labels);
+		}
+	}
+
+	// Build the RR plot's (x, y): x is the cumulative-RR time axis (newest beat at 0,
+	// seconds), y is the RR interval in ms. Reconstructed because batched beats share a
+	// timestamp — see RrTimeAxis.
+	private static (float[] xs, float[] ys) RrSeries(double[] rrMs)
+	{
+		double[] secs = RrTimeAxis.CumulativeSeconds(rrMs);
+		var xs = new float[secs.Length];
+		var ys = new float[rrMs.Length];
+		for (int i = 0; i < secs.Length; i++)
+		{
+			xs[i] = (float)secs[i];
+			ys[i] = (float)rrMs[i];
+		}
+
+		return (xs, ys);
+	}
+
+	private void Plot(string title, float[] xs, float[] ys, Vector2 size)
 	{
 		// Always draw the frame (even with no data) so rows stay aligned.
-		// X is just the sample index, so hide its tick labels; ImPlot auto-fits Y.
 		if (ImPlot.BeginPlot(title, size, ImPlotFlags.NoLegend | ImPlotFlags.NoMouseText))
 		{
-			ImPlot.SetupAxes(string.Empty, string.Empty,
-				ImPlotAxisFlags.AutoFit | ImPlotAxisFlags.NoTickLabels, ImPlotAxisFlags.AutoFit);
-			if (data.Length >= 2)
+			SetupTimeAxis();
+			if (ys.Length >= 2)
 			{
-				ImPlot.PlotLine(title, ref data[0], data.Length);
+				ImPlot.PlotLine(title, ref xs[0], ref ys[0], ys.Length);
 			}
+
 			ImPlot.EndPlot();
 		}
 	}
 
-	// One comparison chart (a series plus its baseline) sharing a single auto-fit
-	// Y axis, capped to MaxPlotAspect and centred in the available width.
-	private void PlotPair(float height, string title, string aLabel, float[] a, string bLabel, float[] b)
+	// One comparison chart (a series plus its baseline) sharing a single auto-fit Y axis,
+	// capped to MaxPlotAspect and centred in the available width.
+	private void PlotPair(float height, string title,
+		string aLabel, float[] aXs, float[] aYs,
+		string bLabel, float[] bXs, float[] bYs)
 	{
 		(Vector2 size, float indent) = CenteredCell(ImGui.GetContentRegionAvail().X, height);
 		Indent(indent);
 
 		if (ImPlot.BeginPlot(title, size, ImPlotFlags.NoMouseText))
 		{
-			ImPlot.SetupAxes(string.Empty, string.Empty,
-				ImPlotAxisFlags.AutoFit | ImPlotAxisFlags.NoTickLabels, ImPlotAxisFlags.AutoFit);
+			SetupTimeAxis();
 
-			if (a.Length >= 2)
+			if (aYs.Length >= 2)
 			{
-				ImPlot.PlotLine(aLabel, ref a[0], a.Length);
+				ImPlot.PlotLine(aLabel, ref aXs[0], ref aYs[0], aYs.Length);
 			}
-			if (b.Length >= 2)
+			if (bYs.Length >= 2)
 			{
-				ImPlot.PlotLine(bLabel, ref b[0], b.Length);
+				ImPlot.PlotLine(bLabel, ref bXs[0], ref bYs[0], bYs.Length);
 			}
 
 			ImPlot.EndPlot();
@@ -1442,7 +1478,7 @@ public sealed class StatusWindow : IDisposable
 
 	// Lay out N plots in a single row, each sharing the width equally (capped to
 	// MaxPlotAspect) and the group centred. Handles a single plot too.
-	private void PlotRow(float height, params (string label, float[] data)[] plots)
+	private void PlotRow(float height, params (string label, float[] xs, float[] ys)[] plots)
 	{
 		int n = plots.Length;
 		if (n == 0)
@@ -1459,7 +1495,7 @@ public sealed class StatusWindow : IDisposable
 		Vector2 size = new(cell, height);
 		for (int i = 0; i < n; i++)
 		{
-			Plot(plots[i].label, plots[i].data, size);
+			Plot(plots[i].label, plots[i].xs, plots[i].ys, size);
 			if (i < n - 1)
 			{
 				ImGui.SameLine();
