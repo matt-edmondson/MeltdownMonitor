@@ -22,9 +22,9 @@ namespace MeltdownMonitor.Mobile.Controls;
 /// reusing the pure, unit-tested <see cref="LemniscateGeometry"/> and
 /// <see cref="RegulationFieldCalculator"/> from Core verbatim — the same maths
 /// the desktop view is specified against. While attached to the visual tree a
-/// render-tick timer drives the desktop's breathing/jitter flourishes through a
+/// render-tick timer drives the desktop's pulse/jitter flourishes through a
 /// pure <see cref="RegulationFieldAnimator"/>: the marker eases between the
-/// multi-second samples, its halo breathes at the current HR cadence, and the
+/// multi-second samples, its halo pulses at the current HR cadence, and the
 /// trace carries variability jitter. The timer stops when the control detaches
 /// (the Now tab tears down while backgrounded) so it costs nothing off-screen.
 /// </summary>
@@ -32,7 +32,7 @@ public sealed class RegulationField : Control
 {
 	private const int LobeSegments = 96;
 
-	// ~30 fps: enough for a smooth breathe/jitter without churning the battery
+	// ~30 fps: enough for a smooth pulse/jitter without churning the battery
 	// the way a 60 fps loop would on a phone that stays on this screen.
 	private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(33);
 
@@ -133,8 +133,8 @@ public sealed class RegulationField : Control
 		set => SetValue(StateColorProperty, value);
 	}
 
-	/// <summary>Current heart rate (bpm); sets the breathing cadence of the
-	/// marker halo. Zero/absent falls back to a gentle resting breath.</summary>
+	/// <summary>Current heart rate (bpm); sets the pulse cadence of the
+	/// marker halo. Zero/absent falls back to a gentle resting pulse.</summary>
 	public double HeartRate
 	{
 		get => GetValue(HeartRateProperty);
@@ -301,7 +301,7 @@ public sealed class RegulationField : Control
 				: Lerp(Sky, Sapphire, depth);
 
 			// Animated variability jitter on the outer half of each lobe: the
-			// healthier the variability, the more the line "breathes" sideways.
+			// healthier the variability, the more the line shifts sideways.
 			Vector2 n = Normal(a, b) * (float)_animator.JitterOffset(i, quality, depth);
 
 			double thick = baseThick * (warm ? warmSwell : coolSwell);
@@ -470,7 +470,7 @@ public sealed class RegulationField : Control
 	private void DrawMarker(DrawingContext context, Vector2 centre, float halfWidth, double confidence)
 	{
 		// Eased position glides between the multi-second samples; the halo
-		// breathes at the current HR cadence (RegulationFieldAnimator).
+		// pulses at the current HR cadence (RegulationFieldAnimator).
 		Vector2 p = LemniscateGeometry.MarkerPoint((float)_animator.MarkerPos, centre, halfWidth);
 		var at = P(p);
 		double halo = 14 * _animator.HaloPulse;
