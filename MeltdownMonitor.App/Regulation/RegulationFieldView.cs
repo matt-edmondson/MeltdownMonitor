@@ -260,7 +260,7 @@ public sealed class RegulationFieldView : IDisposable
 
 	// Upper-cool quadrant (cool side, fragile/low-variability) = collapse territory. Fill it with
 	// Slate at an opacity tracking the collapse signal, so approach is visible before the latch.
-	private void DrawShutdownZone(ImDrawListPtr draw, Vector2 centre, float halfWidth, float lobeHeight, RegulationReading r, float confidence)
+	private static void DrawShutdownZone(ImDrawListPtr draw, Vector2 centre, float halfWidth, float lobeHeight, RegulationReading r, float confidence)
 	{
 		double intensity = HypoarousalVisual.Intensity(r.Hypoarousal);
 		if (intensity <= 0.0)
