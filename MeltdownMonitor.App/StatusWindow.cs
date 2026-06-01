@@ -590,6 +590,8 @@ public sealed class StatusWindow : IDisposable
 		ImGuiWidgets.ColorIndicator(StateColor(state), enabled: true);
 		ImGui.SameLine();
 		ImGui.Text($"State: {state}");
+		ImGui.SameLine();
+		ImGui.TextDisabled($"(for {FormatStateDuration(DateTimeOffset.UtcNow - _pipeline.StateEnteredAt)})");
 
 		var latest = _pipeline.LatestSample;
 		if (latest is not null)
@@ -624,6 +626,28 @@ public sealed class StatusWindow : IDisposable
 			ImGui.SameLine();
 			ImGui.TextColored(StateColors.For(DetectorState.Warning), "   No sensor contact");
 		}
+	}
+
+	// Compact "how long in the current state" label for the status header, e.g.
+	// "8s", "3m 12s", "1h 4m". Negative spans (clock skew) clamp to zero.
+	private static string FormatStateDuration(TimeSpan span)
+	{
+		if (span < TimeSpan.Zero)
+		{
+			span = TimeSpan.Zero;
+		}
+
+		if (span.TotalHours >= 1)
+		{
+			return $"{(int)span.TotalHours}h {span.Minutes}m";
+		}
+
+		if (span.TotalMinutes >= 1)
+		{
+			return $"{(int)span.TotalMinutes}m {span.Seconds}s";
+		}
+
+		return $"{span.Seconds}s";
 	}
 
 	private void DrawOverviewTab()
