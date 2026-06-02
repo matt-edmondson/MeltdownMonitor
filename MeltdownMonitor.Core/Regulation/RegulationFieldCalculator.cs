@@ -36,8 +36,8 @@ public static class RegulationFieldCalculator
 			|| !double.IsFinite(sample.BaselineHr) || sample.BaselineHr <= 0
 			|| !double.IsFinite(sample.Rmssd) || !double.IsFinite(sample.MeanHr))
 		{
-			// Baseline not usable yet — neutral position, no confidence.
-			return new RegulationReading(0.0, 1.0, 0.0, 0.5, 0.0);
+			// Baseline not usable yet — neutral position (vagal tone centred), no confidence.
+			return new RegulationReading(0.0, 1.0, 0.0, 0.5, 0.0) { VagalTone = 0.5 };
 		}
 
 		double rmssdDrop = (sample.BaselineRmssd - sample.Rmssd) / sample.BaselineRmssd; // + when stressed
@@ -54,6 +54,12 @@ public static class RegulationFieldCalculator
 		double index = Math.Clamp(combined * WarningBoundaryIndex, -1.0, 1.0);
 
 		double quality = Math.Clamp(sample.Rmssd / sample.BaselineRmssd, 0.0, 1.0);
+
+		// Vagal-tone vertical axis, baseline-centred so Y is baseline-relative like the X index:
+		// 0.5 = at baseline, → 1 (STEADY) above, → 0 (FRAGILE) below. The log-ratio through tanh
+		// keeps equal proportional moves either side of baseline symmetric and gives real
+		// resolution *above* baseline, where the raw-ratio VariabilityQuality saturates at 1.
+		double vagalTone = Math.Clamp(0.5 + (0.5 * Math.Tanh(Math.Log(sample.Rmssd / sample.BaselineRmssd))), 0.0, 1.0);
 
 		// Poincaré SD1/SD2 ratio → cosmetic lobe fatness. Un-baselined: healthy ratios sit
 		// roughly in [0.2, 0.6]; map that band to [0, 1]. Neutral 0.5 when extended metrics
@@ -82,6 +88,7 @@ public static class RegulationFieldCalculator
 		return new RegulationReading(index, quality, confidence, lobeRoundness, lfHfBalance)
 		{
 			Hypoarousal = hypoarousal,
+			VagalTone = vagalTone,
 		};
 	}
 }

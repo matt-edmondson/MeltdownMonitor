@@ -6,8 +6,8 @@ namespace MeltdownMonitor.Tests;
 [TestClass]
 public class RegulationFieldHistogramTests
 {
-	private static RegulationTrailPoint Point(double index, double quality = 0.5) =>
-		new(new RegulationReading(index, quality, 1.0, 0.5, 0.0), DetectorState.Idle);
+	private static RegulationTrailPoint Point(double index, double vagalTone = 0.5) =>
+		new(new RegulationReading(index, 1.0, 1.0, 0.5, 0.0) { VagalTone = vagalTone }, DetectorState.Idle);
 
 	[TestMethod]
 	public void EmptyTrail_ProducesZeroCounts()
@@ -50,10 +50,10 @@ public class RegulationFieldHistogramTests
 	}
 
 	[TestMethod]
-	public void QualityAxis_BucketsOverZeroToOne()
+	public void VagalToneAxis_BucketsOverZeroToOne()
 	{
-		RegulationTrailPoint[] trail = [Point(0, quality: 0.1), Point(0, quality: 0.9), Point(0, quality: 0.95)];
-		var hist = RegulationFieldHistogram.QualityAxis(trail, bucketCount: 10);
+		RegulationTrailPoint[] trail = [Point(0, vagalTone: 0.1), Point(0, vagalTone: 0.9), Point(0, vagalTone: 0.95)];
+		var hist = RegulationFieldHistogram.VagalToneAxis(trail, bucketCount: 10);
 		Assert.AreEqual(0.0, hist.Min, 1e-9);
 		Assert.AreEqual(1.0, hist.Max, 1e-9);
 		Assert.AreEqual(1, hist.Counts[1], "0.1 → second bucket");

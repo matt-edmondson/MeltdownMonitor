@@ -2,8 +2,9 @@ namespace MeltdownMonitor.Core.Regulation;
 
 /// <summary>
 /// Buckets the readings in a Regulation Field trail window into per-axis histograms: arousal
-/// index (the X axis, spanning [-1, 1]) and variability quality (the Y axis, spanning [0, 1]).
-/// Pure and deterministic so both heads render identical distributions and it can be unit-tested.
+/// index (the X axis, spanning [-1, 1]) and vagal tone (the Y axis, spanning [0, 1], baseline at
+/// 0.5). Pure and deterministic so both heads render identical distributions and it can be
+/// unit-tested.
 /// </summary>
 public static class RegulationFieldHistogram
 {
@@ -13,16 +14,16 @@ public static class RegulationFieldHistogram
 	// Fixed axis ranges, matching the field's marker mapping (see RegulationReading / the views).
 	private const double IndexMin = -1.0;
 	private const double IndexMax = 1.0;
-	private const double QualityMin = 0.0;
-	private const double QualityMax = 1.0;
+	private const double VagalToneMin = 0.0;
+	private const double VagalToneMax = 1.0;
 
 	/// <summary>Distribution of arousal index (the X axis) across the trail window.</summary>
 	public static RegulationAxisHistogram IndexAxis(IReadOnlyList<RegulationTrailPoint> trail, int bucketCount = DefaultBucketCount)
 		=> Build(trail, IndexMin, IndexMax, bucketCount, static p => p.Reading.Index);
 
-	/// <summary>Distribution of variability quality (the Y axis) across the trail window.</summary>
-	public static RegulationAxisHistogram QualityAxis(IReadOnlyList<RegulationTrailPoint> trail, int bucketCount = DefaultBucketCount)
-		=> Build(trail, QualityMin, QualityMax, bucketCount, static p => p.Reading.VariabilityQuality);
+	/// <summary>Distribution of vagal tone (the Y axis, baseline at 0.5) across the trail window.</summary>
+	public static RegulationAxisHistogram VagalToneAxis(IReadOnlyList<RegulationTrailPoint> trail, int bucketCount = DefaultBucketCount)
+		=> Build(trail, VagalToneMin, VagalToneMax, bucketCount, static p => p.Reading.VagalTone);
 
 	private static RegulationAxisHistogram Build(
 		IReadOnlyList<RegulationTrailPoint> trail,

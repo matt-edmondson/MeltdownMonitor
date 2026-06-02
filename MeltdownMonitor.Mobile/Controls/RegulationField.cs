@@ -311,8 +311,8 @@ public sealed class RegulationField : Control
 
 	// Axis density histograms: how the samples currently in the trail window are distributed.
 	// X (arousal index) is a row of vertical bars below the field, each column aligned with the
-	// index it counts — left=cool/REST, right=warm/MELTDOWN. Y (variability quality) is a column
-	// of horizontal bars on the left margin, top=FRAGILE (low quality) to bottom=STEADY (high).
+	// index it counts — left=cool/REST, right=warm/MELTDOWN. Y (vagal tone) is a column
+	// of horizontal bars on the left margin, top=FRAGILE (low tone) to bottom=STEADY (high).
 	// Mirrors the desktop RegulationFieldView, computed from the same Core bucketing.
 	private void DrawAxisHistograms(DrawingContext context, Point centre, double w, double h, float halfWidth, float lobeHeight, double confidence)
 	{
@@ -323,7 +323,7 @@ public sealed class RegulationField : Control
 		}
 
 		var xHist = RegulationFieldHistogram.IndexAxis(trail);
-		var yHist = RegulationFieldHistogram.QualityAxis(trail, 16);
+		var yHist = RegulationFieldHistogram.VagalToneAxis(trail, 16);
 		var axisBrush = Brush(Overlay1, 0.22 * confidence);
 		var axisPen = new Pen(axisBrush, 1);
 
@@ -354,7 +354,7 @@ public sealed class RegulationField : Control
 			}
 		}
 
-		// Y axis (variability quality), on the left margin, bars growing rightward.
+		// Y axis (vagal tone), on the left margin, bars growing rightward.
 		if (yHist.PeakCount > 0)
 		{
 			double axisX = 4;
