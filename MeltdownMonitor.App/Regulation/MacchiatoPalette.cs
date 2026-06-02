@@ -24,6 +24,13 @@ internal static class MacchiatoPalette
 	public static readonly Vector4 Maroon = Hex(0xee, 0x99, 0xa0);
 	public static readonly Vector4 Red = Hex(0xed, 0x87, 0x96);
 
+	/// <summary>Mauve / Pink: the dwell-heatmap gradient lane. Chosen because nothing else in the
+	/// Regulation Field uses them — the lobes are Sky/Peach, depth is Sapphire/Maroon, states are
+	/// Green/Peach/Red/Sapphire, collapse is Slate, the crossover is Lavender — so the density cloud
+	/// reads as its own layer without colliding with any semantic indicator.</summary>
+	public static readonly Vector4 Mauve = Hex(0xc6, 0xa0, 0xf6);
+	public static readonly Vector4 Pink = Hex(0xf5, 0xbd, 0xe6);
+
 	/// <summary>Detector-state accent, per the branding spec's state colour mapping.</summary>
 	public static Vector4 State(DetectorState state) => state switch
 	{

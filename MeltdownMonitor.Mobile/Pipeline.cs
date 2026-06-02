@@ -140,6 +140,42 @@ public sealed class Pipeline : IDisposable
 		}
 	}
 
+	/// <summary>
+	/// Reconstructs up to <paramref name="count"/> recent Regulation Field readings from persisted
+	/// HRV samples (oldest first), so the field's comet trail survives restarts instead of starting
+	/// blank. Deterministic: each sample carries its own baseline and detector state, so the
+	/// recomputed reading and colour match what was originally drawn. Best-effort — a missing or
+	/// locked database yields an empty list. Mirrors the desktop pipeline.
+	/// </summary>
+	public IReadOnlyList<RegulationTrailPoint> LoadRecentRegulationTrail(int count)
+	{
+		if (count <= 0)
+		{
+			return [];
+		}
+
+		try
+		{
+			var samples = _repository.ReadRecentHrvSamples(count);
+			var points = new List<RegulationTrailPoint>(samples.Count);
+			foreach (HrvSample s in samples)
+			{
+				bool warm = double.IsFinite(s.BaselineRmssd) && s.BaselineRmssd > 0
+					&& double.IsFinite(s.BaselineHr) && s.BaselineHr > 0;
+				var reading = RegulationFieldCalculator.Compute(s, _settings.Thresholds, warmUpProgress: 1.0, baselineWarm: warm);
+				points.Add(new RegulationTrailPoint(reading, s.State));
+			}
+
+			return points;
+		}
+		catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException
+			or IOException or InvalidOperationException)
+		{
+			System.Diagnostics.Debug.WriteLine($"Regulation trail seeding skipped: {ex.Message}");
+			return [];
+		}
+	}
+
 	// Battery notifications arrive on a background BLE thread; the repository
 	// serialises the write internally, so we just persist and fan out.
 	private void OnBatteryLevelChanged(BatteryReading reading)
