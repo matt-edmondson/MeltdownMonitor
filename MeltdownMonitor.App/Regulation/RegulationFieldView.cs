@@ -207,6 +207,7 @@ public sealed class RegulationFieldView : IDisposable
 		DrawShutdownZone(draw, centre, halfWidth, baseLobeHeight, disp, confidence);
 		DrawVagalAxis(draw, centre, markerYClamp, confidence);
 		DrawAxisHistograms(draw, origin, centre, halfWidth, labelClearHeight, markerYClamp, height, trail, confidence);
+		DrawDensityHeatmap(draw, centre, halfWidth, markerYClamp, trail, confidence);
 		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, _playhead.Position, beatsAppended, confidence);
 		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, disp, confidence);
 		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, _recoveryDisplay, confidence);
@@ -638,6 +639,54 @@ public sealed class RegulationFieldView : IDisposable
 		Vector2 st = ImGui.CalcTextSize("STEADY");
 		draw.AddText(new Vector2(centre.X - (fr.X * 0.5f), topY - lineH - 2f), label, "FRAGILE");
 		draw.AddText(new Vector2(centre.X - (st.X * 0.5f), botY + 2f), label, "STEADY");
+	}
+
+	// Dwell heatmap: a faint cloud showing where the comet-trail window has actually spent its time
+	// — the 2D joint of the two axis histograms. Each occupied cell is a soft blob placed through
+	// the same X = arousal index, Y = vagal tone mapping as the marker, so the cloud sits exactly
+	// under the marker's travel. Drawn beneath the live trace and comet so they read on top; alpha
+	// scales with dwell (peak-normalised, gamma-lifted so rarely-visited cells still register),
+	// tinted by lobe side to echo the lobe colours.
+	private void DrawDensityHeatmap(ImDrawListPtr draw, Vector2 centre, float halfWidth, float markerYClamp, RegulationTrailPoint[] trail, float confidence)
+	{
+		// Need a little dwell before a density reads as anything but noise.
+		if (trail.Length < 4)
+		{
+			return;
+		}
+
+		const int xb = 28;
+		const int yb = 18;
+		var density = RegulationFieldHistogram.FieldDensity(trail, xb, yb);
+		if (density.PeakCount <= 0)
+		{
+			return;
+		}
+
+		float cellW = (halfWidth * 2f) / xb;
+		float cellH = (markerYClamp * 2f) / yb;
+		// Overlap neighbouring blobs so the grid reads as one smooth cloud rather than tiles.
+		float radius = MathF.Max(cellW, cellH) * 0.9f;
+
+		for (int y = 0; y < yb; y++)
+		{
+			float vagalTone = (y + 0.5f) / yb;
+			float cy = centre.Y + VagalToneOffsetY(vagalTone, markerYClamp);
+			for (int x = 0; x < xb; x++)
+			{
+				int c = density.Count(x, y);
+				if (c == 0)
+				{
+					continue;
+				}
+
+				float index = -1f + (((x + 0.5f) / xb) * 2f);
+				float cx = LemniscateGeometry.MarkerPoint(index, centre, halfWidth).X;
+				float t = MathF.Pow(c / (float)density.PeakCount, 0.6f);
+				Vector4 hue = index >= 0f ? MacchiatoPalette.Peach : MacchiatoPalette.Sky;
+				draw.AddCircleFilled(new Vector2(cx, cy), radius, Col(MacchiatoPalette.WithAlpha(hue, 0.20f * t * confidence)));
+			}
+		}
 	}
 
 	// Axis density histograms: how the samples currently in the trail window are distributed.

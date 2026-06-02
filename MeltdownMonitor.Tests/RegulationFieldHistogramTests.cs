@@ -73,4 +73,55 @@ public class RegulationFieldHistogramTests
 	{
 		Assert.Throws<ArgumentOutOfRangeException>(() => RegulationFieldHistogram.IndexAxis([], bucketCount: 0));
 	}
+
+	[TestMethod]
+	public void FieldDensity_BucketsByIndexAndVagalTone()
+	{
+		// 2×2 grid: x split at index 0 (cool|warm), y split at vagal tone 0.5 (FRAGILE|STEADY).
+		// Row-major counts[(y*2)+x]: cell (x=0,y=0) = cool+fragile, (x=1,y=1) = warm+steady.
+		RegulationTrailPoint[] trail =
+		[
+			Point(-0.5, vagalTone: 0.2),  // cool, fragile  → (0,0)
+			Point(0.5, vagalTone: 0.8),   // warm, steady   → (1,1)
+			Point(0.5, vagalTone: 0.8),   // warm, steady   → (1,1)
+			Point(-0.5, vagalTone: 0.8),  // cool, steady   → (0,1)
+		];
+		var d = RegulationFieldHistogram.FieldDensity(trail, xBuckets: 2, yBuckets: 2);
+
+		Assert.AreEqual(4, d.TotalCount);
+		Assert.AreEqual(2, d.PeakCount, "warm+steady cell holds two samples");
+		Assert.AreEqual(1, d.Count(0, 0), "cool+fragile");
+		Assert.AreEqual(0, d.Count(1, 0), "warm+fragile is empty");
+		Assert.AreEqual(1, d.Count(0, 1), "cool+steady");
+		Assert.AreEqual(2, d.Count(1, 1), "warm+steady");
+	}
+
+	[TestMethod]
+	public void FieldDensity_SkipsNonFiniteAndClampsOutOfRange()
+	{
+		RegulationTrailPoint[] trail =
+		[
+			Point(double.NaN, vagalTone: 0.5),  // skipped (non-finite index)
+			Point(5.0, vagalTone: 2.0),          // both out of range → clamps into top-right cell
+		];
+		var d = RegulationFieldHistogram.FieldDensity(trail, xBuckets: 2, yBuckets: 2);
+		Assert.AreEqual(1, d.TotalCount);
+		Assert.AreEqual(1, d.Count(1, 1), "above-max index and tone clamp into the last cell");
+	}
+
+	[TestMethod]
+	public void FieldDensity_ZeroBuckets_Throws()
+	{
+		Assert.Throws<ArgumentOutOfRangeException>(() => RegulationFieldHistogram.FieldDensity([], xBuckets: 0, yBuckets: 4));
+		Assert.Throws<ArgumentOutOfRangeException>(() => RegulationFieldHistogram.FieldDensity([], xBuckets: 4, yBuckets: 0));
+	}
+
+	[TestMethod]
+	public void FieldDensity_Count_BoundsChecked()
+	{
+		var d = RegulationFieldHistogram.FieldDensity([Point(0, 0.5)], xBuckets: 3, yBuckets: 3);
+		Assert.Throws<ArgumentOutOfRangeException>(() => d.Count(3, 0));
+		Assert.Throws<ArgumentOutOfRangeException>(() => d.Count(0, 3));
+		Assert.Throws<ArgumentOutOfRangeException>(() => d.Count(-1, 0));
+	}
 }

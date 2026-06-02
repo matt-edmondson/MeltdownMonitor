@@ -3,7 +3,7 @@ namespace MeltdownMonitor.Core.Regulation;
 /// <summary>
 /// The distribution of Regulation Field samples across evenly-sized value buckets over a fixed
 /// [<see cref="Min"/>, <see cref="Max"/>] range. The field draws one of these along each axis —
-/// arousal index (X) and variability quality (Y) — to show how the samples currently in the
+/// arousal index (X) and vagal tone (Y) — to show how the samples currently in the
 /// comet-trail window are spread across the field.
 /// </summary>
 public readonly record struct RegulationAxisHistogram

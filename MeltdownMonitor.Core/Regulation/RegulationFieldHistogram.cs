@@ -25,6 +25,37 @@ public static class RegulationFieldHistogram
 	public static RegulationAxisHistogram VagalToneAxis(IReadOnlyList<RegulationTrailPoint> trail, int bucketCount = DefaultBucketCount)
 		=> Build(trail, VagalToneMin, VagalToneMax, bucketCount, static p => p.Reading.VagalTone);
 
+	/// <summary>
+	/// Joint dwell density (X = arousal index, Y = vagal tone) across the trail window — the 2D
+	/// distribution behind <see cref="IndexAxis"/> and <see cref="VagalToneAxis"/>. Non-finite
+	/// readings are skipped; out-of-range values clamp into the edge cells.
+	/// </summary>
+	public static RegulationFieldDensity FieldDensity(
+		IReadOnlyList<RegulationTrailPoint> trail, int xBuckets = DefaultBucketCount, int yBuckets = DefaultBucketCount)
+	{
+		ArgumentNullException.ThrowIfNull(trail);
+		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(xBuckets);
+		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(yBuckets);
+
+		var counts = new int[xBuckets * yBuckets];
+		double xSpan = IndexMax - IndexMin;
+		double ySpan = VagalToneMax - VagalToneMin;
+		for (int i = 0; i < trail.Count; i++)
+		{
+			RegulationReading r = trail[i].Reading;
+			if (!double.IsFinite(r.Index) || !double.IsFinite(r.VagalTone))
+			{
+				continue;
+			}
+
+			int bx = Math.Clamp((int)Math.Floor((r.Index - IndexMin) / xSpan * xBuckets), 0, xBuckets - 1);
+			int by = Math.Clamp((int)Math.Floor((r.VagalTone - VagalToneMin) / ySpan * yBuckets), 0, yBuckets - 1);
+			counts[(by * xBuckets) + bx]++;
+		}
+
+		return new RegulationFieldDensity(xBuckets, yBuckets, counts);
+	}
+
 	private static RegulationAxisHistogram Build(
 		IReadOnlyList<RegulationTrailPoint> trail,
 		double min,
