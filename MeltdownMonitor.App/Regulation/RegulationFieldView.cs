@@ -1,5 +1,6 @@
 using System.Numerics;
 using Hexa.NET.ImGui;
+using ktsu.ImGui.App;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
@@ -253,12 +254,17 @@ public sealed class RegulationFieldView : IDisposable
 		Vector2 c = centre + new Vector2(bal * halfWidth * 0.6f, 0f);
 		float baseAlpha = MathF.Min(1f, MathF.Abs(bal)) * 0.10f * confidence;
 
-		// Three concentric discs fake a soft radial falloff (ImGui has no radial gradient).
+		// Three concentric discs fake a soft radial falloff (ImGui has no radial gradient). Drawn
+		// additively so the overlapping discs accumulate toward the centre into a real glow instead
+		// of flat alpha-over bands; restored to alpha-over immediately after.
+		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
 		for (int i = 3; i >= 1; i--)
 		{
 			float radius = halfWidth * 0.30f * i;
 			draw.AddCircleFilled(c, radius, Col(MacchiatoPalette.WithAlpha(hue, baseAlpha / i)), 32);
 		}
+
+		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 	}
 
 	private static void DrawWindowOfTolerance(ImDrawListPtr draw, Vector2 centre, float halfWidth, float lobeHeight, float confidence)
@@ -334,8 +340,12 @@ public sealed class RegulationFieldView : IDisposable
 
 		// Draw a closed Catmull-Rom spline through the jittered vertices: smooth flowing
 		// undulations rather than faceted spikes. The continuous chain leaves no segment
-		// gaps. Colour/thickness come from each sub-point's side of the crossover.
+		// gaps. Colour/thickness come from each sub-point's side of the crossover. Drawn
+		// additively so the densely overlapping segments and round joins bloom into a glowing
+		// neon trace (and the warm/cool lobes brighten where they meet at the crossover) instead
+		// of compositing flat; restored to alpha-over after the trace.
 		const int sub = 4;
+		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
 		for (int i = 0; i < n; i++)
 		{
 			Vector2 p0 = pts[(i - 1 + n) % n];
@@ -363,6 +373,8 @@ public sealed class RegulationFieldView : IDisposable
 				prev = cur;
 			}
 		}
+
+		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 	}
 
 	// Normalised beat-to-beat differences in [-1, 1]. An (almost) flat result when variability
@@ -416,9 +428,12 @@ public sealed class RegulationFieldView : IDisposable
 		pts[^1] = head;
 
 		// Join the points into one smooth comet tail with a Catmull-Rom spline through them:
-		// oldest faint → newest bright, thickening toward the head.
+		// oldest faint → newest bright, thickening toward the head. Additive blend makes the
+		// overlapping spline sub-segments (and the head where it meets the marker) bloom rather
+		// than darken at every join; restored to alpha-over once the comet is drawn.
 		const int sub = 8;
 		int count = pts.Length;
+		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
 		for (int i = 0; i < count - 1; i++)
 		{
 			Vector2 p0 = pts[Math.Max(0, i - 1)];
@@ -450,6 +465,8 @@ public sealed class RegulationFieldView : IDisposable
 				prev = cur;
 			}
 		}
+
+		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 	}
 
 	// Uniform Catmull-Rom interpolation between p1 and p2 (p0/p3 are the neighbouring points).
@@ -616,6 +633,10 @@ public sealed class RegulationFieldView : IDisposable
 
 		Vector4 stateCol = MacchiatoPalette.State(_pipeline.CurrentState);
 		float pulse = 1f + (0.18f * MathF.Sin(_pulsePhase));
+		// The two surrounding halos glow additively (overlap with the trail head and each other
+		// blooms toward white); the solid marker core and inner dot below stay alpha-over so they
+		// read as crisp, opaque points.
+		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
 		draw.AddCircleFilled(p, 16f * _drawScale * pulse, Col(MacchiatoPalette.WithAlpha(stateCol, 0.18f * confidence)));
 
 		// Outer collapse halo: Slate, non-pulsing, radius grows with the collapse signal — layered
@@ -627,6 +648,7 @@ public sealed class RegulationFieldView : IDisposable
 			draw.AddCircleFilled(p, ring, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Slate, (float)(0.30 * collapse) * confidence)));
 		}
 
+		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 		draw.AddCircleFilled(p, 6.5f * _drawScale, Col(MacchiatoPalette.WithAlpha(stateCol, confidence)));
 		draw.AddCircleFilled(p, 2.6f * _drawScale, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Base, confidence)));
 	}
@@ -704,6 +726,10 @@ public sealed class RegulationFieldView : IDisposable
 		float top0 = centre.Y - markerYClamp;
 		float peak = density.PeakCount;
 
+		// Additive so each magma cell adds its light to the dark canvas (and the cooler layers
+		// beneath) instead of compositing alpha-over — the busy buckets glow rather than sit as flat
+		// tiles. Restored to alpha-over once the grid is laid down.
+		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
 		for (int y = 0; y < yb; y++)
 		{
 			float top = top0 + (y * cellH);
@@ -724,6 +750,8 @@ public sealed class RegulationFieldView : IDisposable
 					Col(MacchiatoPalette.WithAlpha(HeatColor(t), opacity * confidence)));
 			}
 		}
+
+		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 	}
 
 	// Dwell-heatmap gradient: a magma-style ramp built from Catppuccin Macchiato hues — dark field
