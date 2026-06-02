@@ -426,10 +426,13 @@ public sealed class StatusWindow : IDisposable
 			// Measure the content extent (the next-item Y plus the bottom window padding)
 			// so next frame's window is exactly tall enough to hold the HUD. The width grip
 			// is placed at that bottom edge and folded into the measurement so it has room
-			// without forcing a scrollbar.
+			// without forcing a scrollbar. A row of item spacing is added as slack so DPI
+			// rounding never leaves the window a hair short of its content (which is all it
+			// takes for ImGui to show a vertical scrollbar).
 			float contentBottom = ImGui.GetCursorPosY();
 			DrawWidthGrip(ov, contentBottom);
-			_compactHeight = (int)MathF.Ceiling(contentBottom + OverlayGripSize + ImGui.GetStyle().WindowPadding.Y);
+			var style = ImGui.GetStyle();
+			_compactHeight = (int)MathF.Ceiling(contentBottom + OverlayGripSize + style.WindowPadding.Y + style.ItemSpacing.Y);
 		}
 	}
 
@@ -513,7 +516,13 @@ public sealed class StatusWindow : IDisposable
 			// stay identical (animation, palette, trail all live in one place). It fills its
 			// available height, so in the auto-sized HUD we pin it to a fixed-height child
 			// (proportional to the width) — otherwise it would keep growing every frame.
-			float fieldWidth = ImGui.GetContentRegionAvail().X;
+			//
+			// Size the field from the *configured* width rather than the live available width:
+			// the latter shrinks by a scrollbar's width the instant one appears, which would
+			// shorten the field, shorten the measured HUD height, and so flip the scrollbar
+			// off again — a flip-flop that leaves the scrollbar flickering on. Deriving the
+			// height from the fixed width keeps it stable whether or not a scrollbar is present.
+			float fieldWidth = ov.Width - (2f * ImGui.GetStyle().WindowPadding.X);
 			float fieldHeight = MathF.Max(120f, fieldWidth * 0.5f);
 			if (ImGui.BeginChild("##overlay-regfield", new Vector2(0f, fieldHeight), ImGuiChildFlags.None,
 				ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse))
