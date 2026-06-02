@@ -169,68 +169,72 @@ public sealed class Pipeline : IDisposable
 		_runTask = RunAsync(_cts.Token);
 	}
 
+	/// <summary>Days of own persisted history read for the RMSSD/HR anchor — mirrors the desktop
+	/// head's default <c>BaselineTuning.AnchorWindowDays</c>.</summary>
+	private static readonly TimeSpan HistoryAnchorLookback = TimeSpan.FromDays(7);
+
 	/// <summary>
-	/// Seeds <see cref="BaselineHrvTracker"/> from a HealthKit history pull
-	/// (design doc §8) so the user lands in <c>Watching</c> rather than
-	/// <c>Idle</c> on first launch. HealthKit HR samples are sparse and lack
-	/// beat-to-beat RR detail, so RMSSD is approximated from the
-	/// inter-sample variation that <see cref="ShortWindowHrvCalculator"/>
-	/// already knows how to compute — close enough to break the cold start;
-	/// the live EWMA refines it within minutes once real beats arrive.
-	/// Safe to call when <paramref name="healthStore"/> is null (no-op) or
-	/// HealthKit returns nothing (auth not granted, no Apple Watch, etc.).
-	/// Must run before <see cref="Start"/>.
+	/// Warm-starts the baseline against a personalised reference before live samples flow
+	/// (design doc §8). Two best-effort sources, in order:
+	/// <list type="number">
+	/// <item>the app's own persisted HRV history — real beat-to-beat RMSSD from prior sessions —
+	/// supplies the RMSSD/HR anchor, mirroring the desktop head; then</item>
+	/// <item>HealthKit heart-rate history fills the HR baseline if it is still cold. HealthKit HR is
+	/// averaged seconds-to-minutes apart and carries no beat-to-beat detail, so it seeds HR only — the
+	/// parasympathetic RMSSD baseline is never fabricated from it and warms up from real live beats
+	/// instead (audit B).</item>
+	/// </list>
+	/// The RMSSD baseline always derives from real beats: when recent own-history exists (a relaunch
+	/// within the warm-start window) the detector arms immediately against it; otherwise — first-ever
+	/// launch, or a cold start after a longer gap — RMSSD calibrates from the live warm-up first, with
+	/// the history anchor (if any) guarding it. History seeding runs even when <paramref name="healthStore"/>
+	/// is null. When neither source yields data the baseline simply stays cold (not a failure). Must run
+	/// before <see cref="Start"/>.
 	/// </summary>
 	public async Task WarmStartAsync(
 		IHealthStore? healthStore,
 		TimeSpan? lookback = null,
 		CancellationToken cancellationToken = default)
 	{
+		// Anchor from our own real-RMSSD history first, so a genuine beat-to-beat seed wins over the
+		// coarser HealthKit HR estimate that follows.
+		SeedBaselineFromHistory();
+
 		if (healthStore is null)
 		{
 			return;
 		}
 
+		// Fill the HR baseline from the robust median of recent HealthKit readings — HR only, never RMSSD.
 		var window = lookback ?? TimeSpan.FromHours(24);
-
-		// HealthKit HR samples are legitimately spaced seconds-to-minutes apart, so the live-stream
-		// guards (gap reset, min-beat floor) must be relaxed here or the warm-start would clear its
-		// window on every sample and never seed — re-introducing the cold-start blindness this exists
-		// to avoid. These protections apply to live BLE streams, not historical resampling.
-		var warmCalculator = new ShortWindowHrvCalculator
-		{
-			MaxBeatGapSeconds = double.MaxValue,
-			MinBeatsForMetrics = 2,
-		};
-
+		var heartRates = new List<double>();
 		await foreach (var hr in healthStore.ReadRecentHeartRateAsync(window).WithCancellation(cancellationToken).ConfigureAwait(false))
 		{
-			if (hr.HeartRateBpm <= 0)
+			if (hr.HeartRateBpm > 0)
 			{
-				continue;
+				heartRates.Add(hr.HeartRateBpm);
 			}
+		}
 
-			// CLINICAL CAVEAT (audit B, unresolved): one synthetic RR per HR sample (60000/bpm) carries
-			// no beat-to-beat detail, so the RMSSD the warm calculator derives reflects *inter-sample HR
-			// drift*, not true parasympathetic beat-to-beat variability. It seeds a parasympathetic
-			// baseline from a non-parasympathetic quantity — adequate to break the cold start, but it can
-			// bias the RMSSD baseline. Revisit needs on-device validation against a real RR stream; do not
-			// treat the HealthKit-seeded RMSSD baseline as clinically equivalent to a live-beat one.
-			int bpm = (int)Math.Round(hr.HeartRateBpm);
-			double rrMs = 60_000.0 / hr.HeartRateBpm;
-			var beat = new Beat(hr.Timestamp, rrMs, bpm, IsArtifact: false);
+		_baseline.WarmStartHrBaseline(heartRates);
+	}
 
-			var sample = warmCalculator.AddBeat(
-				beat,
-				_baseline.BaselineRmssd,
-				_baseline.BaselineHr,
-				DetectorState.Idle,
-				_baseline.BaselineLfHfRatio);
-
-			if (sample is not null)
-			{
-				_baseline.Update(sample);
-			}
+	// Read recent persisted HRV samples (real RMSSD from prior live sessions) and seed the baseline
+	// anchor from them, the same warm-start the desktop head performs. Best-effort: a locked or empty
+	// database must never block startup, so persistence faults are swallowed.
+	private void SeedBaselineFromHistory()
+	{
+		try
+		{
+			DateTimeOffset to = DateTimeOffset.UtcNow;
+			DateTimeOffset from = to - HistoryAnchorLookback;
+			var history = _repository.GetHrvSamples(from, to);
+			_baseline.SeedFromHistory(history);
+		}
+		catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException
+			or IOException or InvalidOperationException)
+		{
+			System.Diagnostics.Debug.WriteLine($"Mobile baseline history seeding skipped: {ex.Message}");
 		}
 	}
 

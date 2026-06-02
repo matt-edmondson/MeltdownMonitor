@@ -109,8 +109,18 @@ public class BaselineHrvTracker
 			if (_firstSampleTime == DateTimeOffset.MinValue)
 			{
 				_firstSampleTime = sample.Timestamp;
-				_baselineRmssd = sample.Rmssd;
-				_baselineHr = sample.MeanHr;
+				// First-sample-anchor only the metrics still cold. A warm-start may have already
+				// seeded HR (WarmStartHrBaseline) while leaving RMSSD to calibrate live — that HR
+				// seed must survive the first live beat rather than be overwritten by it.
+				if (_baselineRmssd <= 0)
+				{
+					_baselineRmssd = sample.Rmssd;
+				}
+
+				if (_baselineHr <= 0)
+				{
+					_baselineHr = sample.MeanHr;
+				}
 			}
 			else
 			{
@@ -150,31 +160,75 @@ public class BaselineHrvTracker
 		}
 	}
 
-	// At the end of a cold warm-up with no personal history anchor, replace the first-sample-anchored
-	// EWMA baseline with the median of the whole warm-up window. The median is robust to a symptomatic
-	// first sample and to transient spikes — the "calibrate during a symptom" guard (audit B). When a
-	// history anchor exists, the EWMA + ClampToAnchor path already guards drift, so it is left untouched.
+	// At the end of a cold warm-up, replace the first-sample-anchored EWMA baseline with the median of
+	// the whole warm-up window. The median is robust to a symptomatic first sample and to transient
+	// spikes — the "calibrate during a symptom" guard (audit B). RMSSD and HR are decided independently
+	// because a HealthKit warm-start (WarmStartHrBaseline) can anchor HR while leaving RMSSD to
+	// calibrate cold here. A metric that already has a personal history anchor is left to the EWMA +
+	// ClampToAnchor path, which guards its drift.
 	private void SeedColdBaselineFromWarmUp()
 	{
-		if (_anchorRmssd <= 0 && _anchorHr <= 0)
+		if (_anchorRmssd <= 0)
 		{
 			double rmssdSeed = Median([.. _warmUpRmssd.Where(v => v > 0)]);
-			double hrSeed = Median([.. _warmUpHr.Where(v => v > 0)]);
 			if (rmssdSeed > 0)
 			{
 				_baselineRmssd = rmssdSeed;
 			}
 
+			// The parasympathetic baseline was self-calibrated from this session with no history
+			// anchor — a provenance fact the UI surfaces so a possibly-activated baseline isn't shown
+			// as confident calm (audit B). HR provenance (HealthKit vs live) does not change this.
+			_coldCalibrated = true;
+		}
+
+		if (_anchorHr <= 0)
+		{
+			double hrSeed = Median([.. _warmUpHr.Where(v => v > 0)]);
 			if (hrSeed > 0)
 			{
 				_baselineHr = hrSeed;
 			}
-
-			_coldCalibrated = true;
 		}
 
 		_warmUpRmssd.Clear();
 		_warmUpHr.Clear();
+	}
+
+	/// <summary>
+	/// Seeds the HR baseline (and its drift anchor) from a heart-rate history pull, without
+	/// fabricating an RMSSD baseline. HealthKit HR is averaged seconds-to-minutes apart: a
+	/// legitimate resting-HR estimate, but it carries no beat-to-beat detail, so the parasympathetic
+	/// RMSSD baseline is left to warm up from real live beats (audit B). The seed doubles as a drift
+	/// anchor so the live HR warm-up can't run away from the known resting rate. Only fills HR state
+	/// that is still cold, so a real beat-to-beat history seed (<see cref="SeedFromHistory"/>) always
+	/// wins; a no-op once the tracker is already warm or when no positive HR is supplied.
+	/// </summary>
+	public void WarmStartHrBaseline(IReadOnlyList<double> heartRates)
+	{
+		lock (_lock)
+		{
+			if (_isWarm)
+			{
+				return;
+			}
+
+			double seed = Median([.. heartRates.Where(v => v > 0)]);
+			if (seed <= 0)
+			{
+				return;
+			}
+
+			if (_baselineHr <= 0)
+			{
+				_baselineHr = seed;
+			}
+
+			if (_anchorHr <= 0)
+			{
+				_anchorHr = seed;
+			}
+		}
 	}
 
 	/// <summary>
