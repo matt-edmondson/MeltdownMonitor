@@ -68,6 +68,32 @@ public class RegulationFieldCalculatorTests
 	}
 
 	[TestMethod]
+	public void VagalTone_IsBaselineCentredAndSymmetricInLogRatio()
+	{
+		// At baseline → crossover (0.5).
+		Assert.AreEqual(0.5, RegulationFieldCalculator.Compute(Sample(50, 70), Thresholds, 1, true).VagalTone, 0.001);
+
+		// Equal proportional moves either side of baseline are symmetric about 0.5 (×2 vs ÷2).
+		double above = RegulationFieldCalculator.Compute(Sample(100, 70), Thresholds, 1, true).VagalTone;
+		double below = RegulationFieldCalculator.Compute(Sample(25, 70), Thresholds, 1, true).VagalTone;
+		Assert.IsTrue(above > 0.5, $"above baseline should ride toward STEADY, got {above}");
+		Assert.IsTrue(below < 0.5, $"below baseline should lift toward FRAGILE, got {below}");
+		Assert.AreEqual(above - 0.5, 0.5 - below, 0.001, "log-ratio mapping is symmetric about the crossover");
+
+		// Unlike VariabilityQuality, it keeps resolution *above* baseline rather than saturating at 1.
+		double higher = RegulationFieldCalculator.Compute(Sample(200, 70), Thresholds, 1, true).VagalTone;
+		Assert.IsTrue(higher > above, $"more RMSSD above baseline should ride lower/steadier, got {higher} vs {above}");
+		Assert.IsTrue(higher < 1.0, $"should stay within range without clamping, got {higher}");
+	}
+
+	[TestMethod]
+	public void VagalTone_NeutralWhenBaselineUnusable()
+	{
+		var r = RegulationFieldCalculator.Compute(Sample(50, 70, baselineRmssd: 0, baselineHr: 0), Thresholds, 1, true);
+		Assert.AreEqual(0.5, r.VagalTone, 0.001);
+	}
+
+	[TestMethod]
 	public void NotWarm_ConfidenceFollowsWarmUpProgress()
 	{
 		var r = RegulationFieldCalculator.Compute(Sample(50, 70), Thresholds, warmUpProgress: 0.4, baselineWarm: false);

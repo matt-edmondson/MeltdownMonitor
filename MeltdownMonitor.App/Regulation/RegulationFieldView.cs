@@ -25,7 +25,7 @@ public sealed class RegulationFieldView : IDisposable
 	private const float RrDevScaleMs = 30f;      // beat-to-beat difference that maps to full deflection
 	private const float LobeHeightMin = 0.7f;    // live lobe height factor at lowest Poincaré roundness
 	private const float LobeHeightMax = 1.18f;   // ...and at highest
-	private const float MarkerYSpan = 0.8f;      // vagal-tone half-travel (crossover→FRAGILE/STEADY), as a fraction of lobe height
+	private const float MarkerYSpan = 0.92f;     // vagal-tone half-travel (crossover→FRAGILE/STEADY), as a fraction of lobe height; near-full so extreme tone reaches the lobe tips
 
 	private readonly Pipeline _pipeline;
 	private readonly object _lock = new();
@@ -207,6 +207,7 @@ public sealed class RegulationFieldView : IDisposable
 		DrawShutdownZone(draw, centre, halfWidth, baseLobeHeight, disp, confidence);
 		DrawVagalAxis(draw, centre, markerYClamp, confidence);
 		DrawAxisHistograms(draw, origin, centre, halfWidth, labelClearHeight, markerYClamp, height, trail, confidence);
+		DrawDensityHeatmap(draw, centre, halfWidth, markerYClamp, trail, confidence);
 		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, _playhead.Position, beatsAppended, confidence);
 		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, disp, confidence);
 		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, _recoveryDisplay, confidence);
@@ -388,14 +389,14 @@ public sealed class RegulationFieldView : IDisposable
 		for (int i = 0; i < trail.Length; i++)
 		{
 			Vector2 p = LemniscateGeometry.MarkerPoint((float)trail[i].Reading.Index, centre, halfWidth);
-			p.Y += VagalToneOffsetY(trail[i].Reading.VariabilityQuality, markerYClamp);
+			p.Y += VagalToneOffsetY(trail[i].Reading.VagalTone, markerYClamp);
 			pts[i] = p;
 		}
 
 		// The head of the tail is the interpolated marker position, not the latest raw sample,
 		// so the last segment lands exactly on the marker.
 		Vector2 head = LemniscateGeometry.MarkerPoint((float)disp.Index, centre, halfWidth);
-		head.Y += VagalToneOffsetY(disp.VariabilityQuality, markerYClamp);
+		head.Y += VagalToneOffsetY(disp.VagalTone, markerYClamp);
 		pts[^1] = head;
 
 		// Join the points into one smooth comet tail with a Catmull-Rom spline through them:
@@ -454,9 +455,11 @@ public sealed class RegulationFieldView : IDisposable
 		a.LobeRoundness + ((b.LobeRoundness - a.LobeRoundness) * t),
 		a.LfHfBalance + ((b.LfHfBalance - a.LfHfBalance) * t))
 	{
-		// Without this the interpolated trail readings would silently drop to Hypoarousal 0,
-		// so the collapse rendering would flicker out between keyframes.
+		// Without these the interpolated trail readings would silently drop the init-only fields to
+		// 0 between keyframes — collapse rendering would flicker out, and the marker would jump to
+		// the FRAGILE top (VagalTone 0) instead of gliding through its true vertical position.
 		Hypoarousal = a.Hypoarousal + ((b.Hypoarousal - a.Hypoarousal) * t),
+		VagalTone = a.VagalTone + ((b.VagalTone - a.VagalTone) * t),
 	};
 
 	// During an active alert, mark where the arousal marker must fall back below to clear the
@@ -521,20 +524,20 @@ public sealed class RegulationFieldView : IDisposable
 		}
 	}
 
-	// Vagal-tone vertical offset from the crossover for a quality in [0, 1]: FRAGILE (0) lifts the
+	// Vagal-tone vertical offset from the crossover for a tone in [0, 1]: FRAGILE (0) lifts the
 	// marker to the top extent (-markerYClamp), STEADY (1) drops it to the bottom extent
-	// (+markerYClamp); 0.5 rests on the crossover line. markerYClamp (= liveLobeHeight * MarkerYSpan)
-	// is the half-travel from the crossover to each extent. The marker, its comet trail, the vagal
-	// axis and the Y-axis histogram all map quality through this one transform, so the marker reaches
-	// the FRAGILE/STEADY ends and the density column lines up with where it rides. The clamp only
-	// guards quality outside [0, 1] (the calculator clamps it, so it never bites in practice).
-	private static float VagalToneOffsetY(double quality, float markerYClamp)
-		=> Math.Clamp(((float)quality - 0.5f) * 2f * markerYClamp, -markerYClamp, markerYClamp);
+	// (+markerYClamp); 0.5 (at baseline) rests on the crossover line. markerYClamp
+	// (= liveLobeHeight * MarkerYSpan) is the half-travel from the crossover to each extent. The
+	// marker, its comet trail, the vagal axis and the Y-axis histogram all map vagal tone through
+	// this one transform, so the marker reaches the FRAGILE/STEADY ends and the density column lines
+	// up with where it rides. The clamp only guards tone outside [0, 1] (the calculator clamps it).
+	private static float VagalToneOffsetY(double vagalTone, float markerYClamp)
+		=> Math.Clamp(((float)vagalTone - 0.5f) * 2f * markerYClamp, -markerYClamp, markerYClamp);
 
 	private static Vector2 MarkerScreenPos(Vector2 centre, float halfWidth, float liveLobeHeight, RegulationReading disp)
 	{
 		Vector2 p = LemniscateGeometry.MarkerPoint((float)disp.Index, centre, halfWidth);
-		p.Y += VagalToneOffsetY(disp.VariabilityQuality, liveLobeHeight * MarkerYSpan);
+		p.Y += VagalToneOffsetY(disp.VagalTone, liveLobeHeight * MarkerYSpan);
 		return p;
 	}
 
@@ -638,11 +641,59 @@ public sealed class RegulationFieldView : IDisposable
 		draw.AddText(new Vector2(centre.X - (st.X * 0.5f), botY + 2f), label, "STEADY");
 	}
 
+	// Dwell heatmap: a faint cloud showing where the comet-trail window has actually spent its time
+	// — the 2D joint of the two axis histograms. Each occupied cell is a soft blob placed through
+	// the same X = arousal index, Y = vagal tone mapping as the marker, so the cloud sits exactly
+	// under the marker's travel. Drawn beneath the live trace and comet so they read on top; alpha
+	// scales with dwell (peak-normalised, gamma-lifted so rarely-visited cells still register),
+	// tinted by lobe side to echo the lobe colours.
+	private void DrawDensityHeatmap(ImDrawListPtr draw, Vector2 centre, float halfWidth, float markerYClamp, RegulationTrailPoint[] trail, float confidence)
+	{
+		// Need a little dwell before a density reads as anything but noise.
+		if (trail.Length < 4)
+		{
+			return;
+		}
+
+		const int xb = 28;
+		const int yb = 18;
+		var density = RegulationFieldHistogram.FieldDensity(trail, xb, yb);
+		if (density.PeakCount <= 0)
+		{
+			return;
+		}
+
+		float cellW = (halfWidth * 2f) / xb;
+		float cellH = (markerYClamp * 2f) / yb;
+		// Overlap neighbouring blobs so the grid reads as one smooth cloud rather than tiles.
+		float radius = MathF.Max(cellW, cellH) * 0.9f;
+
+		for (int y = 0; y < yb; y++)
+		{
+			float vagalTone = (y + 0.5f) / yb;
+			float cy = centre.Y + VagalToneOffsetY(vagalTone, markerYClamp);
+			for (int x = 0; x < xb; x++)
+			{
+				int c = density.Count(x, y);
+				if (c == 0)
+				{
+					continue;
+				}
+
+				float index = -1f + (((x + 0.5f) / xb) * 2f);
+				float cx = LemniscateGeometry.MarkerPoint(index, centre, halfWidth).X;
+				float t = MathF.Pow(c / (float)density.PeakCount, 0.6f);
+				Vector4 hue = index >= 0f ? MacchiatoPalette.Peach : MacchiatoPalette.Sky;
+				draw.AddCircleFilled(new Vector2(cx, cy), radius, Col(MacchiatoPalette.WithAlpha(hue, 0.20f * t * confidence)));
+			}
+		}
+	}
+
 	// Axis density histograms: how the samples currently in the trail window are distributed.
 	// X (arousal index) is a row of vertical bars below the field, each column aligned with the
 	// index it counts — left=cool/REST, right=warm/MELTDOWN, echoing the lobe colours. Y
-	// (variability quality) is a column of horizontal bars on the left margin, each row aligned
-	// with the marker's vagal-tone height — top=FRAGILE (low quality), bottom=STEADY (high).
+	// (vagal tone) is a column of horizontal bars on the left margin, each row aligned
+	// with the marker's vagal-tone height — top=FRAGILE (low tone), bottom=STEADY (high).
 	private void DrawAxisHistograms(ImDrawListPtr draw, Vector2 origin, Vector2 centre, float halfWidth, float lobeClearHeight, float markerYClamp, float height, RegulationTrailPoint[] trail, float confidence)
 	{
 		if (trail.Length < 2)
@@ -651,7 +702,7 @@ public sealed class RegulationFieldView : IDisposable
 		}
 
 		var xHist = RegulationFieldHistogram.IndexAxis(trail);
-		var yHist = RegulationFieldHistogram.QualityAxis(trail, 16);
+		var yHist = RegulationFieldHistogram.VagalToneAxis(trail, 16);
 		uint axisCol = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Overlay1, 0.22f * confidence));
 
 		// X axis (arousal index), below the field, bars growing downward from a baseline that
@@ -683,9 +734,9 @@ public sealed class RegulationFieldView : IDisposable
 			}
 		}
 
-		// Y axis (variability quality), on the left margin, bars growing rightward. The vertical
-		// position matches the marker's vagal-tone mapping: quality 0 (FRAGILE) at top, 1 (STEADY)
-		// at bottom — i.e. the same span the vagal axis labels bracket.
+		// Y axis (vagal tone), on the left margin, bars growing rightward. The vertical
+		// position matches the marker's vagal-tone mapping: tone 0 (FRAGILE) at top, 1 (STEADY)
+		// at bottom, baseline at 0.5 (the crossover) — the same span the vagal axis labels bracket.
 		if (yHist.PeakCount > 0)
 		{
 			float axisX = origin.X + (4f * _drawScale);
@@ -693,8 +744,8 @@ public sealed class RegulationFieldView : IDisposable
 			if (maxW > 1f)
 			{
 				int n = yHist.BucketCount;
-				// Endpoints follow the marker's vagal-tone travel (FRAGILE at quality 0, STEADY at 1), so
-				// each bar sits at the exact height the marker rides for the quality its bucket counts.
+				// Endpoints follow the marker's vagal-tone travel (FRAGILE at tone 0, STEADY at 1), so
+				// each bar sits at the exact height the marker rides for the tone its bucket counts.
 				float topY = centre.Y + VagalToneOffsetY(0.0, markerYClamp);
 				float botY = centre.Y + VagalToneOffsetY(1.0, markerYClamp);
 				float slot = (botY - topY) / n;

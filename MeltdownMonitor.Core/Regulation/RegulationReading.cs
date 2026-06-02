@@ -11,7 +11,9 @@ namespace MeltdownMonitor.Core.Regulation;
 /// </param>
 /// <param name="VariabilityQuality">
 /// RMSSD relative to baseline in [0, 1]: 1 = healthy variability (a fat, lively trace),
-/// 0 = collapsed/metronomic. Drives stroke fatness.
+/// 0 = collapsed/metronomic. Drives stroke fatness. Saturates at 1 once RMSSD reaches
+/// baseline — for the marker's *vertical position* use <see cref="VagalTone"/> instead,
+/// which keeps resolution above baseline.
 /// </param>
 /// <param name="Confidence">
 /// [0, 1]: 0 while the baseline is unusable/cold, ramping to 1 once warm. Dims the field.
@@ -39,4 +41,15 @@ public readonly record struct RegulationReading(
 	/// detector (see audit A(b)). Provisional heuristic pending validation against real episodes.
 	/// </summary>
 	public double Hypoarousal { get; init; }
+
+	/// <summary>
+	/// Vagal-tone vertical position in [0, 1], baseline-centred so the field's Y axis is
+	/// baseline-relative like its X (<see cref="Index"/>): 0.5 = at baseline (the crossover),
+	/// → 1 (STEADY) as RMSSD rises above baseline, → 0 (FRAGILE) as it collapses. Derived from
+	/// the log-ratio of RMSSD to baseline, so equal proportional moves above and below baseline
+	/// travel equal distance and there is real resolution on *both* sides — unlike
+	/// <see cref="VariabilityQuality"/>, which pins everything at or above baseline to 1. 0.5
+	/// (neutral) when the baseline is unusable. Display-only.
+	/// </summary>
+	public double VagalTone { get; init; }
 }
