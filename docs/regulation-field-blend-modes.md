@@ -71,7 +71,9 @@ The layers drawn additively are:
 - **LF/HF halo** — the three concentric falloff discs accumulate into a real radial glow.
 - **Density heatmap** — each magma cell adds its light to the dark canvas instead of tiling flat.
 - **Lemniscate lobes** — the live two-tone trace's overlapping spline segments and round
-  joins bloom, and the warm/cool lobes brighten where they meet at the crossover.
+  joins bloom, and the warm/cool lobes brighten where they meet at the crossover. Because that
+  bloom can saturate toward white, the lobe stroke alpha is scaled by a user-configurable **Lobe
+  opacity** knob (`AppSettings.LobeOpacity`, default 0.6) exposed alongside Lobe thickness.
 - **Comet trail** — overlapping sub-segments and the head-meets-marker join bloom.
 - **Marker halos** — the pulsing state halo and the collapse halo glow; the solid marker
   core and inner dot stay alpha-over so they read as crisp, opaque points.

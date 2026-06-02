@@ -72,4 +72,10 @@ public class AppSettings : AppData<AppSettings>
 	/// <summary>Multiplier on the Regulation Field's live-trace lobe stroke thickness
 	/// (0.5–3; clamped at the consumer). 1.0 is the tuned default.</summary>
 	public double LobeThickness { get; set; } = 1.0;
+
+	/// <summary>Overall opacity of the Regulation Field's live-trace lobes (0–1; clamped at the
+	/// consumer). The lobes are drawn with additive blending, so their densely overlapping
+	/// segments and round joins bloom toward white; this knob pulls the stroke alpha down to
+	/// compensate for that saturation. Default 0.6.</summary>
+	public double LobeOpacity { get; set; } = 0.6;
 }
