@@ -1,8 +1,8 @@
 # Regulation field: additive blend mode
 
-**Status:** unblocked upstream — the renderer change has been made in `ktsu.ImGui.App`.
-Wiring it into the regulation field is pending a published package bump.
-**Date:** 2026-06-02 (investigated), updated after the upstream fix landed.
+**Status:** done — additive glow is wired into the regulation field on the Desktop head,
+using the `ktsu.ImGui.App` 2.9.0 renderer change.
+**Date:** 2026-06-02 (investigated, then unblocked upstream and wired).
 **Scope:** Desktop (ImGui) head only. Mobile (Avalonia) was not investigated in depth.
 
 ## What was asked
@@ -54,22 +54,32 @@ public static void ImGuiApp.SetDrawBlendMode(ImDrawListPtr drawList, ImGuiAppBle
 `Additive` maps to `glBlendFuncSeparate(SRC_ALPHA, ONE, ONE, ONE)`; `AlphaBlend`
 restores the default alpha-over func from `SetupRenderState`.
 
-## How to wire it into the regulation field
+## How it's wired in the regulation field
 
-Once MeltdownMonitor takes a `ktsu.ImGui.App` version that includes the API above
-(currently referenced at `2.6.0` in `MeltdownMonitor.App.csproj` — needs the next
-published release), wrap the glow layers in `RegulationFieldView`:
+`MeltdownMonitor.App.csproj` references `ktsu.ImGui.App` (and `ktsu.ImGui.Widgets`)
+`2.9.0`, the release that includes the API. `RegulationFieldView` brackets each glow
+layer between an `Additive` and an `AlphaBlend` call on the window draw list:
 
 ```csharp
 ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
-//  ... DrawLfHfHalo / DrawTrail / DrawMarker halo ...
+//  ... glow primitives ...
 ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend); // restore for the rest of the frame
 ```
 
-The blend func is global GL state for the remainder of the draw pass, so the glow
-region must always be closed with an `AlphaBlend` (or `ImDrawCallback_ResetRenderState`)
-before the rest of the UI draws. Build it from the live app + a real Polar sensor —
-the glow look can't be confirmed from tests alone.
+The layers drawn additively are:
+
+- **LF/HF halo** — the three concentric falloff discs accumulate into a real radial glow.
+- **Density heatmap** — each magma cell adds its light to the dark canvas instead of tiling flat.
+- **Lemniscate lobes** — the live two-tone trace's overlapping spline segments and round
+  joins bloom, and the warm/cool lobes brighten where they meet at the crossover.
+- **Comet trail** — overlapping sub-segments and the head-meets-marker join bloom.
+- **Marker halos** — the pulsing state halo and the collapse halo glow; the solid marker
+  core and inner dot stay alpha-over so they read as crisp, opaque points.
+
+The blend func is global GL state for the remainder of the draw pass, so every glow region
+is closed with an `AlphaBlend` before the next layer draws. The faint ghost baseline, window
+of tolerance, vagal axis, axis histograms, recovery target, arrow, and labels stay alpha-over.
+The glow look can only be confirmed from the live app + a real Polar sensor, not from tests.
 
 ## In-repo alternative (no longer required, kept for reference)
 
