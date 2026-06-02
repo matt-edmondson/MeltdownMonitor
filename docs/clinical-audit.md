@@ -91,6 +91,14 @@ Each finding is stated as: **code fact → clinical consequence → realistic li
   the RMSSD baseline from `rrMs = 60000/bpm` of *sparse HealthKit HR samples*. That quantity is the
   variation of averaged HR readings seconds-to-minutes apart — it is not beat-to-beat parasympathetic
   RMSSD, and will generally bias the seeded baseline high.
+  - **Update (2026-06-02 — narrowed, not closed):** `WarmStartAsync` no longer fabricates RMSSD from
+    HealthKit HR (recommendation #2 done). HealthKit now seeds **HR only**; the RMSSD baseline is
+    anchored from the app's own persisted beat-to-beat history (mirroring desktop) and otherwise
+    calibrates from the live warm-up. The own-history anchor closes the symptom-contamination risk on
+    every relaunch where recent history exists. **Residual:** a *first-ever launch while already
+    symptomatic* (no history anchor yet → no `±MaxAnchorDrift` clamp) still self-calibrates RMSSD to the
+    symptomatic warm-up median — the same root gap as this finding, now flagged by the cold-calibration
+    badge rather than silently fabricated. A true rest-state precondition is still not enforced.
 - **Likelihood:** Common (people often reach for such a tool *because* they're escalating).
 - **Classification: true gap** — no "rest-state" precondition on calibration.
 
@@ -190,7 +198,10 @@ the framing that ties the individual findings together.
    body" message. Extend `AnnotationLabel` with a hypoarousal term so ground truth can capture it.
 2. **Gate calibration on a rest precondition (B).** Don't accept a cold-start baseline from an elevated-
    arousal opening; require a quiescent stretch or flag "calibrating from possibly-activated state — low
-   confidence." Revisit seeding the parasympathetic baseline from non-RMSSD HealthKit HR.
+   confidence." Revisit seeding the parasympathetic baseline from non-RMSSD HealthKit HR. *(2026-06-02:
+   the non-RMSSD-HealthKit-seeding half is done — HealthKit seeds HR only, RMSSD anchors from own
+   beat-to-beat history; the cold-calibration badge flags the possibly-activated state. A true rest-state
+   precondition is still not enforced — see finding B update.)*
 3. **Reconsider the corroboration default (C).** Either make LF/HF corroboration *additive* (it can raise
    confidence but not veto a warning), or default it off, given it suppresses the early-warning core
    feature.
