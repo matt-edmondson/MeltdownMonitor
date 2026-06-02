@@ -20,14 +20,15 @@ internal static class MacchiatoPalette
 	public static readonly Vector4 Sky = Hex(0x91, 0xd7, 0xe3);
 	public static readonly Vector4 Sapphire = Hex(0x7d, 0xc4, 0xe4);
 	public static readonly Vector4 Green = Hex(0xa6, 0xda, 0x95);
+	public static readonly Vector4 Yellow = Hex(0xee, 0xd4, 0x9f);
 	public static readonly Vector4 Peach = Hex(0xf5, 0xa9, 0x7f);
 	public static readonly Vector4 Maroon = Hex(0xee, 0x99, 0xa0);
 	public static readonly Vector4 Red = Hex(0xed, 0x87, 0x96);
 
-	/// <summary>Mauve / Pink: the dwell-heatmap gradient lane. Chosen because nothing else in the
-	/// Regulation Field uses them — the lobes are Sky/Peach, depth is Sapphire/Maroon, states are
-	/// Green/Peach/Red/Sapphire, collapse is Slate, the crossover is Lavender — so the density cloud
-	/// reads as its own layer without colliding with any semantic indicator.</summary>
+	/// <summary>Mauve / Pink: part of the dwell-heatmap's magma-style ramp (see
+	/// <c>RegulationFieldView.HeatColor</c>). The heatmap is a low-opacity filled grid drawn under
+	/// everything, so it reads as its own layer even where the warm end of the ramp borrows hues
+	/// (Peach/Yellow) that the lobes/states also use.</summary>
 	public static readonly Vector4 Mauve = Hex(0xc6, 0xa0, 0xf6);
 	public static readonly Vector4 Pink = Hex(0xf5, 0xbd, 0xe6);
 
