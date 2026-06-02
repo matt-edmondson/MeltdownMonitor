@@ -449,42 +449,82 @@ public class MeltdownRepository : IDisposable
 		using var reader = cmd.ExecuteReader();
 		while (reader.Read())
 		{
-			var ts = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0));
-			var state = Enum.Parse<DetectorState>(reader.GetString(6));
-
-			ExtendedHrvMetrics? ext = null;
-			if (!reader.IsDBNull(7))
-			{
-				ext = new ExtendedHrvMetrics(
-					reader.GetDouble(7),
-					reader.GetDouble(8),
-					reader.GetDouble(9),
-					reader.GetDouble(10),
-					reader.GetDouble(11),
-					reader.GetDouble(12),
-					reader.GetDouble(13));
-			}
-
-			var contact = reader.IsDBNull(14)
-				? SensorContactStatus.NotSupported
-				: Enum.TryParse<SensorContactStatus>(reader.GetString(14), ignoreCase: true, out var c)
-					? c
-					: SensorContactStatus.NotSupported;
-
-			results.Add(new HrvSample(ts,
-				reader.GetDouble(1),
-				reader.GetDouble(2),
-				reader.GetDouble(3),
-				reader.GetDouble(4),
-				reader.GetDouble(5),
-				state)
-			{
-				Extended = ext,
-				SensorContact = contact,
-			});
+			results.Add(ReadSampleRow(reader));
 		}
 
 		return results;
+	}
+
+	/// <summary>
+	/// Reads the most recent <paramref name="limit"/> HRV samples (oldest first) from the open
+	/// connection. Used to re-seed the Regulation Field's comet trail / dwell heatmap on startup so
+	/// the field reflects recent history instead of starting blank. Best-effort: callers seed before
+	/// the live loop runs, so this never races live writes. Returns fewer rows if the table is shorter.
+	/// </summary>
+	public IReadOnlyList<HrvSample> ReadRecentHrvSamples(int limit)
+	{
+		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+		lock (_writeLock)
+		{
+			using var cmd = _connection.CreateCommand();
+			cmd.CommandText = """
+				SELECT ts, rmssd, pnn50, mean_hr, baseline_rmssd, baseline_hr, state,
+				       lf_power_ms2, hf_power_ms2, lf_hf_ratio, sd1, sd2, sd1_sd2_ratio, sdnn, contact
+				FROM hrv_samples
+				ORDER BY ts DESC
+				LIMIT $limit
+				""";
+			cmd.Parameters.AddWithValue("$limit", limit);
+
+			var results = new List<HrvSample>();
+			using var reader = cmd.ExecuteReader();
+			while (reader.Read())
+			{
+				results.Add(ReadSampleRow(reader));
+			}
+
+			// Query returns newest-first for the LIMIT; flip to chronological (oldest first).
+			results.Reverse();
+			return results;
+		}
+	}
+
+	// Maps a hrv_samples row (column order matching the SELECTs above) into an HrvSample.
+	private static HrvSample ReadSampleRow(SqliteDataReader reader)
+	{
+		var ts = DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(0));
+		var state = Enum.Parse<DetectorState>(reader.GetString(6));
+
+		ExtendedHrvMetrics? ext = null;
+		if (!reader.IsDBNull(7))
+		{
+			ext = new ExtendedHrvMetrics(
+				reader.GetDouble(7),
+				reader.GetDouble(8),
+				reader.GetDouble(9),
+				reader.GetDouble(10),
+				reader.GetDouble(11),
+				reader.GetDouble(12),
+				reader.GetDouble(13));
+		}
+
+		var contact = reader.IsDBNull(14)
+			? SensorContactStatus.NotSupported
+			: Enum.TryParse<SensorContactStatus>(reader.GetString(14), ignoreCase: true, out var c)
+				? c
+				: SensorContactStatus.NotSupported;
+
+		return new HrvSample(ts,
+			reader.GetDouble(1),
+			reader.GetDouble(2),
+			reader.GetDouble(3),
+			reader.GetDouble(4),
+			reader.GetDouble(5),
+			state)
+		{
+			Extended = ext,
+			SensorContact = contact,
+		};
 	}
 
 	/// <summary>

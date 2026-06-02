@@ -68,6 +68,13 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Configured comet-trail length (clamped 12–2160), read live by the field view.</summary>
 	public int RegulationTrailLength => Math.Clamp(_settings.RegulationTrailLength, 12, 2160);
 
+	/// <summary>Configured dwell-heatmap window in readings (clamped 60–17280), read live by the
+	/// field view. Usually longer than <see cref="RegulationTrailLength"/>.</summary>
+	public int RegulationHeatmapLength => Math.Clamp(_settings.RegulationHeatmapLength, 60, 17280);
+
+	/// <summary>Configured dwell-heatmap overall opacity (clamped 0–1), read live by the field view.</summary>
+	public double HeatmapOpacity => Math.Clamp(_settings.HeatmapOpacity, 0.0, 1.0);
+
 	/// <summary>Configured Regulation Field jitter exaggeration multiplier (clamped 0–3),
 	/// read live by the field view.</summary>
 	public double JitterExaggeration => Math.Clamp(_settings.JitterExaggeration, 0.0, 3.0);
@@ -136,6 +143,44 @@ public sealed class Pipeline : IDisposable
 	/// Settings "Re-seed baseline now" action. Thread-safe against the live update loop.
 	/// </summary>
 	public void ReseedBaseline() => SeedBaselineFromHistory();
+
+	/// <summary>
+	/// Reconstructs up to <paramref name="count"/> recent Regulation Field readings from persisted
+	/// HRV samples (oldest first), so the field's comet trail and dwell heatmap survive restarts
+	/// instead of starting blank. Deterministic: each sample carries its own baseline and detector
+	/// state, so the recomputed reading and colour match what was originally drawn. Best-effort — a
+	/// missing or locked database yields an empty list rather than blocking the field.
+	/// </summary>
+	public IReadOnlyList<RegulationTrailPoint> LoadRecentRegulationTrail(int count)
+	{
+		if (count <= 0)
+		{
+			return [];
+		}
+
+		try
+		{
+			var samples = _repository.ReadRecentHrvSamples(count);
+			var points = new List<RegulationTrailPoint>(samples.Count);
+			foreach (HrvSample s in samples)
+			{
+				// The stored baseline was warm when the sample was written iff it has usable values;
+				// pass full warm-up so the historical reading isn't dimmed as if calibrating.
+				bool warm = double.IsFinite(s.BaselineRmssd) && s.BaselineRmssd > 0
+					&& double.IsFinite(s.BaselineHr) && s.BaselineHr > 0;
+				var reading = RegulationFieldCalculator.Compute(s, _settings.Thresholds, warmUpProgress: 1.0, baselineWarm: warm);
+				points.Add(new RegulationTrailPoint(reading, s.State));
+			}
+
+			return points;
+		}
+		catch (Exception ex) when (ex is Microsoft.Data.Sqlite.SqliteException
+			or IOException or InvalidOperationException)
+		{
+			System.Diagnostics.Debug.WriteLine($"Regulation trail seeding skipped: {ex.Message}");
+			return [];
+		}
+	}
 
 	// Push user tuning into the calculator and baseline tracker. Responsiveness windows
 	// (minutes) convert to a per-sample EWMA alpha using the relevant sample cadence.

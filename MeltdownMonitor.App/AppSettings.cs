@@ -54,6 +54,16 @@ public class AppSettings : AppData<AppSettings>
 	/// (12–2160; clamped at the consumer). Default 48 ≈ 4 min, max ≈ 3 h at the 5 s emit cadence.</summary>
 	public int RegulationTrailLength { get; set; } = 48;
 
+	/// <summary>How many recent readings the Regulation Field dwell heatmap accumulates over
+	/// (60–17280; clamped at the consumer). Independent of — and usually much longer than — the
+	/// comet trail: the comet shows where you're heading, the heatmap where you tend to dwell.
+	/// Default 720 ≈ 1 h, max ≈ 24 h at the 5 s emit cadence.</summary>
+	public int RegulationHeatmapLength { get; set; } = 720;
+
+	/// <summary>Overall opacity of the Regulation Field dwell heatmap (0–1; clamped at the
+	/// consumer). 0 hides it; default 0.35 keeps it a faint underlay beneath the comet and marker.</summary>
+	public double HeatmapOpacity { get; set; } = 0.35;
+
 	/// <summary>Multiplier on the Regulation Field's live-trace variability jitter
 	/// (0–3; clamped at the consumer). 1.0 is the tuned default, 0 flattens the trace,
 	/// higher exaggerates the beat-to-beat undulation.</summary>

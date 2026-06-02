@@ -437,6 +437,24 @@ public sealed class NowViewModel : ViewModelBase
 		pipeline.ContactChanged += OnContactChanged;
 		pipeline.DeviceInfoUpdated += OnDeviceInfoUpdated;
 		_coldCalibratedProvider = () => pipeline.IsColdCalibrated;
+
+		// Seed the comet trail from persisted history so the field isn't blank on launch.
+		if (_regulationTrail.Count == 0)
+		{
+			int cap = Math.Clamp(_trailLengthProvider?.Invoke() ?? 48, 12, 2160);
+			var seed = pipeline.LoadRecentRegulationTrail(cap);
+			if (seed.Count > 0)
+			{
+				_regulationTrail.AddRange(seed);
+				while (_regulationTrail.Count > cap)
+				{
+					_regulationTrail.RemoveAt(0);
+				}
+
+				RegulationTrail = _regulationTrail.ToArray();
+			}
+		}
+
 		OnStateChanged(pipeline.CurrentState);
 		OnHypoarousalStateChanged(pipeline.CurrentHypoarousalState);
 		OnHypoarousalDynamicsUpdated(pipeline.LatestHypoarousalDynamics);

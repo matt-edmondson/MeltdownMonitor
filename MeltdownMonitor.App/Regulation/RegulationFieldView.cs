@@ -58,6 +58,12 @@ public sealed class RegulationFieldView : IDisposable
 	public RegulationFieldView(Pipeline pipeline)
 	{
 		_pipeline = pipeline;
+
+		// Re-seed the field from persisted history so the comet trail and dwell heatmap aren't blank
+		// on launch. Capacity holds the longer of the two windows; the comet draws its recent slice.
+		int seedCap = Math.Max(_pipeline.RegulationTrailLength, _pipeline.RegulationHeatmapLength);
+		_trail.AddRange(_pipeline.LoadRecentRegulationTrail(seedCap));
+
 		_pipeline.SampleUpdated += OnSampleUpdated;
 		_pipeline.BeatReceived += OnBeatReceived;
 	}
@@ -94,7 +100,9 @@ public sealed class RegulationFieldView : IDisposable
 			// Capture the detector state with the point so each segment keeps the colour it
 			// was drawn in, rather than the whole trail recolouring as the state advances.
 			_trail.Add(new RegulationTrailPoint(reading, sample.State));
-			int cap = _pipeline.RegulationTrailLength;
+			// Keep the longer of the two windows: the comet draws its recent slice, the heatmap the
+			// whole buffer. Capping at the max lets both stay configurable without a second buffer.
+			int cap = Math.Max(_pipeline.RegulationTrailLength, _pipeline.RegulationHeatmapLength);
 			while (_trail.Count > cap)
 			{
 				_trail.RemoveAt(0);
@@ -377,6 +385,14 @@ public sealed class RegulationFieldView : IDisposable
 
 	private void DrawTrail(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationTrailPoint[] trail, RegulationReading disp, float confidence)
 	{
+		// The comet is only the recent slice of the (longer) dwell buffer — "where am I heading",
+		// not the whole heatmap window.
+		int cometLen = _pipeline.RegulationTrailLength;
+		if (trail.Length > cometLen)
+		{
+			trail = trail[^cometLen..];
+		}
+
 		if (trail.Length < 2)
 		{
 			return;
@@ -641,37 +657,57 @@ public sealed class RegulationFieldView : IDisposable
 		draw.AddText(new Vector2(centre.X - (st.X * 0.5f), botY + 2f), label, "STEADY");
 	}
 
-	// Dwell heatmap: a faint cloud showing where the comet-trail window has actually spent its time
-	// — the 2D joint of the two axis histograms. Each occupied cell is a soft blob placed through
-	// the same X = arousal index, Y = vagal tone mapping as the marker, so the cloud sits exactly
-	// under the marker's travel. Drawn beneath the live trace and comet so they read on top; alpha
-	// scales with dwell (peak-normalised, gamma-lifted so rarely-visited cells still register),
-	// tinted by lobe side to echo the lobe colours.
+	private const int HeatmapXBuckets = 28;
+	private const int HeatmapYBuckets = 18;
+
+	// Dwell heatmap: a grid of buckets showing where the field has spent its time over the
+	// (configurable, usually long) heatmap window — the 2D joint of the two axis histograms. Each
+	// occupied bucket is a filled cell laid out through the same X = arousal index, Y = vagal tone
+	// mapping as the marker, so the grid sits exactly under the marker's travel. Colour is a Mauve→
+	// Pink gradient (a palette lane nothing else in the field uses) normalised to the busiest bucket,
+	// so the peak-dwell cell shows the most intense colour; quieter cells stay dim near the
+	// background. Overall opacity is user-configurable. Drawn beneath the trace and comet so they
+	// read on top.
 	private void DrawDensityHeatmap(ImDrawListPtr draw, Vector2 centre, float halfWidth, float markerYClamp, RegulationTrailPoint[] trail, float confidence)
 	{
+		float opacity = (float)_pipeline.HeatmapOpacity;
+		if (opacity <= 0f)
+		{
+			return;
+		}
+
+		// The heatmap accumulates over its own window — the recent slice of the longer buffer.
+		int window = _pipeline.RegulationHeatmapLength;
+		if (trail.Length > window)
+		{
+			trail = trail[^window..];
+		}
+
 		// Need a little dwell before a density reads as anything but noise.
 		if (trail.Length < 4)
 		{
 			return;
 		}
 
-		const int xb = 28;
-		const int yb = 18;
+		const int xb = HeatmapXBuckets;
+		const int yb = HeatmapYBuckets;
 		var density = RegulationFieldHistogram.FieldDensity(trail, xb, yb);
 		if (density.PeakCount <= 0)
 		{
 			return;
 		}
 
+		// Cell extents from the marker mapping: X is linear across ±halfWidth, Y linear across
+		// ±markerYClamp with vagal tone 0 (FRAGILE) at the top, matching VagalToneOffsetY.
 		float cellW = (halfWidth * 2f) / xb;
 		float cellH = (markerYClamp * 2f) / yb;
-		// Overlap neighbouring blobs so the grid reads as one smooth cloud rather than tiles.
-		float radius = MathF.Max(cellW, cellH) * 0.9f;
+		float left0 = centre.X - halfWidth;
+		float top0 = centre.Y - markerYClamp;
+		float peak = density.PeakCount;
 
 		for (int y = 0; y < yb; y++)
 		{
-			float vagalTone = (y + 0.5f) / yb;
-			float cy = centre.Y + VagalToneOffsetY(vagalTone, markerYClamp);
+			float top = top0 + (y * cellH);
 			for (int x = 0; x < xb; x++)
 			{
 				int c = density.Count(x, y);
@@ -680,13 +716,25 @@ public sealed class RegulationFieldView : IDisposable
 					continue;
 				}
 
-				float index = -1f + (((x + 0.5f) / xb) * 2f);
-				float cx = LemniscateGeometry.MarkerPoint(index, centre, halfWidth).X;
-				float t = MathF.Pow(c / (float)density.PeakCount, 0.6f);
-				Vector4 hue = index >= 0f ? MacchiatoPalette.Peach : MacchiatoPalette.Sky;
-				draw.AddCircleFilled(new Vector2(cx, cy), radius, Col(MacchiatoPalette.WithAlpha(hue, 0.20f * t * confidence)));
+				// Gamma-lift the normalised dwell so mid-traffic cells read distinctly, not just the peak.
+				float t = MathF.Pow(c / peak, 0.6f);
+				float left = left0 + (x * cellW);
+				draw.AddRectFilled(
+					new Vector2(left, top),
+					new Vector2(left + cellW, top + cellH),
+					Col(MacchiatoPalette.WithAlpha(HeatColor(t), opacity * confidence)));
 			}
 		}
+	}
+
+	// Dwell-heatmap gradient: dim mauve (near background, low dwell) → Mauve → Pink (peak dwell),
+	// so intensity rises with traffic while staying in the heatmap's own colour lane.
+	private static Vector4 HeatColor(float t)
+	{
+		Vector4 low = MacchiatoPalette.Lerp(MacchiatoPalette.Base, MacchiatoPalette.Mauve, 0.45f);
+		return t < 0.5f
+			? MacchiatoPalette.Lerp(low, MacchiatoPalette.Mauve, t * 2f)
+			: MacchiatoPalette.Lerp(MacchiatoPalette.Mauve, MacchiatoPalette.Pink, (t - 0.5f) * 2f);
 	}
 
 	// Axis density histograms: how the samples currently in the trail window are distributed.

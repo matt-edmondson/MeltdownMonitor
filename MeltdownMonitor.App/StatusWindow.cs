@@ -1037,6 +1037,26 @@ public sealed class StatusWindow : IDisposable
 		}
 		ImGui.SameLine();
 		HelpMarker("Stroke thickness of the Regulation Field's live trace. 1.0x is tuned default; higher = bolder lobes, lower = finer.");
+		ImGui.SameLine();
+
+		int heatWindow = _settings.RegulationHeatmapLength;
+		if (ImGuiWidgets.Knob("Heatmap window", ref heatWindow, 60, 17280, format: "%d pts", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.RegulationHeatmapLength = heatWindow;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How many recent readings the Regulation Field dwell heatmap accumulates over — where you tend to sit, distinct from the shorter comet trail. Higher = longer dwell history (≈1 h at 720, up to ≈24 h).");
+		ImGui.SameLine();
+
+		float heatOpacityPct = (float)(_settings.HeatmapOpacity * 100.0);
+		if (ImGuiWidgets.Knob("Heatmap opacity", ref heatOpacityPct, 0f, 100f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.HeatmapOpacity = heatOpacityPct / 100.0;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Overall opacity of the dwell heatmap. 0 hides it; default 35% keeps it a faint underlay beneath the comet and marker.");
 
 		// ── Detection thresholds ─────────────────────────────────────────
 		// Fraction knobs work in percent (0..100) and divide on assign so the
@@ -1467,6 +1487,8 @@ public sealed class StatusWindow : IDisposable
 				_settings.HrvEmitIntervalSeconds = 5.0;
 				_settings.SparklineWindowMinutes = 60;
 				_settings.RegulationTrailLength = 48;
+				_settings.RegulationHeatmapLength = 720;
+				_settings.HeatmapOpacity = 0.35;
 				_settings.JitterExaggeration = 1.0;
 				_settings.LobeThickness = 1.0;
 				_settings.Save();
