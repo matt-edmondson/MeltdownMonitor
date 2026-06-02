@@ -304,6 +304,9 @@ public sealed class RegulationFieldView : IDisposable
 		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * LobeSwellFactor);
 		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * LobeSwellFactor);
 		float baseThick = (4f + (6f * (float)r.VariabilityQuality)) * (float)_pipeline.LobeThickness * _drawScale;
+		// The lobes are drawn additively (below), so overlapping strokes bloom; scale the trace
+		// alpha by the user's lobe-opacity knob to keep them from saturating to white.
+		float lobeAlpha = confidence * (float)_pipeline.LobeOpacity;
 		int n = live.Count;
 
 		// Jitter each VERTEX once (along the smoothed vertex normal) so adjacent segments
@@ -364,7 +367,7 @@ public sealed class RegulationFieldView : IDisposable
 				Vector4 c = warm
 					? MacchiatoPalette.Lerp(MacchiatoPalette.Peach, MacchiatoPalette.Maroon, depth)
 					: MacchiatoPalette.Lerp(MacchiatoPalette.Sky, MacchiatoPalette.Sapphire, depth);
-				c = MacchiatoPalette.WithAlpha(c, confidence);
+				c = MacchiatoPalette.WithAlpha(c, lobeAlpha);
 
 				float thick = baseThick * (warm ? warmSwell : coolSwell);
 				uint col = Col(c);

@@ -1048,6 +1048,16 @@ public sealed class StatusWindow : IDisposable
 		HelpMarker("Stroke thickness of the Regulation Field's live trace. 1.0x is tuned default; higher = bolder lobes, lower = finer.");
 		ImGui.SameLine();
 
+		float lobeOpacityPct = (float)(_settings.LobeOpacity * 100.0);
+		if (ImGuiWidgets.Knob("Lobe opacity", ref lobeOpacityPct, 0f, 100f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.LobeOpacity = lobeOpacityPct / 100.0;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Opacity of the Regulation Field's live-trace lobes. They draw additively and bloom where strokes overlap, so lower this if they saturate to white; default 60%.");
+		ImGui.SameLine();
+
 		int heatWindow = _settings.RegulationHeatmapLength;
 		if (ImGuiWidgets.Knob("Heatmap window", ref heatWindow, 60, 17280, format: "%d pts", flags: ImGuiKnobOptions.ValueTooltip))
 		{
@@ -1500,6 +1510,7 @@ public sealed class StatusWindow : IDisposable
 				_settings.HeatmapOpacity = 0.35;
 				_settings.JitterExaggeration = 1.0;
 				_settings.LobeThickness = 1.0;
+				_settings.LobeOpacity = 0.6;
 				_settings.Save();
 				_pipeline.ReseedBaseline();
 				ImGui.CloseCurrentPopup();

@@ -83,6 +83,10 @@ public sealed class Pipeline : IDisposable
 	/// read live by the field view.</summary>
 	public double LobeThickness => Math.Clamp(_settings.LobeThickness, 0.5, 3.0);
 
+	/// <summary>Configured Regulation Field lobe opacity (clamped 0–1), read live by the field
+	/// view to tame additive-blend saturation of the live trace.</summary>
+	public double LobeOpacity => Math.Clamp(_settings.LobeOpacity, 0.0, 1.0);
+
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<Beat>? BeatReceived;
