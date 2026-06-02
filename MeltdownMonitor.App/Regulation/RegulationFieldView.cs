@@ -663,11 +663,10 @@ public sealed class RegulationFieldView : IDisposable
 	// Dwell heatmap: a grid of buckets showing where the field has spent its time over the
 	// (configurable, usually long) heatmap window — the 2D joint of the two axis histograms. Each
 	// occupied bucket is a filled cell laid out through the same X = arousal index, Y = vagal tone
-	// mapping as the marker, so the grid sits exactly under the marker's travel. Colour is a Mauve→
-	// Pink gradient (a palette lane nothing else in the field uses) normalised to the busiest bucket,
-	// so the peak-dwell cell shows the most intense colour; quieter cells stay dim near the
-	// background. Overall opacity is user-configurable. Drawn beneath the trace and comet so they
-	// read on top.
+	// mapping as the marker, so the grid sits exactly under the marker's travel. Colour is a
+	// magma-style Catppuccin ramp (see HeatColor) normalised to the busiest bucket, so the peak-dwell
+	// cell shows the hottest colour; quieter cells stay dim near the background. Overall opacity is
+	// user-configurable. Drawn beneath the trace and comet so they read on top.
 	private void DrawDensityHeatmap(ImDrawListPtr draw, Vector2 centre, float halfWidth, float markerYClamp, RegulationTrailPoint[] trail, float confidence)
 	{
 		float opacity = (float)_pipeline.HeatmapOpacity;
@@ -727,14 +726,35 @@ public sealed class RegulationFieldView : IDisposable
 		}
 	}
 
-	// Dwell-heatmap gradient: dim mauve (near background, low dwell) → Mauve → Pink (peak dwell),
-	// so intensity rises with traffic while staying in the heatmap's own colour lane.
+	// Dwell-heatmap gradient: a magma-style ramp built from Catppuccin Macchiato hues — dark field
+	// background (low dwell, sinks into the canvas) → Mauve (purple) → Red (magenta) → Peach (orange)
+	// → Yellow (pale, peak dwell). Luminance and warmth both climb with traffic, like matplotlib's
+	// magma, so the busiest buckets read hottest. Stops are positioned (not evenly spaced) to keep
+	// the purple band wide and the bright top tight.
+	private static readonly (float Pos, Vector4 Color)[] HeatStops =
+	[
+		(0.00f, MacchiatoPalette.Base),
+		(0.22f, MacchiatoPalette.Mauve),
+		(0.48f, MacchiatoPalette.Red),
+		(0.74f, MacchiatoPalette.Peach),
+		(1.00f, MacchiatoPalette.Yellow),
+	];
+
 	private static Vector4 HeatColor(float t)
 	{
-		Vector4 low = MacchiatoPalette.Lerp(MacchiatoPalette.Base, MacchiatoPalette.Mauve, 0.45f);
-		return t < 0.5f
-			? MacchiatoPalette.Lerp(low, MacchiatoPalette.Mauve, t * 2f)
-			: MacchiatoPalette.Lerp(MacchiatoPalette.Mauve, MacchiatoPalette.Pink, (t - 0.5f) * 2f);
+		t = Math.Clamp(t, 0f, 1f);
+		for (int i = 1; i < HeatStops.Length; i++)
+		{
+			if (t <= HeatStops[i].Pos)
+			{
+				(float aPos, Vector4 aCol) = HeatStops[i - 1];
+				(float bPos, Vector4 bCol) = HeatStops[i];
+				float span = bPos - aPos;
+				return MacchiatoPalette.Lerp(aCol, bCol, span > 0f ? (t - aPos) / span : 0f);
+			}
+		}
+
+		return HeatStops[^1].Color;
 	}
 
 	// Axis density histograms: how the samples currently in the trail window are distributed.
