@@ -251,15 +251,63 @@ jobs:
           IOS_CERT_P12_PASSWORD: ${{ secrets.IOS_CERT_P12_PASSWORD }}
           IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
         run: |
-          set -e
+          set -euo pipefail
           KEYCHAIN=build.keychain
           security create-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security default-keychain -s "$KEYCHAIN"
           security unlock-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 3600 "$KEYCHAIN"
+
+          # Decode the cert. `tr` strips any whitespace/newlines/BOM a copy-paste
+          # or editor may have baked into the secret, so a wrapped or padded
+          # value still decodes to the original bytes.
           CERT=$(mktemp)
-          echo "$IOS_CERT_P12_BASE64" | base64 --decode > "$CERT"
-          security import "$CERT" -k "$KEYCHAIN" -P "$IOS_CERT_P12_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          printf '%s' "$IOS_CERT_P12_BASE64" | tr -d '[:space:]' | base64 --decode > "$CERT"
+          if [ ! -s "$CERT" ]; then
+            echo "::error title=Empty signing certificate::IOS_CERT_P12_BASE64 decoded to nothing. Set it with e.g. 'base64 -w0 dist.p12 | gh secret set IOS_CERT_P12_BASE64 --env ios-release --repo <owner>/<repo>'."
+            exit 1
+          fi
+
+          import_cert() {  # $1 = path to a .p12
+            security import "$1" -k "$KEYCHAIN" -P "$IOS_CERT_P12_PASSWORD" \
+              -T /usr/bin/codesign -T /usr/bin/security
+          }
+
+          # Apple's `security import` only accepts the legacy PKCS#12 algorithms
+          # (PBE-SHA1-3DES / SHA-1 MAC). OpenSSL 3 exports modern PBES2/AES-256
+          # by default, which `security` rejects with "Unknown format in
+          # import". Try the import as-is; if it fails only for that reason,
+          # transcode to a legacy-encrypted p12 and retry — so either kind of
+          # export works without anyone re-encoding the secret by hand.
+          if import_cert "$CERT" 2> /tmp/cert-import.err; then
+            echo "Imported signing certificate."
+          elif grep -q "Unknown format" /tmp/cert-import.err; then
+            echo "::warning::Signing p12 uses modern encryption macOS cannot import; transcoding to the legacy format."
+            # Prefer a real OpenSSL 3 (reads AES p12 + supports -legacy); the
+            # runner's default `openssl` may be LibreSSL.
+            OPENSSL=openssl
+            if command -v brew >/dev/null 2>&1; then
+              BREW_SSL="$(brew --prefix openssl@3 2>/dev/null || true)/bin/openssl"
+              [ -x "$BREW_SSL" ] && OPENSSL="$BREW_SSL"
+            fi
+            PEM=$(mktemp); LEGACY=$(mktemp)
+            if ! "$OPENSSL" pkcs12 -in "$CERT" -nodes -passin pass:"$IOS_CERT_P12_PASSWORD" -out "$PEM" 2> /tmp/cert-openssl.err; then
+              echo "::error title=Signing certificate unreadable::Could not open the p12 — wrong IOS_CERT_P12_PASSWORD, or it is not a valid PKCS#12. $(cat /tmp/cert-openssl.err)"
+              exit 1
+            fi
+            # OpenSSL 3 needs -legacy to emit SHA1/3DES; LibreSSL rejects the
+            # flag but already exports the legacy format by default.
+            if ! "$OPENSSL" pkcs12 -export -legacy -in "$PEM" -out "$LEGACY" -passout pass:"$IOS_CERT_P12_PASSWORD" 2>/dev/null; then
+              "$OPENSSL" pkcs12 -export -in "$PEM" -out "$LEGACY" -passout pass:"$IOS_CERT_P12_PASSWORD"
+            fi
+            import_cert "$LEGACY"
+            echo "Imported signing certificate after legacy transcode."
+            rm -f "$PEM" "$LEGACY"
+          else
+            echo "::error title=Certificate import failed::$(cat /tmp/cert-import.err)"
+            exit 1
+          fi
+
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN"
           rm -f "$CERT"
 
