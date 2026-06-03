@@ -8,6 +8,12 @@
     <Nullable>enable</Nullable>
     <RootNamespace>MeltdownMonitor.iOS</RootNamespace>
     <ApplicationId>com.matthewedmondson.meltdownmonitor</ApplicationId>
+    <!--
+      Local/dev defaults only. The TestFlight release job (.github/workflows/ios.yml)
+      overrides both at archive time: ApplicationDisplayVersion (CFBundleShortVersionString)
+      from the ios-v* tag and ApplicationVersion (CFBundleVersion) from github.run_number,
+      so every uploaded build carries a fresh, increasing build number.
+    -->
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
     <CodesignEntitlements>Entitlements.plist</CodesignEntitlements>
