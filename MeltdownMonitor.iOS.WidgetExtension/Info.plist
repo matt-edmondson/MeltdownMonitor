@@ -5,7 +5,7 @@
     <key>CFBundleDisplayName</key>
     <string>MeltdownMonitor</string>
     <key>CFBundleIdentifier</key>
-    <string>com.thethreethousands.meltdownmonitor.WidgetExtension</string>
+    <string>com.matthewedmondson.meltdownmonitor.WidgetExtension</string>
     <key>CFBundleName</key>
     <string>MeltdownMonitorWidget</string>
     <key>CFBundleShortVersionString</key>

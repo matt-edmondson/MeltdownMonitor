@@ -21,7 +21,7 @@ namespace MeltdownMonitor.Ble.Apple;
 /// </summary>
 public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource
 {
-	public const string DefaultRestoreIdentifier = "com.thethreethousands.meltdownmonitor.central";
+	public const string DefaultRestoreIdentifier = "com.matthewedmondson.meltdownmonitor.central";
 
 	private static readonly CBUUID HeartRateServiceUuid = CBUUID.FromString("180D");
 	private static readonly CBUUID HrMeasurementCharUuid = CBUUID.FromString("2A37");

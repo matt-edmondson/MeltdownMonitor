@@ -13,7 +13,7 @@ namespace MeltdownMonitor.iOS.Services;
 /// </summary>
 public sealed class NSUserDefaultsSettingsStore : IMobileSettingsStore
 {
-	private const string SettingsKey = "com.thethreethousands.meltdownmonitor.settings";
+	private const string SettingsKey = "com.matthewedmondson.meltdownmonitor.settings";
 
 	private readonly NSUserDefaults _defaults;
 
