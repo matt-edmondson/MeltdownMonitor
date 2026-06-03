@@ -1,5 +1,6 @@
 using System.Windows.Input;
 using MeltdownMonitor.Core.Beats;
+using MeltdownMonitor.Core.Regulation;
 
 namespace MeltdownMonitor.Mobile.ViewModels;
 
@@ -201,6 +202,21 @@ public sealed class SettingsViewModel : ViewModelBase
 			if (Math.Abs(_settings.LobeThickness - clamped) > 1e-6)
 			{
 				_settings.LobeThickness = clamped;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public int LobeSegments
+	{
+		get => _settings.LobeSegments;
+		set
+		{
+			int clamped = Math.Clamp(value, LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments);
+			if (_settings.LobeSegments != clamped)
+			{
+				_settings.LobeSegments = clamped;
 				Raise();
 				Persist();
 			}

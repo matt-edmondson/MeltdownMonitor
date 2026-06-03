@@ -83,6 +83,10 @@ public sealed class Pipeline : IDisposable
 	/// read live by the field view.</summary>
 	public double LobeThickness => Math.Clamp(_settings.LobeThickness, 0.5, 3.0);
 
+	/// <summary>Configured Regulation Field outline resolution (clamped 24–256), read live by the field view.</summary>
+	public int LobeSegments =>
+		Math.Clamp(_settings.LobeSegments, LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments);
+
 	/// <summary>Configured Regulation Field lobe opacity (clamped 0–1), read live by the field
 	/// view to tame additive-blend saturation of the live trace.</summary>
 	public double LobeOpacity => Math.Clamp(_settings.LobeOpacity, 0.0, 1.0);

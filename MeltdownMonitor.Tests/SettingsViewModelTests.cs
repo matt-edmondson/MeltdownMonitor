@@ -122,4 +122,43 @@ public class SettingsViewModelTests
 		vm.LobeThickness = 1.5; // changed → one persist
 		Assert.AreEqual(1, saves);
 	}
+
+	[TestMethod]
+	public void LobeSegments_RoundTripsOntoSettings()
+	{
+		var settings = new MobileSettings();
+		var vm = new SettingsViewModel(settings);
+
+		vm.LobeSegments = 128;
+
+		Assert.AreEqual(128, settings.LobeSegments);
+		Assert.AreEqual(128, vm.LobeSegments);
+	}
+
+	[TestMethod]
+	public void LobeSegments_ClampsToRange()
+	{
+		var settings = new MobileSettings();
+		var vm = new SettingsViewModel(settings);
+
+		vm.LobeSegments = 1;
+		Assert.AreEqual(24, settings.LobeSegments, "below floor clamps to 24");
+
+		vm.LobeSegments = 9999;
+		Assert.AreEqual(256, settings.LobeSegments, "above ceiling clamps to 256");
+	}
+
+	[TestMethod]
+	public void LobeSegments_PersistsOnlyOnChange()
+	{
+		var settings = new MobileSettings { LobeSegments = 96 };
+		int saves = 0;
+		var vm = new SettingsViewModel(settings, onChanged: () => saves++);
+
+		vm.LobeSegments = 96; // unchanged → no persist
+		Assert.AreEqual(0, saves);
+
+		vm.LobeSegments = 120; // changed → one persist
+		Assert.AreEqual(1, saves);
+	}
 }

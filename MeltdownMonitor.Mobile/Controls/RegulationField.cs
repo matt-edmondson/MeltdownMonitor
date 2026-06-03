@@ -30,8 +30,6 @@ namespace MeltdownMonitor.Mobile.Controls;
 /// </summary>
 public sealed class RegulationField : Control
 {
-	private const int LobeSegments = 96;
-
 	// ~30 fps: enough for a smooth pulse/jitter without churning the battery
 	// the way a 60 fps loop would on a phone that stays on this screen.
 	private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(33);
@@ -75,6 +73,10 @@ public sealed class RegulationField : Control
 	public static readonly StyledProperty<int> VagalBucketsProperty =
 		AvaloniaProperty.Register<RegulationField, int>(nameof(VagalBuckets), 16);
 
+	public static readonly StyledProperty<int> LobeSegmentsProperty =
+		AvaloniaProperty.Register<RegulationField, int>(
+			nameof(LobeSegments), LemniscateGeometry.DefaultSegments);
+
 	// Catppuccin Macchiato — the field's distinctive palette, single-sourced here
 	// to match the desktop renderer's MacchiatoPalette.
 	private static readonly Color Base = Color.FromRgb(0x24, 0x27, 0x3a);
@@ -112,7 +114,7 @@ public sealed class RegulationField : Control
 	}
 
 	static RegulationField() =>
-		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, RecoveryProperty, LobeThicknessProperty, IndexBucketsProperty, VagalBucketsProperty, HypoarousalProperty, HypoarousalDynamicsProperty);
+		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, RecoveryProperty, LobeThicknessProperty, LobeSegmentsProperty, IndexBucketsProperty, VagalBucketsProperty, HypoarousalProperty, HypoarousalDynamicsProperty);
 
 	/// <summary>Latest arousal-vs-baseline reading; drives the marker position,
 	/// stroke fatness and overall confidence dimming.</summary>
@@ -193,6 +195,14 @@ public sealed class RegulationField : Control
 		set => SetValue(VagalBucketsProperty, value);
 	}
 
+	/// <summary>Number of points sampled along the figure-8 outline — its render resolution
+	/// (clamped 24–256 at draw). Higher = smoother curve; lower = more faceted.</summary>
+	public int LobeSegments
+	{
+		get => GetValue(LobeSegmentsProperty);
+		set => SetValue(LobeSegmentsProperty, value);
+	}
+
 	protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
 	{
 		base.OnAttachedToVisualTree(e);
@@ -243,7 +253,8 @@ public sealed class RegulationField : Control
 
 		DrawShutdownZone(context, centreV, halfWidth, lobeHeight, confidence);
 
-		var ghost = LemniscateGeometry.Polyline(centreV, halfWidth, lobeHeight, LobeSegments);
+		var ghost = LemniscateGeometry.Polyline(centreV, halfWidth, lobeHeight,
+			Math.Clamp(LobeSegments, LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments));
 		DrawTrace(context, ghost, centreV, halfWidth, reading, confidence);
 		DrawAxisHistograms(context, centre, w, h, halfWidth, lobeHeight, confidence);
 		DrawTrail(context, centreV, halfWidth, confidence);

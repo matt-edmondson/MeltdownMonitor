@@ -34,6 +34,7 @@ public sealed class NowViewModel : ViewModelBase
 	private readonly Func<double>? _lobeThicknessProvider;
 	private readonly Func<int>? _indexBucketsProvider;
 	private readonly Func<int>? _vagalBucketsProvider;
+	private readonly Func<int>? _lobeSegmentsProvider;
 	private Func<bool>? _coldCalibratedProvider;
 
 	private DetectorState _state = DetectorState.Idle;
@@ -59,6 +60,7 @@ public sealed class NowViewModel : ViewModelBase
 	private double _lobeThickness = 1.0;
 	private int _indexBuckets = 24;
 	private int _vagalBuckets = 16;
+	private int _lobeSegments = LemniscateGeometry.DefaultSegments;
 
 	public NowViewModel(
 		Func<Task>? onConnect = null,
@@ -68,7 +70,8 @@ public sealed class NowViewModel : ViewModelBase
 		Func<double>? jitterExaggerationProvider = null,
 		Func<double>? lobeThicknessProvider = null,
 		Func<int>? indexBucketsProvider = null,
-		Func<int>? vagalBucketsProvider = null)
+		Func<int>? vagalBucketsProvider = null,
+		Func<int>? lobeSegmentsProvider = null)
 	{
 		_onConnect = onConnect;
 		_onDisconnect = onDisconnect;
@@ -78,6 +81,7 @@ public sealed class NowViewModel : ViewModelBase
 		_lobeThicknessProvider = lobeThicknessProvider;
 		_indexBucketsProvider = indexBucketsProvider;
 		_vagalBucketsProvider = vagalBucketsProvider;
+		_lobeSegmentsProvider = lobeSegmentsProvider;
 		ToggleConnectionCommand = new RelayCommand(ToggleConnection);
 		OpenAnnotationCommand = new RelayCommand(() => IsAnnotationSheetOpen = true);
 		CancelAnnotationCommand = new RelayCommand(CloseAnnotationSheet);
@@ -223,6 +227,15 @@ public sealed class NowViewModel : ViewModelBase
 	{
 		get => _vagalBuckets;
 		private set => SetField(ref _vagalBuckets, value);
+	}
+
+	/// <summary>Configured Regulation Field outline resolution — points sampled along the figure-8
+	/// (clamped 24–256). Refreshed on each reading so a setting change applies live, like the
+	/// comet-trail length. Bound by the control's <c>LobeSegments</c> styled property.</summary>
+	public int LobeSegments
+	{
+		get => _lobeSegments;
+		private set => SetField(ref _lobeSegments, value);
 	}
 
 	/// <summary>The detector-state accent the field's marker and trail take.</summary>
@@ -592,6 +605,9 @@ public sealed class NowViewModel : ViewModelBase
 		LobeThickness = Math.Clamp(_lobeThicknessProvider?.Invoke() ?? 1.0, 0.5, 3.0);
 		IndexBuckets = Math.Clamp(_indexBucketsProvider?.Invoke() ?? 24, 6, 64);
 		VagalBuckets = Math.Clamp(_vagalBucketsProvider?.Invoke() ?? 16, 6, 64);
+		LobeSegments = Math.Clamp(
+			_lobeSegmentsProvider?.Invoke() ?? LemniscateGeometry.DefaultSegments,
+			LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments);
 	});
 
 	/// <summary>

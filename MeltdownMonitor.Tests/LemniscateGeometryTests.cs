@@ -204,4 +204,32 @@ public class LemniscateGeometryTests
 		Assert.Throws<ArgumentOutOfRangeException>(
 			() => LemniscateGeometry.StrokeClosed(pts, new float[4], 0.5f, new Vector2[4], new Vector2[4]));
 	}
+
+	// --- Configurable outline resolution constants ---
+	// (The constants' literal values are compiler-guaranteed; MSTEST0032 rejects asserting them
+	// directly, so these exercise the bounds through real Polyline behaviour instead.)
+
+	[TestMethod]
+	public void Polyline_AtMinSegments_IsClosedSymmetricFigure8()
+	{
+		var pts = LemniscateGeometry.Polyline(
+			new Vector2(0, 0), halfWidth: 40f, lobeHeight: 20f, segments: LemniscateGeometry.MinSegments);
+		Assert.AreEqual(LemniscateGeometry.MinSegments, pts.Count);
+		// Closed even at the coarsest resolution — a broken/open polyline would leave the endpoints
+		// a whole lobe-width (~2×halfWidth = 80) apart, far beyond this bound.
+		Assert.IsTrue(Vector2.Distance(pts[0], pts[^1]) < 20f,
+			$"min-resolution polyline should be ~closed, gap was {Vector2.Distance(pts[0], pts[^1])}");
+		Assert.AreEqual(pts.Max(p => p.X), -pts.Min(p => p.X), 0.5f, "symmetric about the vertical axis");
+	}
+
+	[TestMethod]
+	public void Polyline_AtMaxSegments_IsClosedSymmetricFigure8()
+	{
+		var pts = LemniscateGeometry.Polyline(
+			new Vector2(0, 0), halfWidth: 40f, lobeHeight: 20f, segments: LemniscateGeometry.MaxSegments);
+		Assert.AreEqual(LemniscateGeometry.MaxSegments, pts.Count);
+		Assert.IsTrue(Vector2.Distance(pts[0], pts[^1]) < 4f,
+			$"max-resolution polyline should be ~closed, gap was {Vector2.Distance(pts[0], pts[^1])}");
+		Assert.AreEqual(pts.Max(p => p.X), -pts.Min(p => p.X), 0.5f, "symmetric about the vertical axis");
+	}
 }

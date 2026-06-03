@@ -2,6 +2,7 @@ using ktsu.AppDataStorage;
 using MeltdownMonitor.Core.Baseline;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
+using MeltdownMonitor.Core.Regulation;
 
 namespace MeltdownMonitor.App;
 
@@ -72,6 +73,11 @@ public class AppSettings : AppData<AppSettings>
 	/// <summary>Multiplier on the Regulation Field's live-trace lobe stroke thickness
 	/// (0.5–3; clamped at the consumer). 1.0 is the tuned default.</summary>
 	public double LobeThickness { get; set; } = 1.0;
+
+	/// <summary>Number of points sampled along the Regulation Field's figure-8 outline — its
+	/// render resolution (24–256; clamped at the consumer). Default 96 preserves the original
+	/// fixed look; lower = faceted, higher = smoother.</summary>
+	public int LobeSegments { get; set; } = LemniscateGeometry.DefaultSegments;
 
 	/// <summary>Overall opacity of the Regulation Field's live-trace lobes (0–1; clamped at the
 	/// consumer). The lobes are drawn with additive blending, so their densely overlapping
