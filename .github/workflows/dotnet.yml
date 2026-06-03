@@ -33,6 +33,9 @@ permissions:
 
 env:
   DOTNET_VERSION: "10.0" # Only needed for actions/setup-dotnet
+  # Baked into the build via Directory.Build.props when present. Unset (empty)
+  # on forks/PRs without the secret, in which case crash reporting stays off.
+  MELTDOWN_CRASH_REPORTING_DSN: ${{ secrets.MELTDOWN_CRASH_REPORTING_DSN }}
 
 jobs:
   build:
