@@ -87,6 +87,14 @@ public sealed class Pipeline : IDisposable
 	/// view to tame additive-blend saturation of the live trace.</summary>
 	public double LobeOpacity => Math.Clamp(_settings.LobeOpacity, 0.0, 1.0);
 
+	/// <summary>Configured Regulation Field comet-trail opacity (clamped 0–1), read live by the
+	/// field view to tame additive-blend saturation of the trail.</summary>
+	public double TrailOpacity => Math.Clamp(_settings.TrailOpacity, 0.0, 1.0);
+
+	/// <summary>Configured Regulation Field axis-histogram opacity (clamped 0–1), read live by the
+	/// field view to tame additive-blend saturation of the bars.</summary>
+	public double HistogramOpacity => Math.Clamp(_settings.HistogramOpacity, 0.0, 1.0);
+
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<Beat>? BeatReceived;

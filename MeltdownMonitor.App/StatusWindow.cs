@@ -1028,6 +1028,16 @@ public sealed class StatusWindow : IDisposable
 		HelpMarker("How many recent readings the Regulation Field comet trail shows. Higher = longer tail; lower = shorter.");
 		ImGui.SameLine();
 
+		float trailOpacityPct = (float)(_settings.TrailOpacity * 100.0);
+		if (ImGuiWidgets.Knob("Trail opacity", ref trailOpacityPct, 0f, 100f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.TrailOpacity = trailOpacityPct / 100.0;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Opacity of the Regulation Field comet trail. It draws additively and blooms where the tail overlaps itself and the marker, so lower this if it saturates to white; default 70%.");
+		ImGui.SameLine();
+
 		float jitter = (float)_settings.JitterExaggeration;
 		if (ImGuiWidgets.Knob("Jitter", ref jitter, 0f, 3f, format: "%.1fx", flags: ImGuiKnobOptions.ValueTooltip))
 		{
@@ -1076,6 +1086,16 @@ public sealed class StatusWindow : IDisposable
 		}
 		ImGui.SameLine();
 		HelpMarker("Overall opacity of the dwell heatmap. 0 hides it; default 35% keeps it a faint underlay beneath the comet and marker.");
+		ImGui.SameLine();
+
+		float histOpacityPct = (float)(_settings.HistogramOpacity * 100.0);
+		if (ImGuiWidgets.Knob("Histogram opacity", ref histOpacityPct, 0f, 100f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.HistogramOpacity = histOpacityPct / 100.0;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Opacity of the Regulation Field axis histograms (the arousal and vagal-tone bars). They draw additively, so lower this if they saturate; default 60%.");
 
 		// ── Detection thresholds ─────────────────────────────────────────
 		// Fraction knobs work in percent (0..100) and divide on assign so the
@@ -1511,6 +1531,8 @@ public sealed class StatusWindow : IDisposable
 				_settings.JitterExaggeration = 1.0;
 				_settings.LobeThickness = 1.0;
 				_settings.LobeOpacity = 0.6;
+				_settings.TrailOpacity = 0.7;
+				_settings.HistogramOpacity = 0.6;
 				_settings.Save();
 				_pipeline.ReseedBaseline();
 				ImGui.CloseCurrentPopup();

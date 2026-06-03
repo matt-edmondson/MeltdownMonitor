@@ -78,4 +78,14 @@ public class AppSettings : AppData<AppSettings>
 	/// segments and round joins bloom toward white; this knob pulls the stroke alpha down to
 	/// compensate for that saturation. Default 0.6.</summary>
 	public double LobeOpacity { get; set; } = 0.6;
+
+	/// <summary>Overall opacity of the Regulation Field's comet trail (0–1; clamped at the
+	/// consumer). The trail is drawn with additive blending, so overlapping sub-segments and the
+	/// head bloom; this scales the per-segment alpha to compensate. Default 0.7.</summary>
+	public double TrailOpacity { get; set; } = 0.7;
+
+	/// <summary>Overall opacity of the Regulation Field's axis histograms (0–1; clamped at the
+	/// consumer). The bars are drawn with additive blending; this scales their alpha to compensate
+	/// for the bloom. Default 0.6.</summary>
+	public double HistogramOpacity { get; set; } = 0.6;
 }

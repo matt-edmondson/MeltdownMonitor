@@ -74,14 +74,21 @@ The layers drawn additively are:
   joins bloom, and the warm/cool lobes brighten where they meet at the crossover. Because that
   bloom can saturate toward white, the lobe stroke alpha is scaled by a user-configurable **Lobe
   opacity** knob (`AppSettings.LobeOpacity`, default 0.6) exposed alongside Lobe thickness.
-- **Comet trail** — overlapping sub-segments and the head-meets-marker join bloom.
+- **Comet trail** — overlapping sub-segments and the head-meets-marker join bloom. The
+  per-segment alpha is scaled by a user-configurable **Trail opacity** knob
+  (`AppSettings.TrailOpacity`, default 0.7) to compensate.
+- **Axis histograms** — the arousal (X) and vagal-tone (Y) bars add their light to the canvas
+  and the heatmap beneath. The bar alpha is scaled by a user-configurable **Histogram opacity**
+  knob (`AppSettings.HistogramOpacity`, default 0.6); the thin axis baseline lines stay alpha-over
+  as reference chrome.
 - **Marker halos** — the pulsing state halo and the collapse halo glow; the solid marker
   core and inner dot stay alpha-over so they read as crisp, opaque points.
 
 The blend func is global GL state for the remainder of the draw pass, so every glow region
 is closed with an `AlphaBlend` before the next layer draws. The faint ghost baseline, window
-of tolerance, vagal axis, axis histograms, recovery target, arrow, and labels stay alpha-over.
-The glow look can only be confirmed from the live app + a real Polar sensor, not from tests.
+of tolerance, vagal axis, histogram baseline lines, recovery target, arrow, and labels stay
+alpha-over. The glow look can only be confirmed from the live app + a real Polar sensor, not
+from tests.
 
 ## In-repo alternative (no longer required, kept for reference)
 

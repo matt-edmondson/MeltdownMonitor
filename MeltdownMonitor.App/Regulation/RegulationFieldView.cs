@@ -463,7 +463,7 @@ public sealed class RegulationFieldView : IDisposable
 					RegulationTrend.DeEscalating => MacchiatoPalette.Lerp(segBase, MacchiatoPalette.Sky, frac * _arrowSpeed),
 					_ => segBase,
 				};
-				float segAlpha = (0.55f + (0.3f * _arrowSpeed)) * frac * confidence;
+				float segAlpha = (0.55f + (0.3f * _arrowSpeed)) * frac * confidence * (float)_pipeline.TrailOpacity;
 				draw.AddLine(prev, cur, Col(MacchiatoPalette.WithAlpha(segCol, segAlpha)), width);
 				prev = cur;
 			}
@@ -803,6 +803,10 @@ public sealed class RegulationFieldView : IDisposable
 		var xHist = RegulationFieldHistogram.IndexAxis(trail);
 		var yHist = RegulationFieldHistogram.VagalToneAxis(trail, 16);
 		uint axisCol = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Overlay1, 0.22f * confidence));
+		// The bars draw additively (each bar loop is bracketed below), so scale their alpha by the
+		// user's histogram-opacity knob to keep them from saturating; the thin axis baselines stay
+		// alpha-over as crisp reference chrome.
+		float barAlpha = 0.55f * confidence * (float)_pipeline.HistogramOpacity;
 
 		// X axis (arousal index), below the field, bars growing downward from a baseline that
 		// clears the lowest lobe tip. Clamp the strip so it never collides with the readout.
@@ -816,6 +820,7 @@ public sealed class RegulationFieldView : IDisposable
 				float slot = (halfWidth * 2f) / n;
 				float barW = MathF.Max(1f, slot - (1.5f * _drawScale));
 				draw.AddLine(new Vector2(centre.X - halfWidth, baseY), new Vector2(centre.X + halfWidth, baseY), axisCol, 1f * _drawScale);
+				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
 				for (int b = 0; b < n; b++)
 				{
 					int c = xHist.Counts[b];
@@ -826,10 +831,12 @@ public sealed class RegulationFieldView : IDisposable
 
 					float bx = centre.X - halfWidth + ((b + 0.5f) * slot);
 					Vector4 hue = bx >= centre.X ? MacchiatoPalette.Peach : MacchiatoPalette.Sky;
-					uint col = Col(MacchiatoPalette.WithAlpha(hue, 0.55f * confidence));
+					uint col = Col(MacchiatoPalette.WithAlpha(hue, barAlpha));
 					float bh = maxH * (c / (float)xHist.PeakCount);
 					draw.AddRectFilled(new Vector2(bx - (barW * 0.5f), baseY), new Vector2(bx + (barW * 0.5f), baseY + bh), col);
 				}
+
+				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 			}
 		}
 
@@ -850,6 +857,7 @@ public sealed class RegulationFieldView : IDisposable
 				float slot = (botY - topY) / n;
 				float barH = MathF.Max(1f, slot - (1.5f * _drawScale));
 				draw.AddLine(new Vector2(axisX, topY), new Vector2(axisX, botY), axisCol, 1f * _drawScale);
+				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
 				for (int b = 0; b < n; b++)
 				{
 					int c = yHist.Counts[b];
@@ -859,10 +867,12 @@ public sealed class RegulationFieldView : IDisposable
 					}
 
 					float by = topY + ((b + 0.5f) * slot);
-					uint col = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Lavender, 0.55f * confidence));
+					uint col = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Lavender, barAlpha));
 					float bw = maxW * (c / (float)yHist.PeakCount);
 					draw.AddRectFilled(new Vector2(axisX, by - (barH * 0.5f)), new Vector2(axisX + bw, by + (barH * 0.5f)), col);
 				}
+
+				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 			}
 		}
 	}
