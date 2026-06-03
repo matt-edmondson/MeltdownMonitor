@@ -70,10 +70,20 @@ The layers drawn additively are:
 
 - **LF/HF halo** — the three concentric falloff discs accumulate into a real radial glow.
 - **Density heatmap** — each magma cell adds its light to the dark canvas instead of tiling flat.
-- **Lemniscate lobes** — the live two-tone trace's overlapping spline segments and round
-  joins bloom, and the warm/cool lobes brighten where they meet at the crossover. Because that
-  bloom can saturate toward white, the lobe stroke alpha is scaled by a user-configurable **Lobe
-  opacity** knob (`AppSettings.LobeOpacity`, default 0.6) exposed alongside Lobe thickness.
+- **Lemniscate lobes** — the live two-tone trace is stroked as a **single tri-strip ribbon**
+  (`LemniscateGeometry.StrokeClosed` builds miter-joined left/right boundaries from the
+  Catmull-Rom centreline; `RegulationFieldView.FillRibbon` submits it as one indexed triangle
+  batch via the `ImDrawListPtr` `PrimReserve`/`PrimWriteVtx`/`PrimWriteIdx` API). This replaced
+  the earlier per-segment `AddLine` + round-join `AddCircleFilled` stroking, whose overlapping
+  segments and joins **overdrew** every shared pixel and bloomed toward white under additive.
+  The ribbon rasterises each pixel once, so additive now composites the trace cleanly onto the
+  dark field and the layers beneath — only the figure-8's own self-crossing at the centre still
+  overlaps, by design. Per-vertex colour still gives the warm/cool gradient and the lobes still
+  brighten where they meet at the crossover; the lobe alpha is scaled by a user-configurable
+  **Lobe opacity** knob (`AppSettings.LobeOpacity`, default 0.6) exposed alongside Lobe thickness.
+  Trade-off: raw `Prim*` triangles carry **no anti-aliasing fringe**, so the ribbon's outer edge
+  is crisper (slightly harder) than the old AA'd `AddLine` stroke — only confirmable on the live
+  app + a real Polar sensor.
 - **Comet trail** — overlapping sub-segments and the head-meets-marker join bloom. The
   per-segment alpha is scaled by a user-configurable **Trail opacity** knob
   (`AppSettings.TrailOpacity`, default 0.7) to compensate.
