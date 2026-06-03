@@ -46,4 +46,87 @@ public static class LemniscateGeometry
 
 		return points;
 	}
+
+	/// <summary>
+	/// Strokes a closed centreline into the boundary of a filled ribbon ("tri-strip"), so a
+	/// thick trace can be drawn as a single non-overlapping mesh instead of stacked round-join
+	/// segments (which overdraw — and bloom — under additive blending). For each centreline
+	/// point it emits one <paramref name="left"/> and one <paramref name="right"/> vertex,
+	/// offset to either side along the join's miter direction by that point's half-thickness;
+	/// consecutive left/right pairs form the quads of the ribbon. The miter extension is clamped
+	/// to <paramref name="miterLimit"/>× so a sharp turn or near-reversal (e.g. the lemniscate's
+	/// self-crossing) widens the join instead of shooting a spike to infinity.
+	/// </summary>
+	/// <param name="centre">Closed centreline; the last point joins back to the first.</param>
+	/// <param name="halfThickness">Per-point stroke half-width; same length as <paramref name="centre"/>.</param>
+	/// <param name="miterLimit">Maximum miter extension as a multiple of half-thickness; must be ≥ 1.</param>
+	/// <param name="left">Receives the left-hand boundary vertices; same length as <paramref name="centre"/>.</param>
+	/// <param name="right">Receives the right-hand boundary vertices; same length as <paramref name="centre"/>.</param>
+	public static void StrokeClosed(
+		ReadOnlySpan<Vector2> centre,
+		ReadOnlySpan<float> halfThickness,
+		float miterLimit,
+		Span<Vector2> left,
+		Span<Vector2> right)
+	{
+		ArgumentOutOfRangeException.ThrowIfLessThan(miterLimit, 1f);
+		int n = centre.Length;
+		if (halfThickness.Length != n || left.Length != n || right.Length != n)
+		{
+			throw new ArgumentException("centre, halfThickness, left and right must all be the same length.");
+		}
+
+		for (int i = 0; i < n; i++)
+		{
+			Vector2 cur = centre[i];
+			Vector2 dIn = Direction(centre[((i - 1) + n) % n], cur);
+			Vector2 dOut = Direction(cur, centre[(i + 1) % n]);
+
+			// A duplicated point leaves one edge with no direction; borrow the other so the
+			// join still resolves rather than collapsing the ribbon to zero width there.
+			if (dIn == Vector2.Zero)
+			{
+				dIn = dOut;
+			}
+
+			if (dOut == Vector2.Zero)
+			{
+				dOut = dIn;
+			}
+
+			// Edge normals (screen space, +Y down: rotate the tangent +90°). The miter is the
+			// bisector of the two edge normals; scaling by 1/cos(half-angle) keeps the stroke
+			// the same width through the bend.
+			Vector2 nIn = new(-dIn.Y, dIn.X);
+			Vector2 nOut = new(-dOut.Y, dOut.X);
+			Vector2 sum = nIn + nOut;
+			float sumLen = sum.Length();
+
+			Vector2 miter;
+			float scale;
+			if (sumLen < 1e-4f)
+			{
+				// ~180° reversal: the bisector is undefined, so just butt the join.
+				miter = nOut;
+				scale = 1f;
+			}
+			else
+			{
+				miter = sum / sumLen;
+				float cos = Vector2.Dot(miter, nOut); // cos(half join angle)
+				scale = cos > 1e-3f ? MathF.Min(1f / cos, miterLimit) : miterLimit;
+			}
+
+			float h = halfThickness[i] * scale;
+			left[i] = cur + (miter * h);
+			right[i] = cur - (miter * h);
+		}
+	}
+
+	private static Vector2 Direction(Vector2 a, Vector2 b)
+	{
+		Vector2 d = b - a;
+		float len = d.Length();
+		return len < 1e-6f ? Vector2.Zero : d / len;
+	}
 }

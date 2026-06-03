@@ -24,6 +24,8 @@ public sealed class RegulationFieldView : IDisposable
 	private const float LobeSwellFactor = 1.4f;  // how much a lobe thickens at full index
 	private const float MaxJitterPx = 18f;       // peak trace deflection from the real RR signal at 1× exaggeration
 	private const float RrDevScaleMs = 30f;      // beat-to-beat difference that maps to full deflection
+	private const int RibbonSub = 4;             // Catmull-Rom sub-steps per lobe segment for the ribbon centreline
+	private const float RibbonMiterLimit = 4f;   // cap the trace's miter extension so the self-crossing doesn't spike
 	private const float LobeHeightMin = 0.7f;    // live lobe height factor at lowest Poincaré roundness
 	private const float LobeHeightMax = 1.18f;   // ...and at highest
 	private const float MarkerYSpan = 0.92f;     // vagal-tone half-travel (crossover→FRAGILE/STEADY), as a fraction of lobe height; near-full so extreme tone reaches the lobe tips
@@ -341,14 +343,20 @@ public sealed class RegulationFieldView : IDisposable
 			pts[i] = v + (normal * jitter);
 		}
 
-		// Draw a closed Catmull-Rom spline through the jittered vertices: smooth flowing
-		// undulations rather than faceted spikes. The continuous chain leaves no segment
-		// gaps. Colour/thickness come from each sub-point's side of the crossover. Drawn
-		// additively so the densely overlapping segments and round joins bloom into a glowing
-		// neon trace (and the warm/cool lobes brighten where they meet at the crossover) instead
-		// of compositing flat; restored to alpha-over after the trace.
-		const int sub = 4;
-		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+		// Build a closed Catmull-Rom centreline through the jittered vertices (smooth flowing
+		// undulations rather than faceted spikes), then stroke it as a single tri-strip ribbon
+		// with miter joins. Each centreline point carries its own colour (warm/cool by side of
+		// the crossover, deepening with depth) and half-thickness (lobe swell), so the fill is a
+		// continuous gradient. Unlike the old per-segment AddLine + round-join-circle approach,
+		// the ribbon covers each pixel exactly once — no stacked overdraw — so the additive blend
+		// composites the trace cleanly onto the dark field (and the layers beneath) instead of
+		// blooming toward white wherever segments and joins overlapped. The figure-8's own
+		// self-crossing at the centre is the one place the ribbon still overlaps itself, by design.
+		int m = n * RibbonSub;
+		Span<Vector2> spline = m <= 512 ? stackalloc Vector2[m] : new Vector2[m];
+		Span<float> half = m <= 512 ? stackalloc float[m] : new float[m];
+		Span<uint> cols = m <= 512 ? stackalloc uint[m] : new uint[m];
+		int w = 0;
 		for (int i = 0; i < n; i++)
 		{
 			Vector2 p0 = pts[(i - 1 + n) % n];
@@ -356,28 +364,69 @@ public sealed class RegulationFieldView : IDisposable
 			Vector2 p2 = pts[(i + 1) % n];
 			Vector2 p3 = pts[(i + 2) % n];
 
-			Vector2 prev = p1;
-			for (int s = 1; s <= sub; s++)
+			for (int s = 1; s <= RibbonSub; s++)
 			{
-				Vector2 cur = CatmullRom(p0, p1, p2, p3, s / (float)sub);
-				float midX = (prev.X + cur.X) * 0.5f;
-				bool warm = midX >= centre.X;
-				float depth = MathF.Min(1f, MathF.Abs(midX - centre.X) / halfWidth);
+				Vector2 cur = CatmullRom(p0, p1, p2, p3, s / (float)RibbonSub);
+				bool warm = cur.X >= centre.X;
+				float depth = MathF.Min(1f, MathF.Abs(cur.X - centre.X) / halfWidth);
 
 				Vector4 c = warm
 					? MacchiatoPalette.Lerp(MacchiatoPalette.Peach, MacchiatoPalette.Maroon, depth)
 					: MacchiatoPalette.Lerp(MacchiatoPalette.Sky, MacchiatoPalette.Sapphire, depth);
-				c = MacchiatoPalette.WithAlpha(c, lobeAlpha);
 
-				float thick = baseThick * (warm ? warmSwell : coolSwell);
-				uint col = Col(c);
-				draw.AddLine(prev, cur, col, thick);
-				draw.AddCircleFilled(cur, thick * 0.5f, col); // round join — fills butt-cap notches at bends
-				prev = cur;
+				spline[w] = cur;
+				cols[w] = Col(MacchiatoPalette.WithAlpha(c, lobeAlpha));
+				half[w] = baseThick * (warm ? warmSwell : coolSwell) * 0.5f;
+				w++;
 			}
 		}
 
+		Span<Vector2> left = m <= 512 ? stackalloc Vector2[m] : new Vector2[m];
+		Span<Vector2> right = m <= 512 ? stackalloc Vector2[m] : new Vector2[m];
+		LemniscateGeometry.StrokeClosed(spline, half, RibbonMiterLimit, left, right);
+
+		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+		FillRibbon(draw, left, right, cols);
 		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
+	}
+
+	// Submits a closed tri-strip ribbon to the draw list as one indexed triangle batch: two
+	// shared-vertex triangles per quad, each boundary vertex written once and reused by its two
+	// adjacent quads. Solid fill, so every vertex samples the font atlas' white pixel. This is the
+	// no-overdraw counterpart to stroking the trace with overlapping AddLine + AddCircleFilled
+	// calls — the GPU rasterises each ribbon pixel a single time.
+	private static void FillRibbon(ImDrawListPtr draw, ReadOnlySpan<Vector2> left, ReadOnlySpan<Vector2> right, ReadOnlySpan<uint> col)
+	{
+		int n = left.Length;
+		if (n < 2)
+		{
+			return;
+		}
+
+		Vector2 uv = ImGui.GetFontTexUvWhitePixel();
+		draw.PrimReserve(n * 6, n * 2); // closed loop: n quads → n*2 triangles → n*6 indices, n*2 vertices
+		uint baseIdx = draw.VtxCurrentIdx;
+		for (int i = 0; i < n; i++)
+		{
+			draw.PrimWriteVtx(left[i], uv, col[i]);  // vertex 2*i
+			draw.PrimWriteVtx(right[i], uv, col[i]); // vertex 2*i + 1
+		}
+
+		for (int i = 0; i < n; i++)
+		{
+			int j = (i + 1) % n;
+			uint la = baseIdx + (uint)(2 * i);
+			uint ra = baseIdx + (uint)((2 * i) + 1);
+			uint lb = baseIdx + (uint)(2 * j);
+			uint rb = baseIdx + (uint)((2 * j) + 1);
+			// Two triangles spanning the quad (la, ra) → (lb, rb).
+			draw.PrimWriteIdx((ushort)la);
+			draw.PrimWriteIdx((ushort)ra);
+			draw.PrimWriteIdx((ushort)rb);
+			draw.PrimWriteIdx((ushort)la);
+			draw.PrimWriteIdx((ushort)rb);
+			draw.PrimWriteIdx((ushort)lb);
+		}
 	}
 
 	// Normalised beat-to-beat differences in [-1, 1]. An (almost) flat result when variability
