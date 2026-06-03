@@ -90,15 +90,18 @@ public sealed class StatusWindow : IDisposable
 
 		_regulationField = new Regulation.RegulationFieldView(_pipeline);
 
+		// Each tab's body is drawn inside its own scrollable child so the tab bar
+		// (and the status header above it) stay pinned on screen when a tab's
+		// content overflows — only the body scrolls, not the whole window.
 		_tabs = new ImGuiWidgets.TabPanel("status-tabs");
-		_tabs.AddTab("Regulation Field", _regulationField.Draw);
-		_tabs.AddTab("Overview", DrawOverviewTab);
-		_tabs.AddTab("Heart Rate", DrawHeartRateTab);
-		_tabs.AddTab("Time-Domain HRV", DrawTimeDomainTab);
-		_tabs.AddTab("Frequency-Domain", DrawFrequencyTab);
-		_tabs.AddTab("Poincaré", DrawPoincareTab);
-		_tabs.AddTab("Annotations", DrawAnnotationsTab);
-		_tabs.AddTab("Settings", DrawSettingsTab);
+		_tabs.AddTab("Regulation Field", () => DrawScrollableTab("regulation-field", _regulationField.Draw));
+		_tabs.AddTab("Overview", () => DrawScrollableTab("overview", DrawOverviewTab));
+		_tabs.AddTab("Heart Rate", () => DrawScrollableTab("heart-rate", DrawHeartRateTab));
+		_tabs.AddTab("Time-Domain HRV", () => DrawScrollableTab("time-domain", DrawTimeDomainTab));
+		_tabs.AddTab("Frequency-Domain", () => DrawScrollableTab("frequency-domain", DrawFrequencyTab));
+		_tabs.AddTab("Poincaré", () => DrawScrollableTab("poincare", DrawPoincareTab));
+		_tabs.AddTab("Annotations", () => DrawScrollableTab("annotations", DrawAnnotationsTab));
+		_tabs.AddTab("Settings", () => DrawScrollableTab("settings", DrawSettingsTab));
 
 		// Fires immediately on first poll, then periodically — backfills sparklines
 		// with persisted history so they aren't empty when the window opens.
@@ -395,6 +398,19 @@ public sealed class StatusWindow : IDisposable
 			_settings.Save();
 			_settingsDirty = false;
 		}
+	}
+
+	// Draw a tab's body inside a child that fills the remaining content region. The child
+	// owns the scrolling, so the tab bar (and the status header above it) stay fixed while
+	// only the body scrolls when its content is taller than the window.
+	private static void DrawScrollableTab(string id, Action drawBody)
+	{
+		if (ImGui.BeginChild($"##tab-{id}", new Vector2(0f, 0f), ImGuiChildFlags.None))
+		{
+			drawBody();
+		}
+
+		ImGui.EndChild();
 	}
 
 	// Render the window as a borderless, translucent, always-on-top overlay: a compact
