@@ -365,9 +365,22 @@ jobs:
           KEY_PATH="$KEY_DIR/AuthKey_${APP_STORE_CONNECT_KEY_ID}.p8"
           echo "$APP_STORE_CONNECT_KEY_BASE64" | base64 --decode > "$KEY_PATH"
           chmod 600 "$KEY_PATH"
+
+          # altool's exit code is unreliable — it has returned 0 even when an
+          # App Store Connect validation error meant nothing was delivered.
+          # Capture its output and fail the step on a non-zero status OR any
+          # reported upload error, so a failed upload never reports green.
+          set +e
           xcrun altool --upload-app \
             --type ios \
             --file "${{ steps.locate-ipa.outputs.ipa }}" \
             --apiKey "$APP_STORE_CONNECT_KEY_ID" \
-            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+            --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID" 2>&1 | tee /tmp/altool.log
+          STATUS=${PIPESTATUS[0]}
+          set -e
           rm -f "$KEY_PATH"
+          if [ "$STATUS" -ne 0 ] || grep -qE "UPLOAD FAILED|Failed to upload package" /tmp/altool.log; then
+            echo "::error title=TestFlight upload failed::altool did not deliver the build — see the log above for the App Store Connect validation error."
+            exit 1
+          fi
+          echo "Uploaded to TestFlight."
