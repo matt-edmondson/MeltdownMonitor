@@ -258,10 +258,13 @@ jobs:
           security unlock-keychain -p "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 3600 "$KEYCHAIN"
 
-          # Decode the cert. `tr` strips any whitespace/newlines/BOM a copy-paste
-          # or editor may have baked into the secret, so a wrapped or padded
-          # value still decodes to the original bytes.
-          CERT=$(mktemp)
+          # Decode the cert into a file WITH a .p12 extension: `security import`
+          # infers the format from the extension, so an extension-less temp file
+          # fails with "Unknown format in import" no matter what the file
+          # actually contains. `tr` strips any whitespace/BOM a copy-paste may
+          # have baked in, so a wrapped/padded secret still decodes.
+          WORK="$(mktemp -d)"
+          CERT="$WORK/dist.p12"
           printf '%s' "$IOS_CERT_P12_BASE64" | tr -d '[:space:]' | base64 --decode > "$CERT"
           if [ ! -s "$CERT" ]; then
             echo "::error title=Empty signing certificate::IOS_CERT_P12_BASE64 decoded to nothing. Set it with e.g. 'base64 -w0 dist.p12 | gh secret set IOS_CERT_P12_BASE64 --env ios-release --repo <owner>/<repo>'."
@@ -269,20 +272,17 @@ jobs:
           fi
 
           import_cert() {  # $1 = path to a .p12
-            security import "$1" -k "$KEYCHAIN" -P "$IOS_CERT_P12_PASSWORD" \
+            security import "$1" -f pkcs12 -k "$KEYCHAIN" -P "$IOS_CERT_P12_PASSWORD" \
               -T /usr/bin/codesign -T /usr/bin/security
           }
 
-          # Apple's `security import` accepts neither modern PBES2/AES-256
-          # (OpenSSL 3's default) nor 40-bit RC2 (OpenSSL's -legacy default for
-          # the certificate bag) — only 3DES (PBE-SHA1-3DES). Both are rejected
-          # with "Unknown format in import". Try the import as-is; if it fails
-          # only for that reason, transcode to a 3DES p12 and retry — so a p12
-          # in any encoding works without anyone re-encoding the secret by hand.
+          # `-f pkcs12` is what makes detection work for our temp file. If the
+          # import still fails (e.g. macOS can't decrypt the p12's encryption),
+          # transcode to a 3DES PKCS#12 with OpenSSL and retry.
           if import_cert "$CERT" 2> /tmp/cert-import.err; then
             echo "Imported signing certificate."
-          elif grep -q "Unknown format" /tmp/cert-import.err; then
-            echo "::warning::Signing p12 is not directly importable by macOS; transcoding to a 3DES PKCS#12."
+          else
+            echo "::warning::Direct import failed ($(cat /tmp/cert-import.err)); transcoding to a 3DES PKCS#12 and retrying."
             # Prefer a real OpenSSL 3 (supports -legacy + 3DES); the runner's
             # default `openssl` may be LibreSSL.
             OPENSSL=openssl
@@ -290,7 +290,7 @@ jobs:
               BREW_SSL="$(brew --prefix openssl@3 2>/dev/null || true)/bin/openssl"
               [ -x "$BREW_SSL" ] && OPENSSL="$BREW_SSL"
             fi
-            PEM=$(mktemp); LEGACY=$(mktemp)
+            PEM="$WORK/cert.pem"; LEGACY="$WORK/dist-3des.p12"
             # -legacy loads the legacy provider alongside the default, so this
             # reads both modern AES (default) and old RC2/3DES (legacy) inputs.
             if ! "$OPENSSL" pkcs12 -in "$CERT" -legacy -nodes -passin pass:"$IOS_CERT_P12_PASSWORD" -out "$PEM" 2> /tmp/cert-openssl.err; then
@@ -304,14 +304,10 @@ jobs:
               -in "$PEM" -out "$LEGACY" -passout pass:"$IOS_CERT_P12_PASSWORD"
             import_cert "$LEGACY"
             echo "Imported signing certificate after 3DES transcode."
-            rm -f "$PEM" "$LEGACY"
-          else
-            echo "::error title=Certificate import failed::$(cat /tmp/cert-import.err)"
-            exit 1
           fi
 
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$IOS_KEYCHAIN_PASSWORD" "$KEYCHAIN"
-          rm -f "$CERT"
+          rm -rf "$WORK"
 
       - name: Install provisioning profile
         env:
