@@ -22,6 +22,8 @@
                                          Recovery="{Binding Recovery}"
                                          JitterExaggeration="{Binding JitterExaggeration}"
                                          LobeThickness="{Binding LobeThickness}"
+                                         IndexBuckets="{Binding IndexBuckets}"
+                                         VagalBuckets="{Binding VagalBuckets}"
                                          Hypoarousal="{Binding Reading.Hypoarousal}"
                                          HypoarousalDynamics="{Binding HypoarousalDynamics}" />
                     <ctl:Sparkline Grid.Row="1"

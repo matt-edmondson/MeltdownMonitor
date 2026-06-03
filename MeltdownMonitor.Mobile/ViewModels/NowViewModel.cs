@@ -32,6 +32,8 @@ public sealed class NowViewModel : ViewModelBase
 	private readonly Func<int>? _trailLengthProvider;
 	private readonly Func<double>? _jitterExaggerationProvider;
 	private readonly Func<double>? _lobeThicknessProvider;
+	private readonly Func<int>? _indexBucketsProvider;
+	private readonly Func<int>? _vagalBucketsProvider;
 	private Func<bool>? _coldCalibratedProvider;
 
 	private DetectorState _state = DetectorState.Idle;
@@ -55,6 +57,8 @@ public sealed class NowViewModel : ViewModelBase
 	private string _annotationNotes = string.Empty;
 	private double _jitterExaggeration = 1.0;
 	private double _lobeThickness = 1.0;
+	private int _indexBuckets = 24;
+	private int _vagalBuckets = 16;
 
 	public NowViewModel(
 		Func<Task>? onConnect = null,
@@ -62,7 +66,9 @@ public sealed class NowViewModel : ViewModelBase
 		Func<AnnotationLabel, string?, Task>? onAnnotate = null,
 		Func<int>? trailLengthProvider = null,
 		Func<double>? jitterExaggerationProvider = null,
-		Func<double>? lobeThicknessProvider = null)
+		Func<double>? lobeThicknessProvider = null,
+		Func<int>? indexBucketsProvider = null,
+		Func<int>? vagalBucketsProvider = null)
 	{
 		_onConnect = onConnect;
 		_onDisconnect = onDisconnect;
@@ -70,6 +76,8 @@ public sealed class NowViewModel : ViewModelBase
 		_trailLengthProvider = trailLengthProvider;
 		_jitterExaggerationProvider = jitterExaggerationProvider;
 		_lobeThicknessProvider = lobeThicknessProvider;
+		_indexBucketsProvider = indexBucketsProvider;
+		_vagalBucketsProvider = vagalBucketsProvider;
 		ToggleConnectionCommand = new RelayCommand(ToggleConnection);
 		OpenAnnotationCommand = new RelayCommand(() => IsAnnotationSheetOpen = true);
 		CancelAnnotationCommand = new RelayCommand(CloseAnnotationSheet);
@@ -199,6 +207,22 @@ public sealed class NowViewModel : ViewModelBase
 	{
 		get => _lobeThickness;
 		private set => SetField(ref _lobeThickness, value);
+	}
+
+	/// <summary>Configured bucket resolution of the arousal-index (X) axis histogram (clamped 6–64).
+	/// Refreshed on each reading so a setting change applies live, like the comet-trail length.</summary>
+	public int IndexBuckets
+	{
+		get => _indexBuckets;
+		private set => SetField(ref _indexBuckets, value);
+	}
+
+	/// <summary>Configured bucket resolution of the vagal-tone (Y) axis histogram (clamped 6–64).
+	/// Refreshed on each reading so a setting change applies live, like the comet-trail length.</summary>
+	public int VagalBuckets
+	{
+		get => _vagalBuckets;
+		private set => SetField(ref _vagalBuckets, value);
 	}
 
 	/// <summary>The detector-state accent the field's marker and trail take.</summary>
@@ -566,6 +590,8 @@ public sealed class NowViewModel : ViewModelBase
 		// be adjusted while the Now screen is open).
 		JitterExaggeration = Math.Clamp(_jitterExaggerationProvider?.Invoke() ?? 1.0, 0.0, 3.0);
 		LobeThickness = Math.Clamp(_lobeThicknessProvider?.Invoke() ?? 1.0, 0.5, 3.0);
+		IndexBuckets = Math.Clamp(_indexBucketsProvider?.Invoke() ?? 24, 6, 64);
+		VagalBuckets = Math.Clamp(_vagalBucketsProvider?.Invoke() ?? 16, 6, 64);
 	});
 
 	/// <summary>

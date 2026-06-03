@@ -1096,6 +1096,26 @@ public sealed class StatusWindow : IDisposable
 		}
 		ImGui.SameLine();
 		HelpMarker("Opacity of the Regulation Field axis histograms (the arousal and vagal-tone bars). They draw additively, so lower this if they saturate; default 60%.");
+		ImGui.SameLine();
+
+		int indexBuckets = _settings.FieldIndexBuckets;
+		if (ImGuiWidgets.Knob("Arousal buckets", ref indexBuckets, 6, 64, format: "%d", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.FieldIndexBuckets = indexBuckets;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Bucket resolution of the arousal-index (X) axis — the number of arousal-histogram bars and dwell-heatmap columns. Higher = finer detail; default 24.");
+		ImGui.SameLine();
+
+		int vagalBuckets = _settings.FieldVagalBuckets;
+		if (ImGuiWidgets.Knob("Tone buckets", ref vagalBuckets, 6, 64, format: "%d", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.FieldVagalBuckets = vagalBuckets;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Bucket resolution of the vagal-tone (Y) axis — the number of vagal-tone histogram bars and dwell-heatmap rows. Higher = finer detail; default 16.");
 
 		// ── Detection thresholds ─────────────────────────────────────────
 		// Fraction knobs work in percent (0..100) and divide on assign so the
@@ -1533,6 +1553,8 @@ public sealed class StatusWindow : IDisposable
 				_settings.LobeOpacity = 0.6;
 				_settings.TrailOpacity = 0.7;
 				_settings.HistogramOpacity = 0.6;
+				_settings.FieldIndexBuckets = 24;
+				_settings.FieldVagalBuckets = 16;
 				_settings.Save();
 				_pipeline.ReseedBaseline();
 				ImGui.CloseCurrentPopup();

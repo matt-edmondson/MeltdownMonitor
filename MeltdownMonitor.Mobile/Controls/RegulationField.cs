@@ -69,6 +69,12 @@ public sealed class RegulationField : Control
 	public static readonly StyledProperty<double> LobeThicknessProperty =
 		AvaloniaProperty.Register<RegulationField, double>(nameof(LobeThickness), 1.0);
 
+	public static readonly StyledProperty<int> IndexBucketsProperty =
+		AvaloniaProperty.Register<RegulationField, int>(nameof(IndexBuckets), 24);
+
+	public static readonly StyledProperty<int> VagalBucketsProperty =
+		AvaloniaProperty.Register<RegulationField, int>(nameof(VagalBuckets), 16);
+
 	// Catppuccin Macchiato — the field's distinctive palette, single-sourced here
 	// to match the desktop renderer's MacchiatoPalette.
 	private static readonly Color Base = Color.FromRgb(0x24, 0x27, 0x3a);
@@ -106,7 +112,7 @@ public sealed class RegulationField : Control
 	}
 
 	static RegulationField() =>
-		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, RecoveryProperty, LobeThicknessProperty, HypoarousalProperty, HypoarousalDynamicsProperty);
+		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, RecoveryProperty, LobeThicknessProperty, IndexBucketsProperty, VagalBucketsProperty, HypoarousalProperty, HypoarousalDynamicsProperty);
 
 	/// <summary>Latest arousal-vs-baseline reading; drives the marker position,
 	/// stroke fatness and overall confidence dimming.</summary>
@@ -171,6 +177,20 @@ public sealed class RegulationField : Control
 	{
 		get => GetValue(LobeThicknessProperty);
 		set => SetValue(LobeThicknessProperty, value);
+	}
+
+	/// <summary>Bucket resolution of the arousal-index (X) axis histogram (clamped 6–64 at draw).</summary>
+	public int IndexBuckets
+	{
+		get => GetValue(IndexBucketsProperty);
+		set => SetValue(IndexBucketsProperty, value);
+	}
+
+	/// <summary>Bucket resolution of the vagal-tone (Y) axis histogram (clamped 6–64 at draw).</summary>
+	public int VagalBuckets
+	{
+		get => GetValue(VagalBucketsProperty);
+		set => SetValue(VagalBucketsProperty, value);
 	}
 
 	protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -322,8 +342,8 @@ public sealed class RegulationField : Control
 			return;
 		}
 
-		var xHist = RegulationFieldHistogram.IndexAxis(trail);
-		var yHist = RegulationFieldHistogram.VagalToneAxis(trail, 16);
+		var xHist = RegulationFieldHistogram.IndexAxis(trail, Math.Clamp(IndexBuckets, 6, 64));
+		var yHist = RegulationFieldHistogram.VagalToneAxis(trail, Math.Clamp(VagalBuckets, 6, 64));
 		var axisBrush = Brush(Overlay1, 0.22 * confidence);
 		var axisPen = new Pen(axisBrush, 1);
 

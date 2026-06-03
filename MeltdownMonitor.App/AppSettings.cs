@@ -88,4 +88,14 @@ public class AppSettings : AppData<AppSettings>
 	/// consumer). The bars are drawn with additive blending; this scales their alpha to compensate
 	/// for the bloom. Default 0.6.</summary>
 	public double HistogramOpacity { get; set; } = 0.6;
+
+	/// <summary>Bucket resolution along the arousal-index (X) axis — the number of bars in the
+	/// arousal histogram and columns in the dwell heatmap (6–64; clamped at the consumer).
+	/// Higher = finer detail, lower = chunkier. Default 24.</summary>
+	public int FieldIndexBuckets { get; set; } = 24;
+
+	/// <summary>Bucket resolution along the vagal-tone (Y) axis — the number of bars in the
+	/// vagal-tone histogram and rows in the dwell heatmap (6–64; clamped at the consumer).
+	/// Higher = finer detail, lower = chunkier. Default 16.</summary>
+	public int FieldVagalBuckets { get; set; } = 16;
 }

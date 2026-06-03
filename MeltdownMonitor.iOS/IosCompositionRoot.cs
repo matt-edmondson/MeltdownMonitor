@@ -67,7 +67,9 @@ public static class IosCompositionRoot
 			onAnnotate: RecordAnnotationAsync,
 			trailLengthProvider: () => settings.RegulationTrailLength,
 			jitterExaggerationProvider: () => settings.JitterExaggeration,
-			lobeThicknessProvider: () => settings.LobeThickness);
+			lobeThicknessProvider: () => settings.LobeThickness,
+			indexBucketsProvider: () => settings.FieldIndexBuckets,
+			vagalBucketsProvider: () => settings.FieldVagalBuckets);
 		_history = new HistoryViewModel();
 
 		var settingsTab = new SettingsViewModel(

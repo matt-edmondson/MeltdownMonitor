@@ -67,4 +67,12 @@ public sealed class MobileSettings
 	/// <summary>Multiplier on the Regulation Field's live-trace lobe stroke thickness
 	/// (0.5–3; clamped at the consumer). 1.0 is the tuned default.</summary>
 	public double LobeThickness { get; set; } = 1.0;
+
+	/// <summary>Bucket resolution along the arousal-index (X) axis — the number of bars in the
+	/// arousal histogram (6–64; clamped at the consumer). Higher = finer detail. Default 24.</summary>
+	public int FieldIndexBuckets { get; set; } = 24;
+
+	/// <summary>Bucket resolution along the vagal-tone (Y) axis — the number of bars in the
+	/// vagal-tone histogram (6–64; clamped at the consumer). Higher = finer detail. Default 16.</summary>
+	public int FieldVagalBuckets { get; set; } = 16;
 }
