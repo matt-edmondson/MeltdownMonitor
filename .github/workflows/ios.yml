@@ -33,10 +33,17 @@ env:
 
 jobs:
   # Probes whether the repo has the TestFlight signing secrets configured.
-  # Outputs `signing_available=true` only when the maintainer has set
-  # `IOS_SIGNING_AVAILABLE=true` as a repo/environment secret — contributors
-  # without the key get a green "build & test, skip upload" run because the
-  # downstream `testflight` job is skipped, not failed.
+  # Outputs `signing_available=true` only when the distribution certificate
+  # secret is present — contributors without the key get a green "build &
+  # test, skip upload" run because the downstream `testflight` job is
+  # skipped, not failed.
+  #
+  # We probe the *cert* secret rather than a dedicated `IOS_SIGNING_AVAILABLE`
+  # boolean flag: a flag set to the literal string `true` collides with the
+  # `available=true` output value, and GitHub's secret scrubber then drops
+  # the job output ("Skip output 'signing_available' since it may contain
+  # secret"). The downstream gate sees an empty string and silently skips
+  # the upload. A base64 cert never equals `true`, so the output survives.
   check-secrets:
     name: Check signing secrets
     runs-on: ubuntu-latest
@@ -46,9 +53,9 @@ jobs:
     steps:
       - id: check
         env:
-          IOS_SIGNING_AVAILABLE: ${{ secrets.IOS_SIGNING_AVAILABLE }}
+          IOS_CERT_P12_BASE64: ${{ secrets.IOS_CERT_P12_BASE64 }}
         run: |
-          if [ "$IOS_SIGNING_AVAILABLE" = "true" ]; then
+          if [ -n "$IOS_CERT_P12_BASE64" ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
             echo "Signing secrets present — TestFlight upload enabled on ios-v* tags."
           else
