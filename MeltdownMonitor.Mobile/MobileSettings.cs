@@ -27,6 +27,13 @@ public sealed class MobileSettings
 		"Step away. Five minutes. Find something quiet.";
 
 	/// <summary>
+	/// DSN of the self-hosted GlitchTip project that receives crash reports. Null or blank
+	/// disables crash reporting; the <c>MELTDOWN_CRASH_REPORTING_DSN</c> environment variable
+	/// is used as a fallback. Opt-in by design, since the app handles sensitive physiological data.
+	/// </summary>
+	public string? CrashReportingDsn { get; set; }
+
+	/// <summary>
 	/// When true, dysregulation episodes are written back to HealthKit as
 	/// "Mind &amp; Body" wellness annotations (design doc §6.3). Default off —
 	/// Apple's wellness rules mean health write-back is strictly opt-in.
