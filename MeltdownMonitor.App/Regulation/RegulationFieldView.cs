@@ -682,9 +682,6 @@ public sealed class RegulationFieldView : IDisposable
 		draw.AddText(new Vector2(centre.X - (st.X * 0.5f), botY + 2f), label, "STEADY");
 	}
 
-	private const int HeatmapXBuckets = 28;
-	private const int HeatmapYBuckets = 18;
-
 	// Dwell heatmap: a grid of buckets showing where the field has spent its time over the
 	// (configurable, usually long) heatmap window — the 2D joint of the two axis histograms. Each
 	// occupied bucket is a filled cell laid out through the same X = arousal index, Y = vagal tone
@@ -713,8 +710,10 @@ public sealed class RegulationFieldView : IDisposable
 			return;
 		}
 
-		const int xb = HeatmapXBuckets;
-		const int yb = HeatmapYBuckets;
+		// Grid resolution is the same per-axis bucket count that drives the axis histograms, so the
+		// heatmap stays a true 2D joint of them (and is user-configurable).
+		int xb = _pipeline.FieldIndexBuckets;
+		int yb = _pipeline.FieldVagalBuckets;
 		var density = RegulationFieldHistogram.FieldDensity(trail, xb, yb);
 		if (density.PeakCount <= 0)
 		{
@@ -800,8 +799,8 @@ public sealed class RegulationFieldView : IDisposable
 			return;
 		}
 
-		var xHist = RegulationFieldHistogram.IndexAxis(trail);
-		var yHist = RegulationFieldHistogram.VagalToneAxis(trail, 16);
+		var xHist = RegulationFieldHistogram.IndexAxis(trail, _pipeline.FieldIndexBuckets);
+		var yHist = RegulationFieldHistogram.VagalToneAxis(trail, _pipeline.FieldVagalBuckets);
 		uint axisCol = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Overlay1, 0.22f * confidence));
 		// The bars draw additively (each bar loop is bracketed below), so scale their alpha by the
 		// user's histogram-opacity knob to keep them from saturating; the thin axis baselines stay

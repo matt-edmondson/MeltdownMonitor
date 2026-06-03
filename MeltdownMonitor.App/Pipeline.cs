@@ -95,6 +95,14 @@ public sealed class Pipeline : IDisposable
 	/// field view to tame additive-blend saturation of the bars.</summary>
 	public double HistogramOpacity => Math.Clamp(_settings.HistogramOpacity, 0.0, 1.0);
 
+	/// <summary>Configured bucket resolution of the arousal-index (X) axis — arousal histogram bars
+	/// and heatmap columns (clamped 6–64), read live by the field view.</summary>
+	public int FieldIndexBuckets => Math.Clamp(_settings.FieldIndexBuckets, 6, 64);
+
+	/// <summary>Configured bucket resolution of the vagal-tone (Y) axis — vagal-tone histogram bars
+	/// and heatmap rows (clamped 6–64), read live by the field view.</summary>
+	public int FieldVagalBuckets => Math.Clamp(_settings.FieldVagalBuckets, 6, 64);
+
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<Beat>? BeatReceived;

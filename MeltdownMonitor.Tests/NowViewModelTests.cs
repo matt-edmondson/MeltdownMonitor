@@ -403,6 +403,40 @@ public class NowViewModelTests
 	}
 
 	[TestMethod]
+	public void HistogramBuckets_FlowFromProviders()
+	{
+		var vm = new NowViewModel(indexBucketsProvider: () => 32, vagalBucketsProvider: () => 12);
+		vm.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+
+		Assert.AreEqual(32, vm.IndexBuckets);
+		Assert.AreEqual(12, vm.VagalBuckets);
+	}
+
+	[TestMethod]
+	public void HistogramBuckets_NullProviders_DefaultTo24And16()
+	{
+		var vm = new NowViewModel();
+		vm.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+
+		Assert.AreEqual(24, vm.IndexBuckets);
+		Assert.AreEqual(16, vm.VagalBuckets);
+	}
+
+	[TestMethod]
+	public void HistogramBuckets_ClampProvidersToValidRange()
+	{
+		var low = new NowViewModel(indexBucketsProvider: () => 1, vagalBucketsProvider: () => 0);
+		low.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+		Assert.AreEqual(6, low.IndexBuckets, "below-floor clamps to 6");
+		Assert.AreEqual(6, low.VagalBuckets, "below-floor clamps to 6");
+
+		var high = new NowViewModel(indexBucketsProvider: () => 999, vagalBucketsProvider: () => 999);
+		high.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+		Assert.AreEqual(64, high.IndexBuckets, "above-ceiling clamps to 64");
+		Assert.AreEqual(64, high.VagalBuckets, "above-ceiling clamps to 64");
+	}
+
+	[TestMethod]
 	public void OnSampleUpdated_RecordsOneTimestampPerValue()
 	{
 		var vm = new NowViewModel();

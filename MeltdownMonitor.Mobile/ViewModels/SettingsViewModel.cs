@@ -207,6 +207,36 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	public int FieldIndexBuckets
+	{
+		get => _settings.FieldIndexBuckets;
+		set
+		{
+			int clamped = Math.Clamp(value, 6, 64);
+			if (_settings.FieldIndexBuckets != clamped)
+			{
+				_settings.FieldIndexBuckets = clamped;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public int FieldVagalBuckets
+	{
+		get => _settings.FieldVagalBuckets;
+		set
+		{
+			int clamped = Math.Clamp(value, 6, 64);
+			if (_settings.FieldVagalBuckets != clamped)
+			{
+				_settings.FieldVagalBuckets = clamped;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	public string PausedUntilLabel =>
 		_settings.PausedUntil is null
 			? "Not paused"
