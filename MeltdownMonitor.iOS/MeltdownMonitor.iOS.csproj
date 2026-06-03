@@ -9,10 +9,13 @@
     <RootNamespace>MeltdownMonitor.iOS</RootNamespace>
     <ApplicationId>com.matthewedmondson.meltdownmonitor</ApplicationId>
     <!--
-      Local/dev defaults only. The TestFlight release job (.github/workflows/ios.yml)
-      overrides both at archive time: ApplicationDisplayVersion (CFBundleShortVersionString)
-      from the ios-v* tag and ApplicationVersion (CFBundleVersion) from github.run_number,
-      so every uploaded build carries a fresh, increasing build number.
+      Local/dev defaults only, and NOT what ships. The hand-authored Info.plist
+      carries the real CFBundleShortVersionString / CFBundleVersion, and for a
+      plain Microsoft.NET.Sdk iOS head the Info.plist value wins over these
+      MSBuild properties (they are a MAUI single-project feature). The TestFlight
+      release job (.github/workflows/ios.yml) stamps Info.plist at archive time:
+      marketing version from the ios-v* tag, build number from github.run_number,
+      so every uploaded build carries a fresh, increasing CFBundleVersion.
     -->
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>

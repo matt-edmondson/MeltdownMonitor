@@ -325,13 +325,20 @@ jobs:
       # App Store Connect rejects any upload whose CFBundleVersion already
       # exists for a given CFBundleShortVersionString, so the build number must
       # increase on every release. github.run_number is monotonic per workflow,
-      # never repeats, and needs no committed bump — we feed it to
-      # ApplicationVersion (CFBundleVersion). The marketing version
+      # never repeats, and needs no committed bump. The marketing version
       # (CFBundleShortVersionString) comes from the ios-v* tag that triggered
-      # this run: e.g. `ios-v1.1.0` -> 1.1.0. Both override the csproj defaults
-      # (ApplicationVersion=1 / ApplicationDisplayVersion=1.0), which only ever
-      # apply to local/dev builds.
-      - name: Derive version from tag
+      # this run: e.g. `ios-v1.1.0` -> 1.1.0.
+      #
+      # We stamp these straight into Info.plist with PlistBuddy rather than via
+      # the -p:ApplicationVersion / -p:ApplicationDisplayVersion MSBuild
+      # properties. Those properties only take effect for MAUI single-project
+      # apps; this is a plain Microsoft.NET.Sdk iOS head with a hand-authored
+      # Info.plist, and for that SDK an explicit Info.plist value WINS over the
+      # MSBuild property. Relying on -p: silently shipped CFBundleVersion=1 on
+      # every release (App Store Connect error -19232, "bundle version must be
+      # higher than the previously uploaded version"). Editing the plist in the
+      # ephemeral CI checkout is authoritative and SDK-independent.
+      - name: Stamp Info.plist version
         id: version
         run: |
           set -e
@@ -340,8 +347,13 @@ jobs:
             echo "::error title=Unexpected release ref::Expected an ios-v* tag, got '$GITHUB_REF_NAME'."
             exit 1
           fi
+          BUILD="${{ github.run_number }}"
+          PLIST=MeltdownMonitor.iOS/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $DISPLAY_VERSION" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$PLIST"
           echo "display=$DISPLAY_VERSION" >> "$GITHUB_OUTPUT"
-          echo "Marketing version $DISPLAY_VERSION, build ${{ github.run_number }}."
+          echo "Stamped $PLIST: marketing version $DISPLAY_VERSION, build $BUILD."
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" -c "Print :CFBundleVersion" "$PLIST"
 
       - name: Archive .ipa
         env:
@@ -355,8 +367,6 @@ jobs:
             -p:RuntimeIdentifier=ios-arm64 \
             -p:ArchiveOnBuild=true \
             -p:BuildIpa=true \
-            -p:ApplicationVersion=${{ github.run_number }} \
-            -p:ApplicationDisplayVersion="${{ steps.version.outputs.display }}" \
             -p:CodesignKey="$IOS_CODESIGN_KEY" \
             -p:CodesignProvision="$IOS_PROVISION_NAME"
 
