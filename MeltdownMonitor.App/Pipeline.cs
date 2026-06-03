@@ -75,6 +75,10 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Configured dwell-heatmap overall opacity (clamped 0–1), read live by the field view.</summary>
 	public double HeatmapOpacity => Math.Clamp(_settings.HeatmapOpacity, 0.0, 1.0);
 
+	/// <summary>Configured opacity of the dwell-heatmap peak-bucket crosshair (clamped 0–1), read
+	/// live by the field view.</summary>
+	public double HeatmapPeakOpacity => Math.Clamp(_settings.HeatmapPeakOpacity, 0.0, 1.0);
+
 	/// <summary>Configured Regulation Field jitter exaggeration multiplier (clamped 0–3),
 	/// read live by the field view.</summary>
 	public double JitterExaggeration => Math.Clamp(_settings.JitterExaggeration, 0.0, 3.0);

@@ -72,6 +72,11 @@ public class AppSettings : AppData<AppSettings>
 	/// consumer). 0 hides it; default 0.35 keeps it a faint underlay beneath the comet and marker.</summary>
 	public double HeatmapOpacity { get; set; } = 0.35;
 
+	/// <summary>Opacity of the crosshair marking the dwell heatmap's peak (busiest) bucket — where
+	/// regulation has settled most over the heatmap window (0–1; clamped at the consumer). 0 hides
+	/// it; default 0.7 keeps it a clear pointer over the faint underlay.</summary>
+	public double HeatmapPeakOpacity { get; set; } = 0.7;
+
 	/// <summary>Multiplier on the Regulation Field's live-trace variability jitter
 	/// (0–3; clamped at the consumer). 1.0 is the tuned default, 0 flattens the trace,
 	/// higher exaggerates the beat-to-beat undulation.</summary>
