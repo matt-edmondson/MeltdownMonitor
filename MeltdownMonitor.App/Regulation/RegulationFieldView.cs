@@ -20,7 +20,6 @@ public sealed class RegulationFieldView : IDisposable
 {
 	private const int RrBufferLength = 160;      // recent RR intervals for the live trace texture
 	private const int MinRrForJitter = 8;        // below this, draw a smooth (flat) trace
-	private const int LobeSegments = 96;
 	private const float LobeSwellFactor = 1.4f;  // how much a lobe thickens at full index
 	private const float MaxJitterPx = 18f;       // peak trace deflection from the real RR signal at 1× exaggeration
 	private const float RrDevScaleMs = 30f;      // beat-to-beat difference that maps to full deflection
@@ -293,7 +292,7 @@ public sealed class RegulationFieldView : IDisposable
 	private void DrawLemniscate(ImDrawListPtr draw, Vector2 centre, float halfWidth, float baseLobeHeight, float liveLobeHeight, RegulationReading r, double[] rr, double playhead, long beatsAppended, float confidence)
 	{
 		// Ghost baseline (symmetric resting frame) at the base height.
-		var ghost = LemniscateGeometry.Polyline(centre, halfWidth, baseLobeHeight, LobeSegments);
+		var ghost = LemniscateGeometry.Polyline(centre, halfWidth, baseLobeHeight, _pipeline.LobeSegments);
 		uint ghostCol = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Overlay1, 0.28f * confidence));
 		for (int i = 0; i < ghost.Count; i++)
 		{
@@ -301,7 +300,7 @@ public sealed class RegulationFieldView : IDisposable
 		}
 
 		// Live two-tone trace at the Poincaré-shaped height, textured with the real signal.
-		var live = LemniscateGeometry.Polyline(centre, halfWidth, liveLobeHeight, LobeSegments);
+		var live = LemniscateGeometry.Polyline(centre, halfWidth, liveLobeHeight, _pipeline.LobeSegments);
 		float[] dev = BuildRrDeviations(rr);
 		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * LobeSwellFactor);
 		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * LobeSwellFactor);

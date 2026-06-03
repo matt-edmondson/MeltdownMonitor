@@ -70,6 +70,17 @@
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
 
                 <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Outline resolution" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding LobeSegments, StringFormat='{}{0} pts'}" />
+                </Grid>
+                <Slider Minimum="24" Maximum="256"
+                        TickFrequency="1" IsSnapToTickEnabled="True"
+                        Value="{Binding LobeSegments, Mode=TwoWay}" />
+                <TextBlock Text="How finely the figure-8 outline is sampled. Higher = smoother curve; lower = more faceted. Default 96."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Grid.Column="0" Text="Arousal histogram buckets" />
                     <TextBlock Grid.Column="1"
                                Text="{Binding FieldIndexBuckets, StringFormat='{}{0}'}" />

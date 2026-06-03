@@ -116,4 +116,21 @@ public class MobileSettingsSerializerTests
 	{
 		Assert.AreEqual(1.0, new MobileSettings().LobeThickness, 1e-9);
 	}
+
+	[TestMethod]
+	public void RoundTrip_PreservesLobeSegments()
+	{
+		var settings = new MobileSettings { LobeSegments = 128 };
+
+		string json = MobileSettingsSerializer.Serialize(settings);
+		MobileSettings restored = MobileSettingsSerializer.Deserialize(json);
+
+		Assert.AreEqual(128, restored.LobeSegments);
+	}
+
+	[TestMethod]
+	public void Default_LobeSegments_Is96()
+	{
+		Assert.AreEqual(96, new MobileSettings().LobeSegments);
+	}
 }

@@ -69,7 +69,8 @@ public static class IosCompositionRoot
 			jitterExaggerationProvider: () => settings.JitterExaggeration,
 			lobeThicknessProvider: () => settings.LobeThickness,
 			indexBucketsProvider: () => settings.FieldIndexBuckets,
-			vagalBucketsProvider: () => settings.FieldVagalBuckets);
+			vagalBucketsProvider: () => settings.FieldVagalBuckets,
+			lobeSegmentsProvider: () => settings.LobeSegments);
 		_history = new HistoryViewModel();
 
 		var settingsTab = new SettingsViewModel(

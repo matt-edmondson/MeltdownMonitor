@@ -1074,6 +1074,18 @@ public sealed class StatusWindow : IDisposable
 		HelpMarker("Stroke thickness of the Regulation Field's live trace. 1.0x is tuned default; higher = bolder lobes, lower = finer.");
 		ImGui.SameLine();
 
+		int segments = _settings.LobeSegments;
+		if (ImGuiWidgets.Knob("Resolution", ref segments,
+				LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments,
+				format: "%d pts", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.LobeSegments = segments;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How finely the figure-8 outline is sampled. Higher = smoother curve; lower = more faceted.");
+		ImGui.SameLine();
+
 		float lobeOpacityPct = (float)(_settings.LobeOpacity * 100.0);
 		if (ImGuiWidgets.Knob("Lobe opacity", ref lobeOpacityPct, 0f, 100f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
 		{
@@ -1566,6 +1578,7 @@ public sealed class StatusWindow : IDisposable
 				_settings.HeatmapOpacity = 0.35;
 				_settings.JitterExaggeration = 1.0;
 				_settings.LobeThickness = 1.0;
+				_settings.LobeSegments = LemniscateGeometry.DefaultSegments;
 				_settings.LobeOpacity = 0.6;
 				_settings.TrailOpacity = 0.7;
 				_settings.HistogramOpacity = 0.6;

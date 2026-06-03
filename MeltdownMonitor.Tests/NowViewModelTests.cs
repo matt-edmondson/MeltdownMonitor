@@ -437,6 +437,36 @@ public class NowViewModelTests
 	}
 
 	[TestMethod]
+	public void LobeSegments_FlowsFromProvider()
+	{
+		var vm = new NowViewModel(lobeSegmentsProvider: () => 128);
+		vm.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+
+		Assert.AreEqual(128, vm.LobeSegments);
+	}
+
+	[TestMethod]
+	public void LobeSegments_NullProvider_DefaultsTo96()
+	{
+		var vm = new NowViewModel();
+		vm.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+
+		Assert.AreEqual(96, vm.LobeSegments);
+	}
+
+	[TestMethod]
+	public void LobeSegments_ClampsProviderToValidRange()
+	{
+		var low = new NowViewModel(lobeSegmentsProvider: () => 1);
+		low.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+		Assert.AreEqual(24, low.LobeSegments, "below-floor clamps to 24");
+
+		var high = new NowViewModel(lobeSegmentsProvider: () => 9999);
+		high.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+		Assert.AreEqual(256, high.LobeSegments, "above-ceiling clamps to 256");
+	}
+
+	[TestMethod]
 	public void OnSampleUpdated_RecordsOneTimestampPerValue()
 	{
 		var vm = new NowViewModel();

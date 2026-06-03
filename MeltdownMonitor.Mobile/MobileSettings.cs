@@ -1,5 +1,6 @@
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
+using MeltdownMonitor.Core.Regulation;
 
 namespace MeltdownMonitor.Mobile;
 
@@ -67,6 +68,11 @@ public sealed class MobileSettings
 	/// <summary>Multiplier on the Regulation Field's live-trace lobe stroke thickness
 	/// (0.5–3; clamped at the consumer). 1.0 is the tuned default.</summary>
 	public double LobeThickness { get; set; } = 1.0;
+
+	/// <summary>Number of points sampled along the Regulation Field's figure-8 outline — its
+	/// render resolution (24–256; clamped at the consumer). Default 96 preserves the original
+	/// fixed look; lower = faceted, higher = smoother.</summary>
+	public int LobeSegments { get; set; } = LemniscateGeometry.DefaultSegments;
 
 	/// <summary>Bucket resolution along the arousal-index (X) axis — the number of bars in the
 	/// arousal histogram (6–64; clamped at the consumer). Higher = finer detail. Default 24.</summary>

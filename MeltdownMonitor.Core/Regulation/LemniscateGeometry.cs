@@ -13,6 +13,16 @@ public static class LemniscateGeometry
 	// lobe half-height equals lobeHeight exactly.
 	private const double YPeakNormalization = 0.35355339059327376;
 
+	/// <summary>Default outline sample count — preserves the historical fixed resolution.</summary>
+	public const int DefaultSegments = 96;
+
+	/// <summary>Minimum configurable resolution; still a recognizable figure-8 (clearly faceted).
+	/// Floor of 24 also keeps the desktop trace's n-1 divisor safe.</summary>
+	public const int MinSegments = 24;
+
+	/// <summary>Maximum configurable resolution; smooth, with diminishing visual return above.</summary>
+	public const int MaxSegments = 256;
+
 	/// <summary>
 	/// Marker position for a regulation index in [-1, 1]: the needle slides along
 	/// the major axis from the cool (left) tip through the centre to the warm
