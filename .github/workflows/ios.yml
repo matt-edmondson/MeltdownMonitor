@@ -322,6 +322,27 @@ jobs:
           echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode \
             > "$PROFILE_DIR/meltdownmonitor-distribution.mobileprovision"
 
+      # App Store Connect rejects any upload whose CFBundleVersion already
+      # exists for a given CFBundleShortVersionString, so the build number must
+      # increase on every release. github.run_number is monotonic per workflow,
+      # never repeats, and needs no committed bump — we feed it to
+      # ApplicationVersion (CFBundleVersion). The marketing version
+      # (CFBundleShortVersionString) comes from the ios-v* tag that triggered
+      # this run: e.g. `ios-v1.1.0` -> 1.1.0. Both override the csproj defaults
+      # (ApplicationVersion=1 / ApplicationDisplayVersion=1.0), which only ever
+      # apply to local/dev builds.
+      - name: Derive version from tag
+        id: version
+        run: |
+          set -e
+          DISPLAY_VERSION="${GITHUB_REF_NAME#ios-v}"
+          if [ -z "$DISPLAY_VERSION" ] || [ "$DISPLAY_VERSION" = "$GITHUB_REF_NAME" ]; then
+            echo "::error title=Unexpected release ref::Expected an ios-v* tag, got '$GITHUB_REF_NAME'."
+            exit 1
+          fi
+          echo "display=$DISPLAY_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Marketing version $DISPLAY_VERSION, build ${{ github.run_number }}."
+
       - name: Archive .ipa
         env:
           IOS_CODESIGN_KEY: ${{ secrets.IOS_CODESIGN_KEY }}
@@ -334,6 +355,8 @@ jobs:
             -p:RuntimeIdentifier=ios-arm64 \
             -p:ArchiveOnBuild=true \
             -p:BuildIpa=true \
+            -p:ApplicationVersion=${{ github.run_number }} \
+            -p:ApplicationDisplayVersion="${{ steps.version.outputs.display }}" \
             -p:CodesignKey="$IOS_CODESIGN_KEY" \
             -p:CodesignProvision="$IOS_PROVISION_NAME"
 
