@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="ktsu.Containers" Version="1.0.12" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.8" />
+    <PackageReference Include="Sentry" Version="6.6.0" />
   </ItemGroup>
 
 </Project>

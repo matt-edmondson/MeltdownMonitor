@@ -36,6 +36,13 @@ public class AppSettings : AppData<AppSettings>
 
 	public bool EnableToast { get; set; } = true;
 
+	/// <summary>
+	/// DSN of the self-hosted GlitchTip project that receives crash reports. Null or blank
+	/// disables crash reporting; the <c>MELTDOWN_CRASH_REPORTING_DSN</c> environment variable
+	/// is used as a fallback. Opt-in by design, since the app handles sensitive physiological data.
+	/// </summary>
+	public string? CrashReportingDsn { get; set; }
+
 	/// <summary>When set, monitoring is paused until this time.</summary>
 	public DateTimeOffset? PausedUntil { get; set; }
 

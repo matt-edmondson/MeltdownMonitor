@@ -1,6 +1,7 @@
 using Avalonia.Threading;
 using Foundation;
 using MeltdownMonitor.Ble.Apple;
+using MeltdownMonitor.Core.Diagnostics;
 using MeltdownMonitor.Core.Persistence;
 using MeltdownMonitor.iOS.Services;
 using MeltdownMonitor.Mobile;
@@ -30,6 +31,10 @@ public static class IosCompositionRoot
 	private static PolarHrSource? _source;
 	private static Pipeline? _pipeline;
 
+	// Sentry SDK handle, kept alive for the app's lifetime so queued crash
+	// reports flush. Null when no DSN is configured (crash reporting off).
+	private static IDisposable? _crashReporting;
+
 	/// <summary>HealthKit facade kept alive for the app's lifetime so the
 	/// live pipeline can warm-start from it on every relaunch.</summary>
 	public static IHealthStore? HealthStore => _healthStore;
@@ -58,6 +63,16 @@ public static class IosCompositionRoot
 		_store = new NSUserDefaultsSettingsStore();
 		var settings = _store.Load();
 		_settings = settings;
+
+		// Initialize crash reporting before anything heavy spins up. No-op (and
+		// no network) unless a DSN is configured in settings or the
+		// MELTDOWN_CRASH_REPORTING_DSN environment variable.
+		_crashReporting ??= CrashReporting.Initialize(new CrashReportingOptions
+		{
+			Dsn = settings.CrashReportingDsn,
+			Environment = "ios",
+			Release = typeof(IosCompositionRoot).Assembly.GetName().Version?.ToString(),
+		});
 
 		_notifications = new NotificationDispatcher(settings);
 		_healthStore = new HealthKitStore();
