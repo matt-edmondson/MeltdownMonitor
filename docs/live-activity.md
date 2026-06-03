@@ -76,7 +76,7 @@ end:
    that adds:
    - A **Widget Extension** target (`File ▸ New ▸ Target ▸ Widget Extension`,
      "Include Live Activity" checked). Name it `MeltdownMonitorWidget`,
-     bundle id `com.thethreethousands.meltdownmonitor.WidgetExtension`.
+     bundle id `com.matthewedmondson.meltdownmonitor.WidgetExtension`.
    - Replace the generated files with the four under
      `MeltdownMonitor.iOS.WidgetExtension/`.
 2. Add `LiveActivityBridge.swift` to the **app** target's compile sources and

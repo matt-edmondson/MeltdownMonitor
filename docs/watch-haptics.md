@@ -392,8 +392,8 @@ Like the widget extension, the watch app is a native target added in Xcode:
 1. Build the iOS head once and open the generated Xcode project (or maintain a
    thin companion `.xcodeproj`); add a **Watch App** target
    ("Watch App for iOS App"), bundle id
-   `com.thethreethousands.meltdownmonitor.watchkitapp` (must be prefixed by the
-   iOS app id `com.thethreethousands.meltdownmonitor`).
+   `com.matthewedmondson.meltdownmonitor.watchkitapp` (must be prefixed by the
+   iOS app id `com.matthewedmondson.meltdownmonitor`).
 2. Add the Swift files from `MeltdownMonitor.WatchApp/` to the watch target.
 3. Set the watch `Info.plist` keys (§11 W2) and embed the watch app in the iOS
    app under *Build Phases ▸ Embed Watch Content*.

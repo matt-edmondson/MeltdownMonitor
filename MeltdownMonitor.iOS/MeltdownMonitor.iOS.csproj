@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>MeltdownMonitor.iOS</RootNamespace>
-    <ApplicationId>com.thethreethousands.meltdownmonitor</ApplicationId>
+    <ApplicationId>com.matthewedmondson.meltdownmonitor</ApplicationId>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
     <CodesignEntitlements>Entitlements.plist</CodesignEntitlements>
