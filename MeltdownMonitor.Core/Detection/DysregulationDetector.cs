@@ -339,15 +339,20 @@ public class DysregulationDetector
 
 	// The immediate-severe path is intentionally HR-direction-agnostic for *detection* (so it also
 	// catches an RMSSD collapse during a low-arousal crash — see SevereDropConfirmationCount). But a
-	// collapse warrants a *gentle* response, not the jarring meltdown chime: when the severe drop
-	// fires with HR below baseline, route it as Hypoarousal. (See the hypoarousal-severe-path-preemption
-	// design note — without this the gentle alert never wins the race against the severe path.)
+	// genuine low-arousal collapse warrants a *gentle* response, not the jarring meltdown chime, so it
+	// routes as Hypoarousal. "Genuine collapse" is the shared HypoarousalSignal at/above the detector's
+	// own episode-entry bar — HR meaningfully (≥~10%) below baseline AND variability not elevated — the
+	// same definition that drives the field's collapse halo and the HypoarousalDetector, so the alert
+	// kind cannot disagree with what's on screen. A bare MeanHr < BaselineHr check (any 1-bpm dip) used
+	// to mislabel a sympathetic meltdown — marker firmly in the warm lobe, no collapse shown — as a
+	// "flat moment". (See the hypoarousal-severe-path-preemption design note.)
 	private void FireSevereAlert(HrvSample sample, string prefix)
 	{
-		bool hrBelowBaseline = sample.BaselineHr > 0 && sample.MeanHr < sample.BaselineHr;
-		if (hrBelowBaseline)
+		double hypoarousalSignal = HypoarousalSignal.Compute(
+			sample.Rmssd, sample.MeanHr, sample.BaselineRmssd, sample.BaselineHr);
+		if (hypoarousalSignal >= _thresholds.Hypoarousal.EnterSignal)
 		{
-			FireAlert(sample, $"{prefix}: RMSSD collapsed ≥50% below baseline with HR below baseline (low arousal)", AlertKind.Hypoarousal);
+			FireAlert(sample, $"{prefix}: RMSSD collapsed ≥50% below baseline with low arousal (HR well below baseline)", AlertKind.Hypoarousal);
 		}
 		else
 		{

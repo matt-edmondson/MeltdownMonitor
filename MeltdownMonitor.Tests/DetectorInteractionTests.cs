@@ -26,6 +26,10 @@ public class DetectorInteractionTests
 	// RMSSD 60% below baseline with HR 30% *above* baseline = a classic sympathetic meltdown.
 	private static HrvSample Meltdown(DateTimeOffset ts) => Sample(ts, rmssd: 20, meanHr: 91);
 
+	// RMSSD 60% below baseline (trips severe) but HR only ~1 bpm below baseline (69 vs 70) = a
+	// meltdown with a noisy HR dip, not a collapse: HypoarousalSignal ≈ 0 (HR not ≥10% below baseline).
+	private static HrvSample SevereDropHrBarelyBelow(DateTimeOffset ts) => Sample(ts, rmssd: 20, meanHr: 69);
+
 	[TestMethod]
 	public void DeepCollapse_SevereAlertRoutesHypoarousal_WhileHypoDetectorStillHolding()
 	{
@@ -76,6 +80,29 @@ public class DetectorInteractionTests
 		Assert.IsNotNull(alert);
 		Assert.AreEqual(AlertKind.Hyperarousal, alert.Kind,
 			"A severe drop with HR above baseline is a sympathetic meltdown — it stays Hyperarousal.");
+	}
+
+	[TestMethod]
+	public void SevereDrop_WithHrMarginallyBelowBaseline_StaysHyperarousal()
+	{
+		// Regression: a severe RMSSD collapse with HR only ~1 bpm below baseline has a hypoarousal
+		// signal of ~0 (HR not ≥10% below baseline), so it is a sympathetic meltdown with a noisy HR
+		// dip — it must NOT be softened to a gentle "flat moment" just because HR dipped a hair. The
+		// marker sits firmly in the warm lobe (index ≈ +0.58) in this case, so a Hypoarousal alert
+		// here is the reported "flat moment while the marker is on the meltdown side" bug.
+		var dys = new DysregulationDetector(new DetectionThresholds());
+		AlertPayload? alert = null;
+		dys.AlertFired += p => alert = p;
+
+		dys.Process(Normal(Start), baselineIsWarm: true);
+		for (int i = 1; i <= 3; i++)
+		{
+			dys.Process(SevereDropHrBarelyBelow(Start.AddSeconds(i * 5)), baselineIsWarm: true);
+		}
+
+		Assert.IsNotNull(alert);
+		Assert.AreEqual(AlertKind.Hyperarousal, alert.Kind,
+			"A severe RMSSD collapse with HR only marginally below baseline (hypoarousal signal ≈ 0) is a meltdown, not a low-arousal collapse.");
 	}
 
 	[TestMethod]
