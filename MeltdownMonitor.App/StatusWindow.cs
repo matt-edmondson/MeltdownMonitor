@@ -1116,6 +1116,16 @@ public sealed class StatusWindow : IDisposable
 		HelpMarker("Overall opacity of the dwell heatmap. 0 hides it; default 35% keeps it a faint underlay beneath the comet and marker.");
 		ImGui.SameLine();
 
+		float heatPeakOpacityPct = (float)(_settings.HeatmapPeakOpacity * 100.0);
+		if (ImGuiWidgets.Knob("Peak crosshair", ref heatPeakOpacityPct, 0f, 100f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.HeatmapPeakOpacity = heatPeakOpacityPct / 100.0;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Opacity of the crosshair pinning the dwell heatmap's busiest bucket — where regulation has settled most over the window. 0 hides it; default 70%.");
+		ImGui.SameLine();
+
 		float histOpacityPct = (float)(_settings.HistogramOpacity * 100.0);
 		if (ImGuiWidgets.Knob("Histogram opacity", ref histOpacityPct, 0f, 100f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
 		{
@@ -1576,6 +1586,7 @@ public sealed class StatusWindow : IDisposable
 				_settings.RegulationTrailLength = 48;
 				_settings.RegulationHeatmapLength = 720;
 				_settings.HeatmapOpacity = 0.35;
+				_settings.HeatmapPeakOpacity = 0.7;
 				_settings.JitterExaggeration = 1.0;
 				_settings.LobeThickness = 1.0;
 				_settings.LobeSegments = LemniscateGeometry.DefaultSegments;

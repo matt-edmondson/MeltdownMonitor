@@ -97,6 +97,49 @@ public class RegulationFieldHistogramTests
 	}
 
 	[TestMethod]
+	public void FieldDensity_PeakBucket_PointsAtBusiestCell()
+	{
+		// Same layout as FieldDensity_BucketsByIndexAndVagalTone: the warm+steady cell (1,1) holds two.
+		RegulationTrailPoint[] trail =
+		[
+			Point(-0.5, vagalTone: 0.2),
+			Point(0.5, vagalTone: 0.8),
+			Point(0.5, vagalTone: 0.8),
+			Point(-0.5, vagalTone: 0.8),
+		];
+		var d = RegulationFieldHistogram.FieldDensity(trail, xBuckets: 2, yBuckets: 2);
+
+		Assert.AreEqual(1, d.PeakX, "busiest column");
+		Assert.AreEqual(1, d.PeakY, "busiest row");
+		Assert.AreEqual(d.PeakCount, d.Count(d.PeakX, d.PeakY), "peak coords address the peak count");
+	}
+
+	[TestMethod]
+	public void FieldDensity_PeakBucket_EmptyIsNegative()
+	{
+		var d = RegulationFieldHistogram.FieldDensity([], xBuckets: 3, yBuckets: 3);
+		Assert.AreEqual(0, d.PeakCount);
+		Assert.AreEqual(-1, d.PeakX);
+		Assert.AreEqual(-1, d.PeakY);
+	}
+
+	[TestMethod]
+	public void FieldDensity_PeakBucket_TieResolvesToFirstRowMajor()
+	{
+		// Two singleton cells: (0,0) cool+fragile and (1,1) warm+steady. Row-major scan hits (0,0) first.
+		RegulationTrailPoint[] trail =
+		[
+			Point(0.5, vagalTone: 0.8),   // (1,1)
+			Point(-0.5, vagalTone: 0.2),  // (0,0)
+		];
+		var d = RegulationFieldHistogram.FieldDensity(trail, xBuckets: 2, yBuckets: 2);
+
+		Assert.AreEqual(1, d.PeakCount);
+		Assert.AreEqual(0, d.PeakX);
+		Assert.AreEqual(0, d.PeakY);
+	}
+
+	[TestMethod]
 	public void FieldDensity_SkipsNonFiniteAndClampsOutOfRange()
 	{
 		RegulationTrailPoint[] trail =

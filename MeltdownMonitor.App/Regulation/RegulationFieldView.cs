@@ -736,11 +736,13 @@ public sealed class RegulationFieldView : IDisposable
 	// mapping as the marker, so the grid sits exactly under the marker's travel. Colour is a
 	// magma-style Catppuccin ramp (see HeatColor) normalised to the busiest bucket, so the peak-dwell
 	// cell shows the hottest colour; quieter cells stay dim near the background. Overall opacity is
-	// user-configurable. Drawn beneath the trace and comet so they read on top.
+	// user-configurable. A separately-configurable crosshair pins the peak-dwell bucket — where
+	// regulation has settled most over the window. Drawn beneath the trace and comet so they read on top.
 	private void DrawDensityHeatmap(ImDrawListPtr draw, Vector2 centre, float halfWidth, float markerYClamp, RegulationTrailPoint[] trail, float confidence)
 	{
 		float opacity = (float)_pipeline.HeatmapOpacity;
-		if (opacity <= 0f)
+		float peakOpacity = (float)_pipeline.HeatmapPeakOpacity;
+		if (opacity <= 0f && peakOpacity <= 0f)
 		{
 			return;
 		}
@@ -779,29 +781,76 @@ public sealed class RegulationFieldView : IDisposable
 		// Additive so each magma cell adds its light to the dark canvas (and the cooler layers
 		// beneath) instead of compositing alpha-over — the busy buckets glow rather than sit as flat
 		// tiles. Restored to alpha-over once the grid is laid down.
-		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
-		for (int y = 0; y < yb; y++)
+		if (opacity > 0f)
 		{
-			float top = top0 + (y * cellH);
-			for (int x = 0; x < xb; x++)
+			ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+			for (int y = 0; y < yb; y++)
 			{
-				int c = density.Count(x, y);
-				if (c == 0)
+				float top = top0 + (y * cellH);
+				for (int x = 0; x < xb; x++)
 				{
-					continue;
-				}
+					int c = density.Count(x, y);
+					if (c == 0)
+					{
+						continue;
+					}
 
-				// Gamma-lift the normalised dwell so mid-traffic cells read distinctly, not just the peak.
-				float t = MathF.Pow(c / peak, 0.6f);
-				float left = left0 + (x * cellW);
-				draw.AddRectFilled(
-					new Vector2(left, top),
-					new Vector2(left + cellW, top + cellH),
-					Col(MacchiatoPalette.WithAlpha(HeatColor(t), opacity * confidence)));
+					// Gamma-lift the normalised dwell so mid-traffic cells read distinctly, not just the peak.
+					float t = MathF.Pow(c / peak, 0.6f);
+					float left = left0 + (x * cellW);
+					draw.AddRectFilled(
+						new Vector2(left, top),
+						new Vector2(left + cellW, top + cellH),
+						Col(MacchiatoPalette.WithAlpha(HeatColor(t), opacity * confidence)));
+				}
 			}
+
+			ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 		}
 
-		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
+		// Crosshair over the busiest bucket's centre, so the peak-dwell spot is unmistakable even
+		// when the heatmap is faint or hidden. Alpha-over (not additive) so it reads as a crisp pointer.
+		if (peakOpacity > 0f && density.PeakX >= 0)
+		{
+			var peakCentre = new Vector2(
+				left0 + ((density.PeakX + 0.5f) * cellW),
+				top0 + ((density.PeakY + 0.5f) * cellH));
+			DrawHeatmapPeakCrosshair(draw, peakCentre, cellW, cellH, peakOpacity * confidence);
+		}
+	}
+
+	// A crosshair pinning the peak-dwell bucket: four arms reaching out from a centre ring, with a
+	// gap so the bucket itself stays visible. Each stroke is laid down as a darker, thicker shadow
+	// first then a bright Sky line on top, so it stays legible over both the hot magma cells and the
+	// dark canvas. Alpha is the caller's already-confidence-scaled crosshair opacity.
+	private void DrawHeatmapPeakCrosshair(ImDrawListPtr draw, Vector2 centre, float cellW, float cellH, float alpha)
+	{
+		if (alpha <= 0f)
+		{
+			return;
+		}
+
+		uint line = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Sky, alpha));
+		uint shadow = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Mantle, alpha * 0.6f));
+		float span = MathF.Max(cellW, cellH);
+		float gap = span * 0.55f;
+		float reach = span * 1.3f;
+		float thick = 1.5f * _drawScale;
+
+		DrawCrosshairStroke(draw, new Vector2(centre.X - gap, centre.Y), new Vector2(centre.X - gap - reach, centre.Y), line, shadow, thick);
+		DrawCrosshairStroke(draw, new Vector2(centre.X + gap, centre.Y), new Vector2(centre.X + gap + reach, centre.Y), line, shadow, thick);
+		DrawCrosshairStroke(draw, new Vector2(centre.X, centre.Y - gap), new Vector2(centre.X, centre.Y - gap - reach), line, shadow, thick);
+		DrawCrosshairStroke(draw, new Vector2(centre.X, centre.Y + gap), new Vector2(centre.X, centre.Y + gap + reach), line, shadow, thick);
+
+		draw.AddCircle(centre, gap, shadow, 20, thick + 2f);
+		draw.AddCircle(centre, gap, line, 20, thick);
+	}
+
+	// One crosshair arm: shadow underlay then bright line, both between the same endpoints.
+	private static void DrawCrosshairStroke(ImDrawListPtr draw, Vector2 a, Vector2 b, uint line, uint shadow, float thick)
+	{
+		draw.AddLine(a, b, shadow, thick + 2f);
+		draw.AddLine(a, b, line, thick);
 	}
 
 	// Dwell-heatmap gradient: a magma-style ramp built from Catppuccin Macchiato hues — dark field
