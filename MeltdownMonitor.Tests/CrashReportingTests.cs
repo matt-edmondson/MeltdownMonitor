@@ -50,6 +50,43 @@ public class CrashReportingTests
 	}
 
 	[TestMethod]
+	public void ResolveDsn_FallsBackToEmbedded_WhenConfiguredAndEnvBlank()
+	{
+		Environment.SetEnvironmentVariable(CrashReporting.DsnEnvironmentVariable, null);
+
+		string? resolved = CrashReporting.ResolveDsn(null, "  https://embedded@example/3  ");
+
+		Assert.AreEqual("https://embedded@example/3", resolved);
+	}
+
+	[TestMethod]
+	public void ResolveDsn_EnvVarBeatsEmbedded()
+	{
+		Environment.SetEnvironmentVariable(CrashReporting.DsnEnvironmentVariable, "https://env@example/9");
+
+		Assert.AreEqual("https://env@example/9", CrashReporting.ResolveDsn(null, "https://embedded@example/3"));
+	}
+
+	[TestMethod]
+	public void ResolveDsn_ConfiguredBeatsEnvAndEmbedded()
+	{
+		Environment.SetEnvironmentVariable(CrashReporting.DsnEnvironmentVariable, "https://env@example/9");
+
+		Assert.AreEqual(
+			"https://configured@example/1",
+			CrashReporting.ResolveDsn("https://configured@example/1", "https://embedded@example/3"));
+	}
+
+	[TestMethod]
+	public void ResolveDsn_ReturnsNull_WhenAllSourcesBlank()
+	{
+		Environment.SetEnvironmentVariable(CrashReporting.DsnEnvironmentVariable, null);
+
+		Assert.IsNull(CrashReporting.ResolveDsn(null, null));
+		Assert.IsNull(CrashReporting.ResolveDsn("", "   "));
+	}
+
+	[TestMethod]
 	public void Initialize_ReturnsNull_WhenNoDsnConfigured()
 	{
 		Environment.SetEnvironmentVariable(CrashReporting.DsnEnvironmentVariable, null);

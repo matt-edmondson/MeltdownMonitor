@@ -1,3 +1,5 @@
+using System.Reflection;
+
 using Sentry;
 
 namespace MeltdownMonitor.Core.Diagnostics;
@@ -45,10 +47,26 @@ public static class CrashReporting
 	public const string DsnEnvironmentVariable = "MELTDOWN_CRASH_REPORTING_DSN";
 
 	/// <summary>
-	/// Resolves the effective DSN: the explicitly configured value if present, otherwise the
-	/// <see cref="DsnEnvironmentVariable"/> environment variable, otherwise null (disabled).
+	/// Assembly-metadata key under which a build-time DSN is stamped (see the repo-root
+	/// <c>Directory.Build.props</c>). Read from the entry assembly as the lowest-priority
+	/// fallback so distributed binaries can ship a DSN without a runtime env/setting.
 	/// </summary>
-	public static string? ResolveDsn(string? configuredDsn)
+	public const string EmbeddedDsnMetadataKey = "MeltdownMonitor.CrashReportingDsn";
+
+	/// <summary>
+	/// Resolves the effective DSN in priority order: the explicitly configured value, then the
+	/// <see cref="DsnEnvironmentVariable"/> environment variable, then the value baked into the
+	/// entry assembly at build time, otherwise null (disabled).
+	/// </summary>
+	public static string? ResolveDsn(string? configuredDsn) =>
+		ResolveDsn(configuredDsn, ReadEmbeddedDsn());
+
+	/// <summary>
+	/// Resolution core with the build-time embedded DSN passed explicitly, kept public so the
+	/// precedence (configured &gt; environment variable &gt; embedded) is unit-testable without
+	/// depending on the test host's entry assembly.
+	/// </summary>
+	public static string? ResolveDsn(string? configuredDsn, string? embeddedDsn)
 	{
 		if (!string.IsNullOrWhiteSpace(configuredDsn))
 		{
@@ -56,8 +74,23 @@ public static class CrashReporting
 		}
 
 		string? fromEnv = System.Environment.GetEnvironmentVariable(DsnEnvironmentVariable);
-		return string.IsNullOrWhiteSpace(fromEnv) ? null : fromEnv.Trim();
+		if (!string.IsNullOrWhiteSpace(fromEnv))
+		{
+			return fromEnv.Trim();
+		}
+
+		return string.IsNullOrWhiteSpace(embeddedDsn) ? null : embeddedDsn.Trim();
 	}
+
+	/// <summary>
+	/// Reads the build-time DSN from the entry assembly's <see cref="AssemblyMetadataAttribute"/>,
+	/// or null when none was stamped in (the common dev/local case).
+	/// </summary>
+	private static string? ReadEmbeddedDsn() =>
+		Assembly.GetEntryAssembly()?
+			.GetCustomAttributes<AssemblyMetadataAttribute>()
+			.FirstOrDefault(a => a.Key == EmbeddedDsnMetadataKey)?
+			.Value;
 
 	/// <summary>
 	/// Initializes the Sentry SDK against the resolved DSN, hooking unhandled-exception and

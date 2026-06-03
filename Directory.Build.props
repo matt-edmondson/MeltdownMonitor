@@ -14,4 +14,21 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
+  <!--
+    Build-time crash-reporting DSN injection. Supply the DSN either as an MSBuild
+    property (`dotnet build -p:CrashReportingDsn=...`) or via the
+    MELTDOWN_CRASH_REPORTING_DSN environment variable (CI reads it from a repo
+    secret). When set, it is stamped into assembly metadata and read at runtime
+    by CrashReporting.ResolveDsn as the lowest-priority fallback
+    (explicit setting > env var > this baked-in value). When unset, nothing is
+    embedded and crash reporting stays off — local/dev builds need no secret.
+  -->
+  <PropertyGroup>
+    <CrashReportingDsn Condition="'$(CrashReportingDsn)' == ''">$(MELTDOWN_CRASH_REPORTING_DSN)</CrashReportingDsn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(CrashReportingDsn)' != ''">
+    <AssemblyMetadata Include="MeltdownMonitor.CrashReportingDsn" Value="$(CrashReportingDsn)" />
+  </ItemGroup>
+
 </Project>

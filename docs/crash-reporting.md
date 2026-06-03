@@ -26,12 +26,37 @@ The DSN is resolved in this order:
 
 1. The per-head setting — `AppSettings.CrashReportingDsn` (desktop) /
    `MobileSettings.CrashReportingDsn` (mobile).
-2. The `MELTDOWN_CRASH_REPORTING_DSN` environment variable (fallback, handy for CI/ops
-   without baking the DSN into committed settings).
-3. Otherwise crash reporting is **off**.
+2. The `MELTDOWN_CRASH_REPORTING_DSN` environment variable (handy for ops/runtime).
+3. The DSN baked into the build (see below) — for distributed binaries.
+4. Otherwise crash reporting is **off**.
 
 To get a DSN: deploy GlitchTip (`make apply-glitchtip` in the homelab repo), create an
 organization/user via its web UI, create a project, and copy that project's DSN.
+
+## Injecting the DSN at build time
+
+For shipped binaries (where there's no runtime env var to set on a user's device), the DSN
+can be embedded at build time. The repo-root `Directory.Build.props` stamps it into assembly
+metadata (`MeltdownMonitor.CrashReportingDsn`) whenever it's supplied, and
+`CrashReporting.ResolveDsn` reads it from the entry assembly as the lowest-priority fallback.
+
+Supply it either way:
+
+```sh
+# As an MSBuild property
+dotnet publish MeltdownMonitor.App -c Release -p:CrashReportingDsn="https://…@glitchtip…/1"
+
+# …or via the environment variable (Directory.Build.props picks it up automatically)
+MELTDOWN_CRASH_REPORTING_DSN="https://…@glitchtip…/1" dotnet publish MeltdownMonitor.App -c Release
+```
+
+**CI:** store the DSN as the `MELTDOWN_CRASH_REPORTING_DSN` repo secret. The `.NET Workflow`
+and `iOS Workflow` expose it as an env var, so release builds embed it automatically. Builds
+without the secret (forks, dev machines) embed nothing and ship with crash reporting off.
+
+The DSN is write-only (it can submit events, not read them), so this is acceptable to bake
+into a distributed binary; keeping it in a repo secret rather than committed source just
+avoids casual scraping. Rotate it in GlitchTip if it's ever abused.
 
 ## Privacy
 
