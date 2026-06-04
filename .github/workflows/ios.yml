@@ -95,14 +95,24 @@ jobs:
           dotnet-version: "10.0.2xx"
 
       # The .NET 10 iOS workload requires an EXACT Xcode version match,
-      # not minimum. The 10.0.2xx SDK band ships iOS workload 26.0, which
-      # needs Xcode 26.0. Pick the highest 26.0.x Xcode on the runner.
-      - name: Select matching Xcode (26.0)
+      # not minimum. The 10.0.2xx SDK band's bundled iOS workload is 26.3,
+      # which needs Xcode 26.3. Pick the highest 26.3.x Xcode on the runner.
+      #
+      # Why 26.3 and not the older 26.0 we used to pin: SkiaSharp 3.119.x —
+      # pulled in by Avalonia.Skia 12.0.4 — ships its .NET 10 iOS assembly only
+      # as net10.0-ios26.2. Building against an older iOS SDK (e.g. 26.0) makes
+      # NuGet silently fall back to SkiaSharp's net9.0-ios18.0 build, whose
+      # native libSkiaSharp.framework is NOT loaded on device, so the app
+      # crashes at launch with `DllNotFoundException: libSkiaSharp`. The build
+      # SDK must be >= 26.2 so the matching net10.0-ios assets (and the native
+      # framework) are used. The "Verify native frameworks" step below guards
+      # against a regression by failing if libSkiaSharp isn't in the bundle.
+      - name: Select matching Xcode (26.3)
         run: |
           set -e
-          CANDIDATES=$(ls -d /Applications/Xcode_26.0*.app 2>/dev/null | sort -V)
+          CANDIDATES=$(ls -d /Applications/Xcode_26.3*.app 2>/dev/null | sort -V)
           if [ -z "$CANDIDATES" ]; then
-            echo "::error title=Xcode 26.0 not on runner::The 10.0.2xx iOS workload requires Xcode 26.0. Available Xcodes on this runner:"
+            echo "::error title=Xcode 26.3 not on runner::The 10.0.2xx iOS workload requires Xcode 26.3. Available Xcodes on this runner:"
             ls -d /Applications/Xcode_*.app 2>/dev/null || echo "  (none)"
             exit 1
           fi
@@ -125,6 +135,10 @@ jobs:
             exit 1
           fi
           dotnet workload list
+          # Surface the iOS SDK the selected Xcode provides. It must be >= 26.2
+          # so SkiaSharp's net10.0-ios26.2 assets (and native framework) are
+          # selected over the net9 fallback that crashes at launch.
+          xcodebuild -showsdks | grep -i iphoneos || true
 
       # Restore only the iOS-relevant projects. The solution also contains
       # `MeltdownMonitor.App` and `MeltdownMonitor.Ble.Windows`, both of
@@ -189,7 +203,9 @@ jobs:
       # arm64 toolchain so a missing native dep surfaces in PR CI instead
       # of at release time.
       - name: Build iOS (device, unsigned)
+        id: build-device
         run: |
+          set -e
           dotnet build MeltdownMonitor.iOS/MeltdownMonitor.iOS.csproj \
             -c Release \
             -p:RuntimeIdentifier=ios-arm64 \
@@ -197,6 +213,32 @@ jobs:
             -p:EnableCodeSigning=false \
             -p:CodesignKey= \
             -p:CodesignProvision=
+          APP=$(find MeltdownMonitor.iOS/bin/Release -type d -name '*.app' -path '*ios-arm64*' | head -n 1)
+          [ -z "$APP" ] && APP=$(find MeltdownMonitor.iOS/bin/Release -type d -name '*.app' | head -n 1)
+          echo "device-app=$APP" >> "$GITHUB_OUTPUT"
+
+      # Guards the launch crash this workflow change fixes. SkiaSharp's native
+      # libSkiaSharp.framework must be embedded in the device bundle; if it
+      # isn't, the app dies at startup with `DllNotFoundException: libSkiaSharp`
+      # (the net9.0-ios fallback symptom). A green build alone does NOT catch
+      # this — the framework is loaded at runtime, not link time — so assert on
+      # the bundle contents here, where CI can actually see them.
+      - name: Verify native frameworks embedded (device)
+        run: |
+          set -e
+          APP="${{ steps.build-device.outputs.device-app }}"
+          if [ -z "$APP" ] || [ ! -d "$APP" ]; then
+            echo "::error title=Device .app not found::Could not locate the ios-arm64 .app to verify native frameworks."
+            exit 1
+          fi
+          echo "Device bundle: $APP"
+          if find "$APP" -name 'libSkiaSharp*' | grep -q .; then
+            echo "libSkiaSharp embedded:"; find "$APP" -name 'libSkiaSharp*'
+          else
+            echo "::error title=libSkiaSharp not embedded::The ios-arm64 .app does not contain libSkiaSharp.framework, so the app would crash at launch with DllNotFoundException: libSkiaSharp. The iOS SDK is likely < 26.2, making NuGet fall back to SkiaSharp's net9.0-ios18.0 build. Confirm Xcode 26.3 was selected (iOS SDK >= 26.2) and SkiaSharp.NativeAssets.iOS is referenced."
+            echo "Frameworks dir contents:"; ls -la "$APP/Frameworks" 2>/dev/null || echo "  (no Frameworks dir)"
+            exit 1
+          fi
 
   testflight:
     name: Archive & upload to TestFlight
@@ -223,16 +265,17 @@ jobs:
           dotnet-version: "10.0.2xx"
 
       # Match the build-test job exactly. The 10.0.2xx iOS workload requires an
-      # EXACT Xcode match (26.0), and build-test is the toolchain PR CI actually
+      # EXACT Xcode match (26.3 — see the build-test job for why SkiaSharp forces
+      # the iOS SDK to >= 26.2), and build-test is the toolchain PR CI actually
       # validates. Selecting "latest" here risked a workload/Xcode mismatch that
       # only ever surfaced on a release tag — long after a contributor could
       # catch it.
-      - name: Select matching Xcode (26.0)
+      - name: Select matching Xcode (26.3)
         run: |
           set -e
-          CANDIDATES=$(ls -d /Applications/Xcode_26.0*.app 2>/dev/null | sort -V)
+          CANDIDATES=$(ls -d /Applications/Xcode_26.3*.app 2>/dev/null | sort -V)
           if [ -z "$CANDIDATES" ]; then
-            echo "::error title=Xcode 26.0 not on runner::The 10.0.2xx iOS workload requires Xcode 26.0. Available Xcodes on this runner:"
+            echo "::error title=Xcode 26.3 not on runner::The 10.0.2xx iOS workload requires Xcode 26.3. Available Xcodes on this runner:"
             ls -d /Applications/Xcode_*.app 2>/dev/null || echo "  (none)"
             exit 1
           fi
