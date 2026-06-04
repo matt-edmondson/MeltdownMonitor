@@ -7,6 +7,7 @@ using Avalonia.Media;
 using Avalonia.Threading;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Regulation;
+using SkiaSharp;
 
 namespace MeltdownMonitor.Mobile.Controls;
 
@@ -101,6 +102,17 @@ public sealed class RegulationField : Control
 	private static readonly Color Peach = Color.FromRgb(0xf5, 0xa9, 0x7f);
 	private static readonly Color Maroon = Color.FromRgb(0xee, 0x99, 0xa0);
 	private static readonly Color Green = Color.FromRgb(0xa6, 0xda, 0x95);
+
+	public static readonly StyledProperty<bool> UseLfHfCorroborationProperty =
+		AvaloniaProperty.Register<RegulationField, bool>(nameof(UseLfHfCorroboration), true);
+
+	/// <summary>Mirrors DetectionThresholds.UseLfHfCorroboration — gates the LF/HF balance halo,
+	/// the soft additive glow biased toward the dominant autonomic pole.</summary>
+	public bool UseLfHfCorroboration
+	{
+		get => GetValue(UseLfHfCorroborationProperty);
+		set => SetValue(UseLfHfCorroborationProperty, value);
+	}
 
 	public static readonly StyledProperty<IReadOnlyList<double>?> RrProperty =
 		AvaloniaProperty.Register<RegulationField, IReadOnlyList<double>?>(nameof(Rr));
@@ -285,6 +297,8 @@ public sealed class RegulationField : Control
 		float lobeHeight = (float)Math.Min(h * 0.34, halfWidth * 0.62f);
 		var centreV = new Vector2((float)centre.X, (float)centre.Y);
 
+		DrawLfHfHalo(context, centre, halfWidth, reading, confidence);
+
 		// Window of tolerance: a soft lavender zone marking the regulated centre.
 		context.DrawEllipse(Brush(Lavender, 0.08 * confidence), null, centre, halfWidth * 0.32, lobeHeight * 0.7);
 
@@ -321,6 +335,43 @@ public sealed class RegulationField : Control
 				new Point(centre.X, centre.Y + lobeHeight + 14), Subtext0, 12, centred: true);
 		}
 	}
+
+	// Soft, asymmetric glow biased toward the dominant autonomic pole. Gated on the LF/HF
+	// corroboration setting, and only once a real LF/HF balance exists — LF/HF is laggy/noisy,
+	// so it is a low-commitment lean cue, not a gate. Three concentric discs fake a soft radial
+	// falloff; drawn additively (SKBlendMode.Plus via AdditiveSkiaLayer) so the overlapping discs
+	// accumulate toward the centre into a real glow, mirroring the desktop renderer.
+	private void DrawLfHfHalo(DrawingContext context, Point centre, float halfWidth, RegulationReading r, double confidence)
+	{
+		if (!UseLfHfCorroboration)
+		{
+			return;
+		}
+
+		float bal = (float)r.LfHfBalance;
+		if (Math.Abs(bal) < 0.02f)
+		{
+			return;
+		}
+
+		Color hue = bal >= 0 ? Peach : Sky;
+		var glowCentre = new SKPoint((float)(centre.X + (bal * halfWidth * 0.6f)), (float)centre.Y);
+		float baseAlpha = (float)(Math.Min(1f, Math.Abs(bal)) * 0.10f * confidence);
+
+		context.Custom(new AdditiveSkiaLayer(new Rect(Bounds.Size), (canvas, paint) =>
+		{
+			paint.Style = SKPaintStyle.Fill;
+			for (int i = 3; i >= 1; i--)
+			{
+				paint.Color = Sk(hue, baseAlpha / i);
+				canvas.DrawCircle(glowCentre, halfWidth * 0.30f * i, paint);
+			}
+		}));
+	}
+
+	/// <summary>Avalonia colour → SKColor with a [0,1] alpha, for the additive Skia layers.</summary>
+	private static SKColor Sk(Color c, double alpha) =>
+		new(c.R, c.G, c.B, (byte)Math.Clamp(alpha * 255.0, 0.0, 255.0));
 
 	// Upper-cool quadrant (cool/left side, low variability) = collapse territory. Fill it with Slate
 	// at an opacity that tracks the collapse signal, so approach is visible before the latch.
