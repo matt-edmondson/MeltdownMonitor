@@ -159,6 +159,17 @@ public sealed class RegulationField : Control
 		set => SetValue(HeatmapRegionThresholdProperty, value);
 	}
 
+	public static readonly StyledProperty<double> LobeOpacityProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(LobeOpacity), 0.60);
+
+	/// <summary>Opacity of the live-trace lobes. They draw additively and bloom where strokes
+	/// overlap, so lower this if they saturate; default 60% (the desktop's tuned default).</summary>
+	public double LobeOpacity
+	{
+		get => GetValue(LobeOpacityProperty);
+		set => SetValue(LobeOpacityProperty, value);
+	}
+
 	public static readonly StyledProperty<bool> UseLfHfCorroborationProperty =
 		AvaloniaProperty.Register<RegulationField, bool>(nameof(UseLfHfCorroboration), true);
 
@@ -648,6 +659,12 @@ public sealed class RegulationField : Control
 		}
 	}
 
+	// Catmull-Rom sub-steps per lobe segment for the live-trace centreline (desktop RibbonSub).
+	private const int TraceSub = 4;
+
+	// Peak trace deflection (px) from the real RR signal at 1× exaggeration (desktop MaxJitterPx).
+	private const float MaxJitterPx = 18f;
+
 	private void DrawTrace(DrawingContext context, IReadOnlyList<Vector2> ghost, Vector2 centre, float halfWidth, RegulationReading r, double confidence)
 	{
 		if (ghost.Count < 2)
@@ -655,40 +672,109 @@ public sealed class RegulationField : Control
 			return;
 		}
 
-		// Ghost baseline (symmetric resting frame).
+		// Ghost baseline (symmetric resting frame) — crisp alpha-over chrome.
 		var ghostPen = new Pen(Brush(Overlay1, 0.28 * confidence), 1.5);
 		for (int i = 0; i < ghost.Count; i++)
 		{
 			context.DrawLine(ghostPen, P(ghost[i]), P(ghost[(i + 1) % ghost.Count]));
 		}
 
-		// Live two-tone trace: the warm (right) lobe swells with positive index,
-		// the cool (left) lobe with negative; stroke thins as variability collapses.
+		// Live two-tone trace, textured with the REAL beat-to-beat signal: jagged when HRV is
+		// healthy, flat when it collapses; tapers to nothing at the crossover. The lobe is mapped
+		// ONCE onto a window of the RR signal (no tiling → no spatial repeat), rotated so the
+		// oldest↔newest seam lands on a crossover (depth≈0, hidden). The window's leading edge is
+		// the smooth playhead (absolute beat-index units), so the texture flows continuously
+		// rather than snapping to batched BLE beat arrivals. Ported from the desktop DrawLemniscate.
 		float clampedIndex = Math.Clamp((float)r.Index, -1f, 1f);
 		float warmSwell = 1f + (MathF.Max(0f, clampedIndex) * 1.4f);
 		float coolSwell = 1f + (MathF.Max(0f, -clampedIndex) * 1.4f);
 		float quality = (float)Math.Clamp(r.VariabilityQuality, 0.0, 1.0);
-		double baseThick = (3.0 + (4.0 * quality)) * Math.Clamp(LobeThickness, 0.5, 3.0);
+		float baseThick = (float)((3.0 + (4.0 * quality)) * Math.Clamp(LobeThickness, 0.5, 3.0));
+		double lobeAlpha = confidence * Math.Clamp(LobeOpacity, 0.0, 1.0);
 
-		for (int i = 0; i < ghost.Count; i++)
+		float[] dev = RrTexture.BuildRrDeviations(Rr ?? []);
+		int n = ghost.Count;
+		int devLen = dev.Length;
+		int quarter = n / 4;
+		double span = Math.Min(devLen - 1, n - 1);
+		// Absolute beat index → buffer index: the newest buffer sample (devLen-1) is absolute (RrBeatsAppended-1).
+		double bufOffset = devLen - RrBeatsAppended;
+		double playhead = _playhead.Position;
+
+		// Jitter each VERTEX once (along the smoothed vertex normal) so adjacent segments share
+		// an endpoint and the trace stays continuous.
+		var pts = new Vector2[n];
+		for (int i = 0; i < n; i++)
 		{
-			Vector2 a = ghost[i];
-			Vector2 b = ghost[(i + 1) % ghost.Count];
-			float midX = (a.X + b.X) * 0.5f;
-			bool warm = midX >= centre.X;
-			double depth = Math.Min(1.0, Math.Abs(midX - centre.X) / halfWidth);
+			Vector2 v = ghost[i];
+			float depth = MathF.Min(1f, MathF.Abs(v.X - centre.X) / halfWidth);
+			float jitter = 0f;
+			if (devLen > 1)
+			{
+				int seg = (((i - quarter) % n) + n) % n;
+				double posAbs = playhead - span + (seg / (double)(n - 1) * span);
+				double posBuf = Math.Clamp(posAbs + bufOffset, 0.0, devLen - 1);
+				int i0 = (int)Math.Floor(posBuf);
+				int i1 = Math.Min(i0 + 1, devLen - 1);
+				float d = dev[i0] + ((dev[i1] - dev[i0]) * (float)(posBuf - i0));
+				jitter = d * MaxJitterPx * (float)Math.Clamp(JitterExaggeration, 0.0, 3.0) * depth;
+			}
 
-			Color c = warm
-				? Lerp(Peach, Maroon, depth)
-				: Lerp(Sky, Sapphire, depth);
-
-			// Animated variability jitter on the outer half of each lobe: the
-			// healthier the variability, the more the line shifts sideways.
-			Vector2 n = Normal(a, b) * (float)_animator.JitterOffset(i, quality, depth);
-
-			double thick = baseThick * (warm ? warmSwell : coolSwell);
-			context.DrawLine(new Pen(Brush(c, confidence), thick), P(a + n), P(b + n));
+			Vector2 normal = Normal(ghost[(i - 1 + n) % n], ghost[(i + 1) % n]);
+			pts[i] = v + (normal * jitter);
 		}
+
+		// Smooth flowing undulations rather than faceted spikes: a closed Catmull-Rom centreline
+		// through the jittered vertices, each sub-point carrying its own colour (warm/cool by
+		// side, deepening with depth) and width (lobe swell). Pre-computed here; the additive
+		// layer below just strokes the segments with SKBlendMode.Plus so the lobes glow.
+		int m = n * TraceSub;
+		var spline = new SKPoint[m];
+		var cols = new SKColor[m];
+		var widths = new float[m];
+		int w = 0;
+		for (int i = 0; i < n; i++)
+		{
+			Vector2 p0 = pts[(i - 1 + n) % n];
+			Vector2 p1 = pts[i];
+			Vector2 p2 = pts[(i + 1) % n];
+			Vector2 p3 = pts[(i + 2) % n];
+			for (int s = 1; s <= TraceSub; s++)
+			{
+				Vector2 cur = CatmullRom(p0, p1, p2, p3, s / (float)TraceSub);
+				bool warm = cur.X >= centre.X;
+				float depth = MathF.Min(1f, MathF.Abs(cur.X - centre.X) / halfWidth);
+				Color c = warm ? Lerp(Peach, Maroon, depth) : Lerp(Sky, Sapphire, depth);
+				spline[w] = new SKPoint(cur.X, cur.Y);
+				cols[w] = Sk(c, lobeAlpha);
+				widths[w] = baseThick * (warm ? warmSwell : coolSwell);
+				w++;
+			}
+		}
+
+		context.Custom(new AdditiveSkiaLayer(new Rect(Bounds.Size), (canvas, paint) =>
+		{
+			paint.Style = SKPaintStyle.Stroke;
+			paint.StrokeCap = SKStrokeCap.Butt;
+			for (int i = 0; i < m; i++)
+			{
+				int j = (i + 1) % m;
+				paint.Color = cols[i];
+				paint.StrokeWidth = widths[i];
+				canvas.DrawLine(spline[i], spline[j], paint);
+			}
+		}));
+	}
+
+	// Uniform Catmull-Rom interpolation between p1 and p2 (p0/p3 are the neighbouring points).
+	private static Vector2 CatmullRom(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t)
+	{
+		float t2 = t * t;
+		float t3 = t2 * t;
+		return 0.5f * ((2f * p1)
+			+ ((-p0 + p2) * t)
+			+ (((2f * p0) - (5f * p1) + (4f * p2) - p3) * t2)
+			+ ((-p0 + (3f * p1) - (3f * p2) + p3) * t3));
 	}
 
 	// Axis density histograms: how the samples currently in the trail window are distributed.
