@@ -58,21 +58,57 @@ public static class IosCompositionRoot
 		return Path.Combine(appSupport, "MeltdownMonitor", "data.db");
 	}
 
+	/// <summary>
+	/// Initializes crash reporting at the earliest possible point in the iOS
+	/// launch path. Called from <see cref="Program.Main"/> <em>before</em> UIKit
+	/// and Avalonia spin up, so faults during launch — Avalonia bootstrap, the
+	/// audio-session setup in <see cref="AppDelegate.CustomizeAppBuilder"/>, the
+	/// composition root itself, or trimming/AOT issues — are captured rather than
+	/// lost in the window before the SDK loads. Idempotent: the SDK is started at
+	/// most once and the handle is held for the process lifetime (flushing queued
+	/// events on shutdown). No-op (and no network) unless a DSN is configured.
+	/// </summary>
+	public static void InitializeCrashReporting() =>
+		InitializeCrashReporting(TryReadConfiguredDsn());
+
+	private static void InitializeCrashReporting(string? configuredDsn) =>
+		_crashReporting ??= CrashReporting.Initialize(new CrashReportingOptions
+		{
+			Dsn = configuredDsn,
+			Environment = "ios",
+			Release = typeof(IosCompositionRoot).Assembly.GetName().Version?.ToString(),
+		});
+
+	/// <summary>
+	/// Reads the user-configured DSN from settings, swallowing any failure so a
+	/// settings read can never be the reason crash reporting fails to come up.
+	/// <see cref="CrashReporting.Initialize"/> still falls back to the
+	/// <c>MELTDOWN_CRASH_REPORTING_DSN</c> environment variable and the build-time
+	/// embedded DSN (the shipped-build case) when this returns null.
+	/// </summary>
+	private static string? TryReadConfiguredDsn()
+	{
+		try
+		{
+			return new NSUserDefaultsSettingsStore().Load().CrashReportingDsn;
+		}
+		catch
+		{
+			return null;
+		}
+	}
+
 	public static RootViewModel BuildRootViewModel()
 	{
 		_store = new NSUserDefaultsSettingsStore();
 		var settings = _store.Load();
 		_settings = settings;
 
-		// Initialize crash reporting before anything heavy spins up. No-op (and
-		// no network) unless a DSN is configured in settings or the
-		// MELTDOWN_CRASH_REPORTING_DSN environment variable.
-		_crashReporting ??= CrashReporting.Initialize(new CrashReportingOptions
-		{
-			Dsn = settings.CrashReportingDsn,
-			Environment = "ios",
-			Release = typeof(IosCompositionRoot).Assembly.GetName().Version?.ToString(),
-		});
+		// Normally a no-op here: Program.Main already brought crash reporting up
+		// before launch so the early startup window is covered. Kept as a safety
+		// net (and to honour the settings DSN) for any path that reaches the
+		// composition root without Main having run.
+		InitializeCrashReporting(settings.CrashReportingDsn);
 
 		_notifications = new NotificationDispatcher(settings);
 		_healthStore = new HealthKitStore();

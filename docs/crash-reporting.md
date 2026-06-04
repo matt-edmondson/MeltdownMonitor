@@ -13,9 +13,15 @@ integration uses the standard **Sentry .NET SDK** (`Sentry`, referenced from `Co
   DSN is configured**, so the app runs exactly as before — no SDK, no network.
 - **Desktop (`App/Program.cs`)** initializes it right after settings load, with
   `Environment = "windows-desktop"`.
-- **iOS (`IosCompositionRoot.BuildRootViewModel`)** initializes it once settings are
-  loaded, with `Environment = "ios"`. The SDK handle is held in a static field for the
-  app's lifetime.
+- **iOS (`Program.Main` → `IosCompositionRoot.InitializeCrashReporting`)** initializes it
+  as the very first thing in `Main`, *before* UIKit/Avalonia and the audio-session setup
+  spin up, with `Environment = "ios"`. This is deliberate: the SDK used to come up only
+  when Avalonia invoked the root-view-model factory in `OnFrameworkInitializationCompleted`,
+  so any crash during the launch window (Avalonia bootstrap, the composition root, trimming/AOT
+  faults) happened *before Sentry loaded* and was never reported. `Main` also wraps
+  `UIApplication.Main` to capture and synchronously flush any managed exception that escapes
+  the run loop. The SDK handle is held in a static field for the app's lifetime; the
+  composition root's later init call is idempotent and still honours the settings DSN.
 
 Because the logic lives in `Core`, DSN resolution is unit-tested in `Tests`
 (`CrashReportingTests`); the heads only pass options.
