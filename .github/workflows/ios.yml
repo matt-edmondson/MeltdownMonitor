@@ -84,35 +84,34 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # Pin to the 10.0.2xx feature band: its bundled iOS workload (26.3)
-      # matches the Xcode 26.3 currently on `macos-latest`. The 10.0.3xx
-      # band ships iOS workload 26.5, which the runner image doesn't yet
-      # have an Xcode for. Bump this band when the runner picks up
-      # Xcode 26.5 or newer.
+      # 10.0.2xx feature band. The iOS workload version is NOT taken from the
+      # band default (that is 26.0, which builds net10.0-ios26.0 — too old, see
+      # below); it is pinned to 26.2 in the install step via a rollback file.
       - name: Setup .NET ${{ env.DOTNET_VERSION }} (10.0.2xx band)
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.2xx"
 
-      # The .NET 10 iOS workload requires an EXACT Xcode version match,
-      # not minimum. The 10.0.2xx SDK band's bundled iOS workload is 26.3,
-      # which needs Xcode 26.3. Pick the highest 26.3.x Xcode on the runner.
+      # The .NET 10 iOS workload requires an EXACT Xcode version match, not a
+      # minimum (a 26.2 workload refuses to build under Xcode 26.3). The install
+      # step pins the iOS workload to 26.2, so we select Xcode 26.2 here.
       #
-      # Why 26.3 and not the older 26.0 we used to pin: SkiaSharp 3.119.x —
-      # pulled in by Avalonia.Skia 12.0.4 — ships its .NET 10 iOS assembly only
-      # as net10.0-ios26.2. Building against an older iOS SDK (e.g. 26.0) makes
+      # Why >= 26.2 at all: SkiaSharp 3.119.x — pulled in by Avalonia.Skia
+      # 12.0.4 — ships its .NET 10 iOS assembly only as net10.0-ios26.2.
+      # Building against an older iOS SDK (e.g. the 26.0 band default) makes
       # NuGet silently fall back to SkiaSharp's net9.0-ios18.0 build, whose
       # native libSkiaSharp.framework is NOT loaded on device, so the app
-      # crashes at launch with `DllNotFoundException: libSkiaSharp`. The build
-      # SDK must be >= 26.2 so the matching net10.0-ios assets (and the native
-      # framework) are used. The "Verify native frameworks" step below guards
-      # against a regression by failing if libSkiaSharp isn't in the bundle.
-      - name: Select matching Xcode (26.3)
+      # crashes at launch with `DllNotFoundException: libSkiaSharp`. 26.2 is the
+      # lowest workload that satisfies this and has a matching Xcode on the
+      # runner — there is no 26.3 .NET iOS workload (the manifests jump
+      # 26.2 -> 26.4), and 26.4/26.5 need an Xcode the runner doesn't carry.
+      # The "Verify native frameworks" step guards against a regression.
+      - name: Select matching Xcode (26.2)
         run: |
           set -e
-          CANDIDATES=$(ls -d /Applications/Xcode_26.3*.app 2>/dev/null | sort -V)
+          CANDIDATES=$(ls -d /Applications/Xcode_26.2*.app 2>/dev/null | sort -V)
           if [ -z "$CANDIDATES" ]; then
-            echo "::error title=Xcode 26.3 not on runner::The 10.0.2xx iOS workload requires Xcode 26.3. Available Xcodes on this runner:"
+            echo "::error title=Xcode 26.2 not on runner::The pinned iOS workload (26.2) requires Xcode 26.2. Available Xcodes on this runner:"
             ls -d /Applications/Xcode_*.app 2>/dev/null || echo "  (none)"
             exit 1
           fi
@@ -123,21 +122,25 @@ jobs:
       # Design doc §14: "fail the build matrix loudly if [the iOS workload
       # is] absent". A silent skip would let the rest of the workflow look
       # green while shipping nothing.
-      # `--skip-manifest-update` keeps the iOS manifest bundled with the
-      # selected SDK band rather than pulling the latest from NuGet —
-      # otherwise even a 10.0.2xx SDK still installs the 26.5 iOS workload
-      # (and requires Xcode 26.5).
-      - name: Install iOS workload (fail loudly if unavailable)
+      #
+      # Pin the iOS workload to 26.2 via a rollback file rather than the band
+      # default (26.0 -> net10.0-ios26.0, too old for SkiaSharp, see the Xcode
+      # step) or the manifest latest (26.4/26.5, whose Xcode isn't on the
+      # runner). The band in the rollback entry is 10.0.100 because the iOS
+      # manifest is published for that band; a 10.0.2xx SDK consumes it via the
+      # normal lower-band fallback.
+      - name: Install iOS workload 26.2 (fail loudly if unavailable)
         run: |
           set -e
-          if ! dotnet workload install ios --skip-manifest-update; then
-            echo "::error title=iOS workload unavailable::dotnet workload install ios failed on $(sw_vers -productName) $(sw_vers -productVersion) with $(xcodebuild -version | head -n 1). Phase 7 (docs/ios-design.md §12) requires this workload — see §14 risk mitigation."
+          printf '{ "microsoft.net.sdk.ios": "26.2.10233/10.0.100" }' > /tmp/ios-rollback.json
+          if ! dotnet workload install ios --from-rollback-file /tmp/ios-rollback.json; then
+            echo "::error title=iOS workload unavailable::dotnet workload install ios (26.2) failed on $(sw_vers -productName) $(sw_vers -productVersion) with $(xcodebuild -version | head -n 1). Phase 7 (docs/ios-design.md §12) requires this workload — see §14 risk mitigation."
             exit 1
           fi
           dotnet workload list
-          # Surface the iOS SDK the selected Xcode provides. It must be >= 26.2
-          # so SkiaSharp's net10.0-ios26.2 assets (and native framework) are
-          # selected over the net9 fallback that crashes at launch.
+          # Confirm the selected Xcode exposes an iOS SDK >= 26.2 so SkiaSharp's
+          # net10.0-ios26.2 assets (and native framework) are used over the
+          # net9 fallback that crashes at launch.
           xcodebuild -showsdks | grep -i iphoneos || true
 
       # Restore only the iOS-relevant projects. The solution also contains
@@ -254,28 +257,26 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      # Pin to the 10.0.2xx feature band: its bundled iOS workload (26.3)
-      # matches the Xcode 26.3 currently on `macos-latest`. The 10.0.3xx
-      # band ships iOS workload 26.5, which the runner image doesn't yet
-      # have an Xcode for. Bump this band when the runner picks up
-      # Xcode 26.5 or newer.
+      # 10.0.2xx feature band; the iOS workload is pinned to 26.2 in the install
+      # step below (the band default of 26.0 is too old for SkiaSharp — see the
+      # build-test job).
       - name: Setup .NET ${{ env.DOTNET_VERSION }} (10.0.2xx band)
         uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "10.0.2xx"
 
-      # Match the build-test job exactly. The 10.0.2xx iOS workload requires an
-      # EXACT Xcode match (26.3 — see the build-test job for why SkiaSharp forces
-      # the iOS SDK to >= 26.2), and build-test is the toolchain PR CI actually
-      # validates. Selecting "latest" here risked a workload/Xcode mismatch that
-      # only ever surfaced on a release tag — long after a contributor could
-      # catch it.
-      - name: Select matching Xcode (26.3)
+      # Match the build-test job exactly. The pinned iOS workload (26.2) requires
+      # an EXACT Xcode match (26.2 — see the build-test job for why SkiaSharp
+      # forces the iOS SDK to >= 26.2), and build-test is the toolchain PR CI
+      # actually validates. Selecting "latest" here risked a workload/Xcode
+      # mismatch that only ever surfaced on a release tag — long after a
+      # contributor could catch it.
+      - name: Select matching Xcode (26.2)
         run: |
           set -e
-          CANDIDATES=$(ls -d /Applications/Xcode_26.3*.app 2>/dev/null | sort -V)
+          CANDIDATES=$(ls -d /Applications/Xcode_26.2*.app 2>/dev/null | sort -V)
           if [ -z "$CANDIDATES" ]; then
-            echo "::error title=Xcode 26.3 not on runner::The 10.0.2xx iOS workload requires Xcode 26.3. Available Xcodes on this runner:"
+            echo "::error title=Xcode 26.2 not on runner::The pinned iOS workload (26.2) requires Xcode 26.2. Available Xcodes on this runner:"
             ls -d /Applications/Xcode_*.app 2>/dev/null || echo "  (none)"
             exit 1
           fi
@@ -283,11 +284,12 @@ jobs:
           sudo xcode-select -s "$XCODE/Contents/Developer"
           echo "Using $(xcodebuild -version | head -n 1) from $XCODE"
 
-      - name: Install iOS workload
+      - name: Install iOS workload 26.2
         run: |
           set -e
-          if ! dotnet workload install ios --skip-manifest-update; then
-            echo "::error title=iOS workload unavailable::dotnet workload install ios failed on $(xcodebuild -version | head -n 1)."
+          printf '{ "microsoft.net.sdk.ios": "26.2.10233/10.0.100" }' > /tmp/ios-rollback.json
+          if ! dotnet workload install ios --from-rollback-file /tmp/ios-rollback.json; then
+            echo "::error title=iOS workload unavailable::dotnet workload install ios (26.2) failed on $(xcodebuild -version | head -n 1)."
             exit 1
           fi
 
