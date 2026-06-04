@@ -972,33 +972,95 @@ public sealed class RegulationFieldView : IDisposable
 
 		// X axis (arousal index), below the field, bars growing downward from a baseline that
 		// clears the lowest lobe tip. Clamp the strip so it never collides with the readout.
-		if (xHist.PeakCount > 0)
+		// The axis range is dynamic: always at least [-1, 1] but expands when extreme index
+		// values are present, so meltdown samples get their own buckets rather than stacking
+		// at the edge. Pixel mapping: index=0 → centre.X, scale = halfWidth per unit.
 		{
 			float baseY = centre.Y + lobeClearHeight + (16f * _drawScale);
 			float maxH = MathF.Max(0f, MathF.Min(22f * _drawScale, (origin.Y + height - 26f) - baseY));
 			if (maxH > 1f)
 			{
+				float histLeft = centre.X + (float)(xHist.Min * halfWidth);
+				float histRight = centre.X + (float)(xHist.Max * halfWidth);
+				float totalW = histRight - histLeft;
 				int n = xHist.BucketCount;
-				float slot = (halfWidth * 2f) / n;
+				float slot = totalW / n;
 				float barW = MathF.Max(1f, slot - (1.5f * _drawScale));
-				draw.AddLine(new Vector2(centre.X - halfWidth, baseY), new Vector2(centre.X + halfWidth, baseY), axisCol, 1f * _drawScale);
-				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
-				for (int b = 0; b < n; b++)
+				draw.AddLine(new Vector2(histLeft, baseY), new Vector2(histRight, baseY), axisCol, 1f * _drawScale);
+
+				if (xHist.PeakCount > 0)
 				{
-					int c = xHist.Counts[b];
-					if (c == 0)
+					ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+					for (int b = 0; b < n; b++)
 					{
-						continue;
+						int c = xHist.Counts[b];
+						if (c == 0)
+						{
+							continue;
+						}
+
+						float bx = histLeft + ((b + 0.5f) * slot);
+						Vector4 hue = bx >= centre.X ? MacchiatoPalette.Peach : MacchiatoPalette.Sky;
+						uint col = Col(MacchiatoPalette.WithAlpha(hue, barAlpha));
+						float bh = maxH * (c / (float)xHist.PeakCount);
+						draw.AddRectFilled(new Vector2(bx - (barW * 0.5f), baseY), new Vector2(bx + (barW * 0.5f), baseY + bh), col);
 					}
 
-					float bx = centre.X - halfWidth + ((b + 0.5f) * slot);
-					Vector4 hue = bx >= centre.X ? MacchiatoPalette.Peach : MacchiatoPalette.Sky;
-					uint col = Col(MacchiatoPalette.WithAlpha(hue, barAlpha));
-					float bh = maxH * (c / (float)xHist.PeakCount);
-					draw.AddRectFilled(new Vector2(bx - (barW * 0.5f), baseY), new Vector2(bx + (barW * 0.5f), baseY + bh), col);
+					ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 				}
 
-				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
+				// Warning threshold: dashed vertical line at ±WarningBoundaryIndex (0.6).
+				// Drawn at whichever sides have valid data in the visible range.
+				float warnOff = (float)(RegulationFieldCalculator.WarningBoundaryIndex * halfWidth);
+				uint warnCol = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Peach, 0.45f * confidence));
+				uint warnShadow = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Mantle, 0.3f * confidence));
+				float warnDash = 4f * _drawScale;
+				float warnGap = 3f * _drawScale;
+				float warnThick = 1f * _drawScale;
+				if (xHist.Max > 0)
+				{
+					DrawDashedLine(draw,
+						new Vector2(centre.X + warnOff, baseY - (2f * _drawScale)),
+						new Vector2(centre.X + warnOff, baseY + maxH),
+						warnCol, warnShadow, warnThick, warnDash, warnGap);
+				}
+
+				if (xHist.Min < 0)
+				{
+					uint coolWarnCol = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Sky, 0.45f * confidence));
+					DrawDashedLine(draw,
+						new Vector2(centre.X - warnOff, baseY - (2f * _drawScale)),
+						new Vector2(centre.X - warnOff, baseY + maxH),
+						coolWarnCol, warnShadow, warnThick, warnDash, warnGap);
+				}
+
+				// Recovery arrows: during Warning/Alerting, cascade-pulse left-pointing triangles
+				// between the centre and the warm-side warning line. The wave flows threshold→centre
+				// (right→left) to read as "aim here" guidance toward the regulated zone.
+				if (_pipeline.CurrentState is DetectorState.Warning or DetectorState.Alerting)
+				{
+					float warnX = centre.X + warnOff;
+					float zoneW = warnX - centre.X;
+					float spacing = zoneW / 4f;
+					float arrowW = MathF.Max(5f, 7f * _drawScale);
+					float arrowH = MathF.Max(4f, 5f * _drawScale);
+					float arrowY = baseY + (maxH * 0.5f);
+					Vector4 stateHue = MacchiatoPalette.State(_pipeline.CurrentState);
+					for (int i = 0; i < 3; i++)
+					{
+						// i=0 nearest threshold, i=2 nearest centre; wave flows right→left.
+						float phase = _animTime * 3.5f - (i * 1.3f);
+						float alpha = Math.Clamp(0.25f + 0.65f * MathF.Sin(phase), 0.1f, 1.0f);
+						uint arrowCol = Col(MacchiatoPalette.WithAlpha(stateHue, alpha * confidence));
+						float ax = warnX - ((i + 1) * spacing);
+						// Left-pointing triangle: tip left, base right.
+						draw.AddTriangleFilled(
+							new Vector2(ax - (arrowW * 0.5f), arrowY),
+							new Vector2(ax + (arrowW * 0.5f), arrowY - arrowH),
+							new Vector2(ax + (arrowW * 0.5f), arrowY + arrowH),
+							arrowCol);
+					}
+				}
 			}
 		}
 

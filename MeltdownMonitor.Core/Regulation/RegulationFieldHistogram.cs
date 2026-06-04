@@ -2,24 +2,44 @@ namespace MeltdownMonitor.Core.Regulation;
 
 /// <summary>
 /// Buckets the readings in a Regulation Field trail window into per-axis histograms: arousal
-/// index (the X axis, spanning [-1, 1]) and vagal tone (the Y axis, spanning [0, 1], baseline at
-/// 0.5). Pure and deterministic so both heads render identical distributions and it can be
-/// unit-tested.
+/// index (the X axis) and vagal tone (the Y axis, spanning [0, 1], baseline at 0.5). The index
+/// axis expands dynamically to cover extreme values beyond ±1. Pure and deterministic so both
+/// heads render identical distributions and it can be unit-tested.
 /// </summary>
 public static class RegulationFieldHistogram
 {
 	/// <summary>Default bucket resolution for each axis.</summary>
 	public const int DefaultBucketCount = 24;
 
-	// Fixed axis ranges, matching the field's marker mapping (see RegulationReading / the views).
+	// Minimum index axis range — always covers [-1, 1] but IndexAxis expands it to include extremes.
+	// IndexMin/IndexMax are also the fixed x-range for FieldDensity (the 2D heatmap stays
+	// within the lemniscate bounds so cells don't render outside the visible field).
 	private const double IndexMin = -1.0;
 	private const double IndexMax = 1.0;
 	private const double VagalToneMin = 0.0;
 	private const double VagalToneMax = 1.0;
 
-	/// <summary>Distribution of arousal index (the X axis) across the trail window.</summary>
+	/// <summary>
+	/// Distribution of arousal index (the X axis) across the trail window. The axis range
+	/// expands dynamically: it always covers at least [-1, 1] but extends further when any
+	/// trail reading falls outside that band, so severely dysregulated samples are spread
+	/// across their own buckets rather than lost or piled into the edge.
+	/// </summary>
 	public static RegulationAxisHistogram IndexAxis(IReadOnlyList<RegulationTrailPoint> trail, int bucketCount = DefaultBucketCount)
-		=> Build(trail, IndexMin, IndexMax, bucketCount, static p => p.Reading.Index);
+	{
+		ArgumentNullException.ThrowIfNull(trail);
+		double min = IndexMin;
+		double max = IndexMax;
+		for (int i = 0; i < trail.Count; i++)
+		{
+			double v = trail[i].Reading.Index;
+			if (!double.IsFinite(v)) { continue; }
+			if (v < min) { min = v; }
+			if (v > max) { max = v; }
+		}
+
+		return Build(trail, min, max, bucketCount, static p => p.Reading.Index);
+	}
 
 	/// <summary>Distribution of vagal tone (the Y axis, baseline at 0.5) across the trail window.</summary>
 	public static RegulationAxisHistogram VagalToneAxis(IReadOnlyList<RegulationTrailPoint> trail, int bucketCount = DefaultBucketCount)
