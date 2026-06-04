@@ -160,6 +160,95 @@ public class RegulationFieldHistogramTests
 	}
 
 	[TestMethod]
+	public void HighDensityBounds_EmptyGrid_IsNull()
+	{
+		var d = RegulationFieldHistogram.FieldDensity([], xBuckets: 4, yBuckets: 4);
+		Assert.IsNull(d.HighDensityBounds(0.5));
+	}
+
+	[TestMethod]
+	public void HighDensityBounds_WrapsBusyCellsAcrossBuckets()
+	{
+		// Peak cell (1,1) holds 4; a neighbour (0,1) holds 2. At a 50% threshold both qualify, so the
+		// box spans columns 0..1 on row 1 — wider than the single peak cell.
+		RegulationTrailPoint[] trail =
+		[
+			Point(0.5, vagalTone: 0.8), Point(0.5, vagalTone: 0.8),
+			Point(0.5, vagalTone: 0.8), Point(0.5, vagalTone: 0.8),  // (1,1) ×4
+			Point(-0.5, vagalTone: 0.8), Point(-0.5, vagalTone: 0.8), // (0,1) ×2
+		];
+		var d = RegulationFieldHistogram.FieldDensity(trail, xBuckets: 2, yBuckets: 2);
+
+		var b = d.HighDensityBounds(0.5);
+		Assert.IsNotNull(b);
+		Assert.AreEqual(0, b.Value.MinX);
+		Assert.AreEqual(1, b.Value.MaxX);
+		Assert.AreEqual(1, b.Value.MinY);
+		Assert.AreEqual(1, b.Value.MaxY);
+		Assert.AreEqual(2, b.Value.Width);
+		Assert.AreEqual(1, b.Value.Height);
+	}
+
+	[TestMethod]
+	public void HighDensityBounds_HighThreshold_CollapsesOntoPeak()
+	{
+		// Same data: at threshold 1.0 only the peak cell (1,1) survives → a single-cell box.
+		RegulationTrailPoint[] trail =
+		[
+			Point(0.5, vagalTone: 0.8), Point(0.5, vagalTone: 0.8),
+			Point(0.5, vagalTone: 0.8), Point(0.5, vagalTone: 0.8),
+			Point(-0.5, vagalTone: 0.8), Point(-0.5, vagalTone: 0.8),
+		];
+		var d = RegulationFieldHistogram.FieldDensity(trail, xBuckets: 2, yBuckets: 2);
+
+		var b = d.HighDensityBounds(1.0);
+		Assert.IsNotNull(b);
+		Assert.AreEqual(d.PeakX, b.Value.MinX);
+		Assert.AreEqual(d.PeakX, b.Value.MaxX);
+		Assert.AreEqual(d.PeakY, b.Value.MinY);
+		Assert.AreEqual(d.PeakY, b.Value.MaxY);
+		Assert.AreEqual(1, b.Value.Width);
+		Assert.AreEqual(1, b.Value.Height);
+	}
+
+	[TestMethod]
+	public void HighDensityBounds_ZeroThreshold_WrapsEveryOccupiedCell()
+	{
+		// Two singleton corners (0,0) and (1,1): threshold 0 keeps both occupied cells, empty cells
+		// stay out, so the box spans the whole occupied extent.
+		RegulationTrailPoint[] trail =
+		[
+			Point(-0.5, vagalTone: 0.2),  // (0,0)
+			Point(0.5, vagalTone: 0.8),   // (1,1)
+		];
+		var d = RegulationFieldHistogram.FieldDensity(trail, xBuckets: 2, yBuckets: 2);
+
+		var b = d.HighDensityBounds(0.0);
+		Assert.IsNotNull(b);
+		Assert.AreEqual(0, b.Value.MinX);
+		Assert.AreEqual(0, b.Value.MinY);
+		Assert.AreEqual(1, b.Value.MaxX);
+		Assert.AreEqual(1, b.Value.MaxY);
+	}
+
+	[TestMethod]
+	public void HighDensityBounds_ThresholdClampsToUnitRange()
+	{
+		// Out-of-range thresholds clamp: below 0 behaves like 0, above 1 like 1.
+		RegulationTrailPoint[] trail =
+		[
+			Point(0.5, vagalTone: 0.8), Point(0.5, vagalTone: 0.8),
+			Point(-0.5, vagalTone: 0.2),
+		];
+		var d = RegulationFieldHistogram.FieldDensity(trail, xBuckets: 2, yBuckets: 2);
+
+		var wide = d.HighDensityBounds(-1.0);
+		var tight = d.HighDensityBounds(2.0);
+		Assert.AreEqual(d.HighDensityBounds(0.0), wide);
+		Assert.AreEqual(d.HighDensityBounds(1.0), tight);
+	}
+
+	[TestMethod]
 	public void FieldDensity_Count_BoundsChecked()
 	{
 		var d = RegulationFieldHistogram.FieldDensity([Point(0, 0.5)], xBuckets: 3, yBuckets: 3);

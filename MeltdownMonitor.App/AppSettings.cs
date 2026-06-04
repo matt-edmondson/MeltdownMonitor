@@ -77,6 +77,17 @@ public class AppSettings : AppData<AppSettings>
 	/// it; default 0.7 keeps it a clear pointer over the faint underlay.</summary>
 	public double HeatmapPeakOpacity { get; set; } = 0.7;
 
+	/// <summary>Opacity of the dashed box outlining the dwell heatmap's high-concentration region —
+	/// the block of busy buckets around the peak crosshair (0–1; clamped at the consumer). 0 hides
+	/// it; default 0.55 keeps it a soft frame around where regulation clusters.</summary>
+	public double HeatmapRegionOpacity { get; set; } = 0.55;
+
+	/// <summary>Fraction of the busiest bucket's count a bucket must reach to join the dashed
+	/// high-concentration region (0–1; clamped at the consumer). Lower widens the box toward every
+	/// occupied bucket; higher tightens it around the peak. Default 0.5 wraps the buckets holding at
+	/// least half the peak's dwell.</summary>
+	public double HeatmapRegionThreshold { get; set; } = 0.5;
+
 	/// <summary>Multiplier on the Regulation Field's live-trace variability jitter
 	/// (0–3; clamped at the consumer). 1.0 is the tuned default, 0 flattens the trace,
 	/// higher exaggerates the beat-to-beat undulation.</summary>

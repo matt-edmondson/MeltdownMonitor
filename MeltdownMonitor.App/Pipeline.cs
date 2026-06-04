@@ -79,6 +79,14 @@ public sealed class Pipeline : IDisposable
 	/// live by the field view.</summary>
 	public double HeatmapPeakOpacity => Math.Clamp(_settings.HeatmapPeakOpacity, 0.0, 1.0);
 
+	/// <summary>Configured opacity of the dashed dwell-heatmap high-concentration region box
+	/// (clamped 0–1), read live by the field view.</summary>
+	public double HeatmapRegionOpacity => Math.Clamp(_settings.HeatmapRegionOpacity, 0.0, 1.0);
+
+	/// <summary>Configured peak-count fraction a bucket must reach to join the dashed
+	/// high-concentration region (clamped 0–1), read live by the field view.</summary>
+	public double HeatmapRegionThreshold => Math.Clamp(_settings.HeatmapRegionThreshold, 0.0, 1.0);
+
 	/// <summary>Configured Regulation Field jitter exaggeration multiplier (clamped 0–3),
 	/// read live by the field view.</summary>
 	public double JitterExaggeration => Math.Clamp(_settings.JitterExaggeration, 0.0, 3.0);

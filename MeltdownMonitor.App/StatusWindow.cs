@@ -1126,6 +1126,26 @@ public sealed class StatusWindow : IDisposable
 		HelpMarker("Opacity of the crosshair pinning the dwell heatmap's busiest bucket — where regulation has settled most over the window. 0 hides it; default 70%.");
 		ImGui.SameLine();
 
+		float heatRegionOpacityPct = (float)(_settings.HeatmapRegionOpacity * 100.0);
+		if (ImGuiWidgets.Knob("Dwell region", ref heatRegionOpacityPct, 0f, 100f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.HeatmapRegionOpacity = heatRegionOpacityPct / 100.0;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Opacity of the dashed box framing the dwell heatmap's high-concentration region — the block of busy buckets around the peak crosshair. 0 hides it; default 55%.");
+		ImGui.SameLine();
+
+		float heatRegionThresholdPct = (float)(_settings.HeatmapRegionThreshold * 100.0);
+		if (ImGuiWidgets.Knob("Region threshold", ref heatRegionThresholdPct, 0f, 100f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.HeatmapRegionThreshold = heatRegionThresholdPct / 100.0;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How busy a bucket must be — as a share of the peak bucket — to sit inside the dashed dwell region. Lower widens the box toward every visited bucket; higher tightens it around the peak. Default 50%.");
+		ImGui.SameLine();
+
 		float histOpacityPct = (float)(_settings.HistogramOpacity * 100.0);
 		if (ImGuiWidgets.Knob("Histogram opacity", ref histOpacityPct, 0f, 100f, format: "%.0f%%", flags: ImGuiKnobOptions.ValueTooltip))
 		{
@@ -1587,6 +1607,8 @@ public sealed class StatusWindow : IDisposable
 				_settings.RegulationHeatmapLength = 720;
 				_settings.HeatmapOpacity = 0.35;
 				_settings.HeatmapPeakOpacity = 0.7;
+				_settings.HeatmapRegionOpacity = 0.55;
+				_settings.HeatmapRegionThreshold = 0.5;
 				_settings.JitterExaggeration = 1.0;
 				_settings.LobeThickness = 1.0;
 				_settings.LobeSegments = LemniscateGeometry.DefaultSegments;

@@ -86,4 +86,47 @@ public readonly record struct RegulationFieldDensity
 		ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(y, YBuckets);
 		return _counts[(y * XBuckets) + x];
 	}
+
+	/// <summary>
+	/// Inclusive bucket-coordinate bounding box of every cell whose count reaches
+	/// <paramref name="thresholdFraction"/> of <see cref="PeakCount"/> — the region where dwell
+	/// concentrates most, spanning whatever busy cells qualify (it can be wider than the single
+	/// peak cell the crosshair pins). <paramref name="thresholdFraction"/> clamps to [0, 1]: at 0
+	/// the box wraps every occupied cell, at 1 it collapses onto the peak cell(s). Returns
+	/// <see langword="null"/> when the grid is empty.
+	/// </summary>
+	public RegulationDensityBounds? HighDensityBounds(double thresholdFraction)
+	{
+		if (PeakCount <= 0)
+		{
+			return null;
+		}
+
+		thresholdFraction = Math.Clamp(thresholdFraction, 0.0, 1.0);
+		double cutoff = thresholdFraction * PeakCount;
+
+		int minX = int.MaxValue, minY = int.MaxValue, maxX = int.MinValue, maxY = int.MinValue;
+		for (int y = 0; y < YBuckets; y++)
+		{
+			for (int x = 0; x < XBuckets; x++)
+			{
+				int c = _counts[(y * XBuckets) + x];
+
+				// Occupied cells at/above the cutoff qualify; >= keeps the peak cell in even at
+				// threshold 1.0, and empty cells never join even at threshold 0.0.
+				if (c <= 0 || c < cutoff)
+				{
+					continue;
+				}
+
+				if (x < minX) { minX = x; }
+				if (x > maxX) { maxX = x; }
+				if (y < minY) { minY = y; }
+				if (y > maxY) { maxY = y; }
+			}
+		}
+
+		// The peak cell always satisfies c >= cutoff, so a non-empty grid always finds at least one.
+		return new RegulationDensityBounds(minX, minY, maxX, maxY);
+	}
 }
