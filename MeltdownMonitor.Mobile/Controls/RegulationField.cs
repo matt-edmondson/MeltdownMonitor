@@ -314,8 +314,9 @@ public sealed class RegulationField : Control
 
 		// Live two-tone trace: the warm (right) lobe swells with positive index,
 		// the cool (left) lobe with negative; stroke thins as variability collapses.
-		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * 1.4f);
-		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * 1.4f);
+		float clampedIndex = Math.Clamp((float)r.Index, -1f, 1f);
+		float warmSwell = 1f + (MathF.Max(0f, clampedIndex) * 1.4f);
+		float coolSwell = 1f + (MathF.Max(0f, -clampedIndex) * 1.4f);
 		float quality = (float)Math.Clamp(r.VariabilityQuality, 0.0, 1.0);
 		double baseThick = (3.0 + (4.0 * quality)) * Math.Clamp(LobeThickness, 0.5, 3.0);
 

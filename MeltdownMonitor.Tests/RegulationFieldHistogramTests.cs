@@ -39,14 +39,15 @@ public class RegulationFieldHistogramTests
 	}
 
 	[TestMethod]
-	public void Extremes_ClampIntoEndBuckets()
+	public void Extremes_OutOfRangeAreSkipped_ExactMaxCountsInLastBucket()
 	{
-		// Below min and at/above max both land in the first/last bucket rather than overflowing.
+		// Values strictly outside [min, max] are skipped so they don't inflate the edge buckets;
+		// exact-max (1.0) still counts in the last bucket.
 		RegulationTrailPoint[] trail = [Point(-2.0), Point(1.0), Point(5.0)];
 		var hist = RegulationFieldHistogram.IndexAxis(trail, bucketCount: 4);
-		Assert.AreEqual(1, hist.Counts[0], "value below min clamps into the first bucket");
-		Assert.AreEqual(2, hist.Counts[^1], "max and above-max clamp into the last bucket");
-		Assert.AreEqual(3, hist.TotalCount);
+		Assert.AreEqual(0, hist.Counts[0], "below-min is skipped, not counted in first bucket");
+		Assert.AreEqual(1, hist.Counts[^1], "exact max lands in last bucket");
+		Assert.AreEqual(1, hist.TotalCount, "only the in-range point (1.0) counts");
 	}
 
 	[TestMethod]
@@ -140,16 +141,15 @@ public class RegulationFieldHistogramTests
 	}
 
 	[TestMethod]
-	public void FieldDensity_SkipsNonFiniteAndClampsOutOfRange()
+	public void FieldDensity_SkipsNonFiniteAndOutOfRange()
 	{
 		RegulationTrailPoint[] trail =
 		[
 			Point(double.NaN, vagalTone: 0.5),  // skipped (non-finite index)
-			Point(5.0, vagalTone: 2.0),          // both out of range → clamps into top-right cell
+			Point(5.0, vagalTone: 2.0),          // both out of axis range → skipped, not inflating edge cell
 		];
 		var d = RegulationFieldHistogram.FieldDensity(trail, xBuckets: 2, yBuckets: 2);
-		Assert.AreEqual(1, d.TotalCount);
-		Assert.AreEqual(1, d.Count(1, 1), "above-max index and tone clamp into the last cell");
+		Assert.AreEqual(0, d.TotalCount, "out-of-range readings are skipped, not clamped into edge cells");
 	}
 
 	[TestMethod]

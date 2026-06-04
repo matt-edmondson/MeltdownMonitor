@@ -28,7 +28,8 @@ public static class RegulationFieldHistogram
 	/// <summary>
 	/// Joint dwell density (X = arousal index, Y = vagal tone) across the trail window — the 2D
 	/// distribution behind <see cref="IndexAxis"/> and <see cref="VagalToneAxis"/>. Non-finite
-	/// readings are skipped; out-of-range values clamp into the edge cells.
+	/// readings and values outside the axis ranges are skipped; only readings within the visible
+	/// field boundaries contribute, so extreme (off-chart) values do not inflate the edge cells.
 	/// </summary>
 	public static RegulationFieldDensity FieldDensity(
 		IReadOnlyList<RegulationTrailPoint> trail, int xBuckets = DefaultBucketCount, int yBuckets = DefaultBucketCount)
@@ -48,8 +49,13 @@ public static class RegulationFieldHistogram
 				continue;
 			}
 
-			int bx = Math.Clamp((int)Math.Floor((r.Index - IndexMin) / xSpan * xBuckets), 0, xBuckets - 1);
-			int by = Math.Clamp((int)Math.Floor((r.VagalTone - VagalToneMin) / ySpan * yBuckets), 0, yBuckets - 1);
+			if (r.Index < IndexMin || r.Index > IndexMax || r.VagalTone < VagalToneMin || r.VagalTone > VagalToneMax)
+			{
+				continue;
+			}
+
+			int bx = Math.Min((int)Math.Floor((r.Index - IndexMin) / xSpan * xBuckets), xBuckets - 1);
+			int by = Math.Min((int)Math.Floor((r.VagalTone - VagalToneMin) / ySpan * yBuckets), yBuckets - 1);
 			counts[(by * xBuckets) + bx]++;
 		}
 
@@ -71,15 +77,13 @@ public static class RegulationFieldHistogram
 		for (int i = 0; i < trail.Count; i++)
 		{
 			double value = selector(trail[i]);
-			if (!double.IsFinite(value))
+			if (!double.IsFinite(value) || value < min || value > max)
 			{
 				continue;
 			}
 
-			// Map the value onto a bucket index; out-of-range and exact-max values clamp into
-			// [0, bucketCount-1] so a reading sitting on the upper edge still counts.
-			int bucket = (int)Math.Floor((value - min) / span * bucketCount);
-			bucket = Math.Clamp(bucket, 0, bucketCount - 1);
+			// Exact-max maps to bucketCount; clamp it into the last bucket.
+			int bucket = Math.Min((int)Math.Floor((value - min) / span * bucketCount), bucketCount - 1);
 			counts[bucket]++;
 		}
 

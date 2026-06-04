@@ -44,11 +44,13 @@ public class RegulationFieldCalculatorTests
 	}
 
 	[TestMethod]
-	public void SevereActivation_IndexSaturatesToOne()
+	public void SevereActivation_IndexExceedsDisplayRange()
 	{
-		// RMSSD 60% below, HR 40% above — well past Warning.
+		// RMSSD 60% below, HR 40% above — well past Warning. Index is not clamped so it
+		// exceeds the ±1 display range; the marker and heatmap clip it, but the raw value
+		// is preserved so extreme readings don't pile up in the edge histogram bucket.
 		var r = RegulationFieldCalculator.Compute(Sample(20, 98), Thresholds, 1, true);
-		Assert.AreEqual(1.0, r.Index, 0.001);
+		Assert.IsTrue(r.Index > 1.0, $"expected index > 1 for severe activation, got {r.Index}");
 	}
 
 	[TestMethod]

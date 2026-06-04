@@ -302,8 +302,9 @@ public sealed class RegulationFieldView : IDisposable
 		// Live two-tone trace at the Poincaré-shaped height, textured with the real signal.
 		var live = LemniscateGeometry.Polyline(centre, halfWidth, liveLobeHeight, _pipeline.LobeSegments);
 		float[] dev = BuildRrDeviations(rr);
-		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * LobeSwellFactor);
-		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * LobeSwellFactor);
+		float clampedIndex = Math.Clamp((float)r.Index, -1f, 1f);
+		float warmSwell = 1f + (MathF.Max(0f, clampedIndex) * LobeSwellFactor);
+		float coolSwell = 1f + (MathF.Max(0f, -clampedIndex) * LobeSwellFactor);
 		float baseThick = (4f + (6f * (float)r.VariabilityQuality)) * (float)_pipeline.LobeThickness * _drawScale;
 		// The lobes are drawn additively (below), so overlapping strokes bloom; scale the trace
 		// alpha by the user's lobe-opacity knob to keep them from saturating to white.
