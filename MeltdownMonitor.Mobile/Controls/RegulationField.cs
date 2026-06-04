@@ -34,6 +34,11 @@ public sealed class RegulationField : Control
 	// the way a 60 fps loop would on a phone that stays on this screen.
 	private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(33);
 
+	// Vagal-tone half-travel as a fraction of lobe height: the marker (and its trail / the
+	// Y-axis histogram) ride from FRAGILE at the top to STEADY at the bottom across ±this.
+	// Matches the desktop RegulationFieldView.MarkerYSpan.
+	private const float MarkerYSpan = 0.92f;
+
 	private readonly RegulationFieldAnimator _animator = new();
 	private readonly Stopwatch _clock = new();
 	private DispatcherTimer? _timer;
@@ -268,9 +273,9 @@ public sealed class RegulationField : Control
 			DrawDashedVertical(context, centre.X - warnOff, topY, botY, Brush(Sky, 0.28 * confidence), 1, 4, 3);
 		}
 
-		DrawTrail(context, centreV, halfWidth, confidence);
+		DrawTrail(context, centreV, halfWidth, lobeHeight, confidence);
 		DrawRecoveryTarget(context, centreV, halfWidth, lobeHeight, confidence);
-		DrawMarker(context, centreV, halfWidth, confidence);
+		DrawMarker(context, centreV, halfWidth, lobeHeight, confidence);
 
 		// Crossover node at the centre of the figure-8.
 		context.DrawEllipse(Brush(Lavender, confidence), null, centre, 6, 6);
@@ -428,7 +433,9 @@ public sealed class RegulationField : Control
 			}
 		}
 
-		// Y axis (vagal tone), on the left margin, bars growing rightward.
+		// Y axis (vagal tone), on the left margin, bars growing rightward. Endpoints follow the
+		// marker's vagal-tone travel (FRAGILE at tone 0 on top, STEADY at tone 1 below), so each
+		// bar sits at the exact height the marker rides for the tone its bucket counts.
 		if (yHist.PeakCount > 0)
 		{
 			double axisX = 4;
@@ -436,8 +443,9 @@ public sealed class RegulationField : Control
 			if (maxW > 1)
 			{
 				int n = yHist.BucketCount;
-				double span = lobeHeight * 0.8;
-				double topY = centre.Y - span;
+				float markerYClamp = lobeHeight * MarkerYSpan;
+				double topY = centre.Y + RegulationFieldGeometry.VagalToneOffsetY(0.0, markerYClamp);
+				double span = markerYClamp;
 				double slot = (2 * span) / n;
 				double barH = Math.Max(1.0, slot - 1.5);
 				context.DrawLine(axisPen, new Point(axisX, topY), new Point(axisX, centre.Y + span));
@@ -457,7 +465,7 @@ public sealed class RegulationField : Control
 		}
 	}
 
-	private void DrawTrail(DrawingContext context, Vector2 centre, float halfWidth, double confidence)
+	private void DrawTrail(DrawingContext context, Vector2 centre, float halfWidth, float lobeHeight, double confidence)
 	{
 		var trail = Trail;
 		if (trail is null || trail.Count < 2)
@@ -465,11 +473,16 @@ public sealed class RegulationField : Control
 			return;
 		}
 
+		float markerYClamp = lobeHeight * MarkerYSpan;
+
 		// Oldest faint → newest bright, ending just behind the marker.
 		for (int i = 0; i < trail.Count - 1; i++)
 		{
 			double frac = i / (double)(trail.Count - 1);
 			Vector2 p = LemniscateGeometry.MarkerPoint((float)trail[i].Reading.Index, centre, halfWidth);
+			// Y encodes vagal tone (FRAGILE up / STEADY down), matching the live marker so the
+			// comet records the marker's true 2D path — not just its horizontal arousal travel.
+			p.Y += RegulationFieldGeometry.VagalToneOffsetY(trail[i].Reading.VagalTone, markerYClamp);
 			double radius = 1.5 + (3.0 * frac);
 			// Each point keeps the colour of the state it was captured under, so the trail
 			// records the journey through states rather than recolouring to the current one.
@@ -541,11 +554,14 @@ public sealed class RegulationField : Control
 		}
 	}
 
-	private void DrawMarker(DrawingContext context, Vector2 centre, float halfWidth, double confidence)
+	private void DrawMarker(DrawingContext context, Vector2 centre, float halfWidth, float lobeHeight, double confidence)
 	{
 		// Eased position glides between the multi-second samples; the halo
 		// pulses at the current HR cadence (RegulationFieldAnimator).
 		Vector2 p = LemniscateGeometry.MarkerPoint((float)_animator.MarkerPos, centre, halfWidth);
+		// Y encodes vagal tone: grounded/low (STEADY) when HRV is healthy, lifted toward
+		// FRAGILE as it collapses — the same vertical mapping as the desktop marker.
+		p.Y += RegulationFieldGeometry.VagalToneOffsetY(Reading.VagalTone, lobeHeight * MarkerYSpan);
 		var at = P(p);
 		double halo = 14 * _animator.HaloPulse;
 		context.DrawEllipse(Brush(StateColor, 0.18 * confidence), null, at, halo, halo); // halo
