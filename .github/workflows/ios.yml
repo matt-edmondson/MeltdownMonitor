@@ -92,26 +92,26 @@ jobs:
         with:
           dotnet-version: "10.0.2xx"
 
-      # The .NET 10 iOS workload requires an EXACT Xcode version match, not a
-      # minimum (a 26.2 workload refuses to build under Xcode 26.3). The install
-      # step pins the iOS workload to 26.2, so we select Xcode 26.2 here.
+      # The .NET 10 iOS workload requires an EXACT Xcode version match — and
+      # the workload's version number is NOT the Xcode version. CI proved the
+      # mapping: workload 26.0.11017 needs Xcode 26.0, while the workload we
+      # pin, 26.2.10233, needs Xcode 26.3. So we select Xcode 26.3 here.
       #
-      # Why >= 26.2 at all: SkiaSharp 3.119.x — pulled in by Avalonia.Skia
-      # 12.0.4 — ships its .NET 10 iOS assembly only as net10.0-ios26.2.
-      # Building against an older iOS SDK (e.g. the 26.0 band default) makes
-      # NuGet silently fall back to SkiaSharp's net9.0-ios18.0 build, whose
-      # native libSkiaSharp.framework is NOT loaded on device, so the app
-      # crashes at launch with `DllNotFoundException: libSkiaSharp`. 26.2 is the
-      # lowest workload that satisfies this and has a matching Xcode on the
-      # runner — there is no 26.3 .NET iOS workload (the manifests jump
-      # 26.2 -> 26.4), and 26.4/26.5 need an Xcode the runner doesn't carry.
-      # The "Verify native frameworks" step guards against a regression.
-      - name: Select matching Xcode (26.2)
+      # Why pin the 26.2 workload at all: SkiaSharp 3.119.x — pulled in by
+      # Avalonia.Skia 12.0.4 — ships its .NET 10 iOS assembly only as
+      # net10.0-ios26.2. The band default workload (26.0) builds net10.0-ios26.0,
+      # so NuGet silently falls back to SkiaSharp's net9.0-ios18.0 build, whose
+      # native libSkiaSharp.framework is NOT loaded on device — the app then
+      # crashes at launch with `DllNotFoundException: libSkiaSharp`. The 26.2
+      # workload builds net10.0-ios26.2 and resolves SkiaSharp's matching assets
+      # + framework. The "Verify native frameworks" step guards against a
+      # regression.
+      - name: Select matching Xcode (26.3)
         run: |
           set -e
-          CANDIDATES=$(ls -d /Applications/Xcode_26.2*.app 2>/dev/null | sort -V)
+          CANDIDATES=$(ls -d /Applications/Xcode_26.3*.app 2>/dev/null | sort -V)
           if [ -z "$CANDIDATES" ]; then
-            echo "::error title=Xcode 26.2 not on runner::The pinned iOS workload (26.2) requires Xcode 26.2. Available Xcodes on this runner:"
+            echo "::error title=Xcode 26.3 not on runner::The pinned iOS workload (26.2.10233) requires Xcode 26.3. Available Xcodes on this runner:"
             ls -d /Applications/Xcode_*.app 2>/dev/null || echo "  (none)"
             exit 1
           fi
@@ -265,18 +265,18 @@ jobs:
         with:
           dotnet-version: "10.0.2xx"
 
-      # Match the build-test job exactly. The pinned iOS workload (26.2) requires
-      # an EXACT Xcode match (26.2 — see the build-test job for why SkiaSharp
-      # forces the iOS SDK to >= 26.2), and build-test is the toolchain PR CI
-      # actually validates. Selecting "latest" here risked a workload/Xcode
+      # Match the build-test job exactly. The pinned iOS workload (26.2.10233)
+      # requires an EXACT Xcode match (26.3 — see the build-test job for why
+      # SkiaSharp forces the 26.2 workload), and build-test is the toolchain PR
+      # CI actually validates. Selecting "latest" here risked a workload/Xcode
       # mismatch that only ever surfaced on a release tag — long after a
       # contributor could catch it.
-      - name: Select matching Xcode (26.2)
+      - name: Select matching Xcode (26.3)
         run: |
           set -e
-          CANDIDATES=$(ls -d /Applications/Xcode_26.2*.app 2>/dev/null | sort -V)
+          CANDIDATES=$(ls -d /Applications/Xcode_26.3*.app 2>/dev/null | sort -V)
           if [ -z "$CANDIDATES" ]; then
-            echo "::error title=Xcode 26.2 not on runner::The pinned iOS workload (26.2) requires Xcode 26.2. Available Xcodes on this runner:"
+            echo "::error title=Xcode 26.3 not on runner::The pinned iOS workload (26.2.10233) requires Xcode 26.3. Available Xcodes on this runner:"
             ls -d /Applications/Xcode_*.app 2>/dev/null || echo "  (none)"
             exit 1
           fi
