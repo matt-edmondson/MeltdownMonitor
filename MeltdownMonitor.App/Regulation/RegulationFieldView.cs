@@ -215,7 +215,7 @@ public sealed class RegulationFieldView : IDisposable
 		DrawLfHfHalo(draw, centre, halfWidth, disp, confidence);
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
 		DrawShutdownZone(draw, centre, halfWidth, baseLobeHeight, disp, confidence);
-		DrawVagalAxis(draw, centre, markerYClamp, confidence);
+		DrawVagalAxis(draw, centre, halfWidth, markerYClamp, confidence);
 		DrawAxisHistograms(draw, origin, centre, halfWidth, labelClearHeight, markerYClamp, height, trail, confidence);
 		DrawDensityHeatmap(draw, centre, halfWidth, markerYClamp, trail, confidence);
 		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, _playhead.Position, beatsAppended, confidence);
@@ -712,8 +712,10 @@ public sealed class RegulationFieldView : IDisposable
 	}
 
 	// Vertical-axis legend for the marker's Y dimension (vagal tone / HRV amount): the marker
-	// rides low when HRV is healthy (steady) and lifts as it collapses (fragile).
-	private void DrawVagalAxis(ImDrawListPtr draw, Vector2 centre, float markerYClamp, float confidence)
+	// rides low when HRV is healthy (steady) and lifts as it collapses (fragile). Also draws the
+	// ±WarningBoundaryIndex threshold lines — dashed, on-field vertical markers the moving
+	// marker/trail cross on the way in and out of the warning zone.
+	private void DrawVagalAxis(ImDrawListPtr draw, Vector2 centre, float halfWidth, float markerYClamp, float confidence)
 	{
 		uint axis = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Overlay1, 0.22f * confidence));
 		uint label = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Subtext0, 0.8f * confidence));
@@ -724,6 +726,18 @@ public sealed class RegulationFieldView : IDisposable
 		float topY = centre.Y + VagalToneOffsetY(0.0, markerYClamp);
 		float botY = centre.Y + VagalToneOffsetY(1.0, markerYClamp);
 		draw.AddLine(new Vector2(centre.X, topY), new Vector2(centre.X, botY), axis, 1f * _drawScale);
+
+		// Warning threshold lines: dashed verticals at ±WarningBoundaryIndex, same span as the
+		// vagal axis, so the marker and trail visibly cross them as arousal rises/falls.
+		float warnOff = (float)(RegulationFieldCalculator.WarningBoundaryIndex * halfWidth);
+		float dash = 4f * _drawScale;
+		float gap = 3f * _drawScale;
+		float thick = 1f * _drawScale;
+		uint warmWarn = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Peach, 0.28f * confidence));
+		uint coolWarn = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Sky, 0.28f * confidence));
+		uint warnShadow = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Mantle, 0.18f * confidence));
+		DrawDashedLine(draw, new Vector2(centre.X + warnOff, topY), new Vector2(centre.X + warnOff, botY), warmWarn, warnShadow, thick, dash, gap);
+		DrawDashedLine(draw, new Vector2(centre.X - warnOff, topY), new Vector2(centre.X - warnOff, botY), coolWarn, warnShadow, thick, dash, gap);
 
 		Vector2 fr = ImGui.CalcTextSize("FRAGILE");
 		Vector2 st = ImGui.CalcTextSize("STEADY");
@@ -975,6 +989,7 @@ public sealed class RegulationFieldView : IDisposable
 		// The axis range is dynamic: always at least [-1, 1] but expands when extreme index
 		// values are present, so meltdown samples get their own buckets rather than stacking
 		// at the edge. Pixel mapping: index=0 → centre.X, scale = halfWidth per unit.
+		if (xHist.PeakCount > 0)
 		{
 			float baseY = centre.Y + lobeClearHeight + (16f * _drawScale);
 			float maxH = MathF.Max(0f, MathF.Min(22f * _drawScale, (origin.Y + height - 26f) - baseY));
@@ -987,59 +1002,30 @@ public sealed class RegulationFieldView : IDisposable
 				float slot = totalW / n;
 				float barW = MathF.Max(1f, slot - (1.5f * _drawScale));
 				draw.AddLine(new Vector2(histLeft, baseY), new Vector2(histRight, baseY), axisCol, 1f * _drawScale);
-
-				if (xHist.PeakCount > 0)
+				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+				for (int b = 0; b < n; b++)
 				{
-					ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
-					for (int b = 0; b < n; b++)
+					int c = xHist.Counts[b];
+					if (c == 0)
 					{
-						int c = xHist.Counts[b];
-						if (c == 0)
-						{
-							continue;
-						}
-
-						float bx = histLeft + ((b + 0.5f) * slot);
-						Vector4 hue = bx >= centre.X ? MacchiatoPalette.Peach : MacchiatoPalette.Sky;
-						uint col = Col(MacchiatoPalette.WithAlpha(hue, barAlpha));
-						float bh = maxH * (c / (float)xHist.PeakCount);
-						draw.AddRectFilled(new Vector2(bx - (barW * 0.5f), baseY), new Vector2(bx + (barW * 0.5f), baseY + bh), col);
+						continue;
 					}
 
-					ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
+					float bx = histLeft + ((b + 0.5f) * slot);
+					Vector4 hue = bx >= centre.X ? MacchiatoPalette.Peach : MacchiatoPalette.Sky;
+					uint col = Col(MacchiatoPalette.WithAlpha(hue, barAlpha));
+					float bh = maxH * (c / (float)xHist.PeakCount);
+					draw.AddRectFilled(new Vector2(bx - (barW * 0.5f), baseY), new Vector2(bx + (barW * 0.5f), baseY + bh), col);
 				}
 
-				// Warning threshold: dashed vertical line at ±WarningBoundaryIndex (0.6).
-				// Drawn at whichever sides have valid data in the visible range.
-				float warnOff = (float)(RegulationFieldCalculator.WarningBoundaryIndex * halfWidth);
-				uint warnCol = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Peach, 0.45f * confidence));
-				uint warnShadow = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Mantle, 0.3f * confidence));
-				float warnDash = 4f * _drawScale;
-				float warnGap = 3f * _drawScale;
-				float warnThick = 1f * _drawScale;
-				if (xHist.Max > 0)
-				{
-					DrawDashedLine(draw,
-						new Vector2(centre.X + warnOff, baseY - (2f * _drawScale)),
-						new Vector2(centre.X + warnOff, baseY + maxH),
-						warnCol, warnShadow, warnThick, warnDash, warnGap);
-				}
-
-				if (xHist.Min < 0)
-				{
-					uint coolWarnCol = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Sky, 0.45f * confidence));
-					DrawDashedLine(draw,
-						new Vector2(centre.X - warnOff, baseY - (2f * _drawScale)),
-						new Vector2(centre.X - warnOff, baseY + maxH),
-						coolWarnCol, warnShadow, warnThick, warnDash, warnGap);
-				}
+				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 
 				// Recovery arrows: during Warning/Alerting, cascade-pulse left-pointing triangles
 				// between the centre and the warm-side warning line. The wave flows threshold→centre
 				// (right→left) to read as "aim here" guidance toward the regulated zone.
 				if (_pipeline.CurrentState is DetectorState.Warning or DetectorState.Alerting)
 				{
-					float warnX = centre.X + warnOff;
+					float warnX = centre.X + (float)(RegulationFieldCalculator.WarningBoundaryIndex * halfWidth);
 					float zoneW = warnX - centre.X;
 					float spacing = zoneW / 4f;
 					float arrowW = MathF.Max(5f, 7f * _drawScale);

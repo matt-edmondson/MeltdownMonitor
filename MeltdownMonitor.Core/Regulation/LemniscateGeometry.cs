@@ -29,7 +29,7 @@ public static class LemniscateGeometry
 	/// (right) tip. Depth, not orbit.
 	/// </summary>
 	public static Vector2 MarkerPoint(float index, Vector2 centre, float halfWidth)
-		=> new(centre.X + (Math.Clamp(index, -1f, 1f) * halfWidth), centre.Y);
+		=> new(centre.X + (index * halfWidth), centre.Y);
 
 	/// <summary>
 	/// Samples the lemniscate outline as a closed polyline of <paramref name="segments"/>
