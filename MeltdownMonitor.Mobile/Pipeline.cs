@@ -295,6 +295,20 @@ public sealed class Pipeline : IDisposable
 		}
 	}
 
+	// Push user tuning into the calculator and baseline tracker, re-read per beat so a
+	// Settings edit applies live (mirrors the desktop Pipeline.ApplyTuning, scoped to the
+	// knobs MobileSettings exposes). The baseline alpha is re-derived from the emit cadence
+	// against the default memory window, so changing the cadence keeps the baseline's
+	// ~15-minute memory rather than silently stretching or shrinking it.
+	private static readonly double BaselineWindowSeconds = new BaselineTuning().RmssdHrWindowMinutes * 60.0;
+
+	private void ApplyTuning()
+	{
+		double emit = Math.Clamp(_settings.HrvEmitIntervalSeconds, 0.5, 30.0);
+		_hrv.EmitIntervalSeconds = emit;
+		_baseline.RmssdHrAlpha = Math.Clamp(emit / BaselineWindowSeconds, 0.0001, 1.0);
+	}
+
 	private async Task RunAsync(CancellationToken cancellationToken)
 	{
 		await foreach (var beat in _source.GetBeatsAsync(cancellationToken).ConfigureAwait(false))
@@ -307,6 +321,7 @@ public sealed class Pipeline : IDisposable
 			_repository.InsertBeat(beat);
 			BeatReceived?.Invoke(beat);
 
+			ApplyTuning();
 			var sample = _hrv.AddBeat(
 				beat,
 				_baseline.BaselineRmssd,
