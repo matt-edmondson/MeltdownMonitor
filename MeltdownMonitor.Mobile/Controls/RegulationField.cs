@@ -400,12 +400,20 @@ public sealed class RegulationField : Control
 		DrawTrace(context, ghost, centreV, halfWidth, reading, confidence);
 		DrawAxisHistograms(context, centre, w, h, halfWidth, lobeHeight, confidence);
 
-		// Warning threshold dashed lines on the field: vertical markers at ±WarningBoundaryIndex
-		// (0.6) that the moving marker/trail crosses as arousal rises or falls.
+		// Vagal axis + warning threshold lines. The vertical legend brackets the marker's
+		// vagal-tone travel (FRAGILE at the top extent, STEADY at the bottom) so the Y motion
+		// reads; the dashed verticals at ±WarningBoundaryIndex are the lines the marker/trail
+		// visibly cross on the way in and out of the warning zone. Mirrors the desktop DrawVagalAxis.
 		{
+			float markerYClamp = lobeHeight * MarkerYSpan;
+			double topY = centre.Y + RegulationFieldGeometry.VagalToneOffsetY(0.0, markerYClamp);
+			double botY = centre.Y + RegulationFieldGeometry.VagalToneOffsetY(1.0, markerYClamp);
+			context.DrawLine(new Pen(Brush(Overlay1, 0.22 * confidence), 1),
+				new Point(centre.X, topY), new Point(centre.X, botY));
+			DrawText(context, "FRAGILE", new Point(centre.X, topY - 16), Subtext0, 10, centred: true);
+			DrawText(context, "STEADY", new Point(centre.X, botY + 2), Subtext0, 10, centred: true);
+
 			double warnOff = RegulationFieldCalculator.WarningBoundaryIndex * halfWidth;
-			double topY = centre.Y - (lobeHeight * 0.92);
-			double botY = centre.Y + (lobeHeight * 0.92);
 			DrawDashedVertical(context, centre.X + warnOff, topY, botY, Brush(Peach, 0.28 * confidence), 1, 4, 3);
 			DrawDashedVertical(context, centre.X - warnOff, topY, botY, Brush(Sky, 0.28 * confidence), 1, 4, 3);
 		}
