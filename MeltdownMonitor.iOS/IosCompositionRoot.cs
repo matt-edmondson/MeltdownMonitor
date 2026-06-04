@@ -122,7 +122,16 @@ public static class IosCompositionRoot
 			lobeThicknessProvider: () => settings.LobeThickness,
 			indexBucketsProvider: () => settings.FieldIndexBuckets,
 			vagalBucketsProvider: () => settings.FieldVagalBuckets,
-			lobeSegmentsProvider: () => settings.LobeSegments);
+			lobeSegmentsProvider: () => settings.LobeSegments,
+			heatmapLengthProvider: () => settings.RegulationHeatmapLength,
+			lobeOpacityProvider: () => settings.LobeOpacity,
+			trailOpacityProvider: () => settings.TrailOpacity,
+			histogramOpacityProvider: () => settings.HistogramOpacity,
+			heatmapOpacityProvider: () => settings.HeatmapOpacity,
+			heatmapPeakOpacityProvider: () => settings.HeatmapPeakOpacity,
+			heatmapRegionOpacityProvider: () => settings.HeatmapRegionOpacity,
+			heatmapRegionThresholdProvider: () => settings.HeatmapRegionThreshold,
+			useLfHfCorroborationProvider: () => settings.Thresholds.UseLfHfCorroboration);
 		_history = new HistoryViewModel();
 		_metrics = new MetricsViewModel(
 			windowMinutesProvider: () => settings.SparklineWindowMinutes,

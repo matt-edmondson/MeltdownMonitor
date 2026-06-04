@@ -43,6 +43,14 @@ public sealed class NowViewModel : ViewModelBase
 	private readonly Func<int>? _indexBucketsProvider;
 	private readonly Func<int>? _vagalBucketsProvider;
 	private readonly Func<int>? _lobeSegmentsProvider;
+	private readonly Func<double>? _lobeOpacityProvider;
+	private readonly Func<double>? _trailOpacityProvider;
+	private readonly Func<double>? _histogramOpacityProvider;
+	private readonly Func<double>? _heatmapOpacityProvider;
+	private readonly Func<double>? _heatmapPeakOpacityProvider;
+	private readonly Func<double>? _heatmapRegionOpacityProvider;
+	private readonly Func<double>? _heatmapRegionThresholdProvider;
+	private readonly Func<bool>? _useLfHfCorroborationProvider;
 	private Func<bool>? _coldCalibratedProvider;
 
 	private DetectorState _state = DetectorState.Idle;
@@ -70,6 +78,14 @@ public sealed class NowViewModel : ViewModelBase
 	private int _indexBuckets = 24;
 	private int _vagalBuckets = 16;
 	private int _lobeSegments = LemniscateGeometry.DefaultSegments;
+	private double _lobeOpacity = 0.60;
+	private double _trailOpacity = 0.70;
+	private double _histogramOpacity = 0.60;
+	private double _heatmapOpacity = 0.35;
+	private double _heatmapPeakOpacity = 0.70;
+	private double _heatmapRegionOpacity = 0.55;
+	private double _heatmapRegionThreshold = 0.50;
+	private bool _useLfHfCorroboration = true;
 
 	public NowViewModel(
 		Func<Task>? onConnect = null,
@@ -81,7 +97,15 @@ public sealed class NowViewModel : ViewModelBase
 		Func<int>? indexBucketsProvider = null,
 		Func<int>? vagalBucketsProvider = null,
 		Func<int>? lobeSegmentsProvider = null,
-		Func<int>? heatmapLengthProvider = null)
+		Func<int>? heatmapLengthProvider = null,
+		Func<double>? lobeOpacityProvider = null,
+		Func<double>? trailOpacityProvider = null,
+		Func<double>? histogramOpacityProvider = null,
+		Func<double>? heatmapOpacityProvider = null,
+		Func<double>? heatmapPeakOpacityProvider = null,
+		Func<double>? heatmapRegionOpacityProvider = null,
+		Func<double>? heatmapRegionThresholdProvider = null,
+		Func<bool>? useLfHfCorroborationProvider = null)
 	{
 		_onConnect = onConnect;
 		_onDisconnect = onDisconnect;
@@ -93,6 +117,14 @@ public sealed class NowViewModel : ViewModelBase
 		_indexBucketsProvider = indexBucketsProvider;
 		_vagalBucketsProvider = vagalBucketsProvider;
 		_lobeSegmentsProvider = lobeSegmentsProvider;
+		_lobeOpacityProvider = lobeOpacityProvider;
+		_trailOpacityProvider = trailOpacityProvider;
+		_histogramOpacityProvider = histogramOpacityProvider;
+		_heatmapOpacityProvider = heatmapOpacityProvider;
+		_heatmapPeakOpacityProvider = heatmapPeakOpacityProvider;
+		_heatmapRegionOpacityProvider = heatmapRegionOpacityProvider;
+		_heatmapRegionThresholdProvider = heatmapRegionThresholdProvider;
+		_useLfHfCorroborationProvider = useLfHfCorroborationProvider;
 		ToggleConnectionCommand = new RelayCommand(ToggleConnection);
 		OpenAnnotationCommand = new RelayCommand(() => IsAnnotationSheetOpen = true);
 		CancelAnnotationCommand = new RelayCommand(CloseAnnotationSheet);
@@ -258,6 +290,64 @@ public sealed class NowViewModel : ViewModelBase
 	{
 		get => _lobeSegments;
 		private set => SetField(ref _lobeSegments, value);
+	}
+
+	/// <summary>Configured opacity of the live-trace lobes (0–1, additive). Refreshed on each
+	/// reading so a setting change applies live, like the other field knobs.</summary>
+	public double LobeOpacity
+	{
+		get => _lobeOpacity;
+		private set => SetField(ref _lobeOpacity, value);
+	}
+
+	/// <summary>Configured opacity of the comet trail (0–1, additive). Refreshed on each reading.</summary>
+	public double TrailOpacity
+	{
+		get => _trailOpacity;
+		private set => SetField(ref _trailOpacity, value);
+	}
+
+	/// <summary>Configured opacity of the axis histograms (0–1, additive). Refreshed on each reading.</summary>
+	public double HistogramOpacity
+	{
+		get => _histogramOpacity;
+		private set => SetField(ref _histogramOpacity, value);
+	}
+
+	/// <summary>Configured overall opacity of the dwell heatmap (0–1). Refreshed on each reading.</summary>
+	public double HeatmapOpacity
+	{
+		get => _heatmapOpacity;
+		private set => SetField(ref _heatmapOpacity, value);
+	}
+
+	/// <summary>Configured opacity of the peak-dwell crosshair (0–1). Refreshed on each reading.</summary>
+	public double HeatmapPeakOpacity
+	{
+		get => _heatmapPeakOpacity;
+		private set => SetField(ref _heatmapPeakOpacity, value);
+	}
+
+	/// <summary>Configured opacity of the dashed high-density region box (0–1). Refreshed on each reading.</summary>
+	public double HeatmapRegionOpacity
+	{
+		get => _heatmapRegionOpacity;
+		private set => SetField(ref _heatmapRegionOpacity, value);
+	}
+
+	/// <summary>Configured peak-share threshold for the dashed region (0–1). Refreshed on each reading.</summary>
+	public double HeatmapRegionThreshold
+	{
+		get => _heatmapRegionThreshold;
+		private set => SetField(ref _heatmapRegionThreshold, value);
+	}
+
+	/// <summary>Mirrors DetectionThresholds.UseLfHfCorroboration — gates the field's LF/HF
+	/// balance halo. Refreshed on each reading.</summary>
+	public bool UseLfHfCorroboration
+	{
+		get => _useLfHfCorroboration;
+		private set => SetField(ref _useLfHfCorroboration, value);
 	}
 
 	/// <summary>The detector-state accent the field's marker and trail take.</summary>
@@ -681,6 +771,14 @@ public sealed class NowViewModel : ViewModelBase
 		LobeSegments = Math.Clamp(
 			_lobeSegmentsProvider?.Invoke() ?? LemniscateGeometry.DefaultSegments,
 			LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments);
+		LobeOpacity = Math.Clamp(_lobeOpacityProvider?.Invoke() ?? 0.60, 0.0, 1.0);
+		TrailOpacity = Math.Clamp(_trailOpacityProvider?.Invoke() ?? 0.70, 0.0, 1.0);
+		HistogramOpacity = Math.Clamp(_histogramOpacityProvider?.Invoke() ?? 0.60, 0.0, 1.0);
+		HeatmapOpacity = Math.Clamp(_heatmapOpacityProvider?.Invoke() ?? 0.35, 0.0, 1.0);
+		HeatmapPeakOpacity = Math.Clamp(_heatmapPeakOpacityProvider?.Invoke() ?? 0.70, 0.0, 1.0);
+		HeatmapRegionOpacity = Math.Clamp(_heatmapRegionOpacityProvider?.Invoke() ?? 0.55, 0.0, 1.0);
+		HeatmapRegionThreshold = Math.Clamp(_heatmapRegionThresholdProvider?.Invoke() ?? 0.50, 0.0, 1.0);
+		UseLfHfCorroboration = _useLfHfCorroborationProvider?.Invoke() ?? true;
 	});
 
 	/// <summary>
