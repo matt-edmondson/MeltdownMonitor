@@ -92,32 +92,43 @@ jobs:
         with:
           dotnet-version: "10.0.2xx"
 
-      # The .NET 10 iOS workload requires an EXACT Xcode version match, not a
-      # minimum (a 26.2 workload refuses to build under Xcode 26.3). The install
-      # step pins the iOS workload to 26.2, so we select Xcode 26.2 here.
+      # The .NET 10 iOS workload requires an EXACT Xcode version match — and the
+      # workload's version number is NOT the Xcode version. CI proved it: the
+      # pinned workload 26.2.10233 requires Xcode 26.3 (the band default,
+      # 26.0.11017, requires 26.0). So we select Xcode 26.3 here.
       #
-      # Why >= 26.2 at all: SkiaSharp 3.119.x — pulled in by Avalonia.Skia
-      # 12.0.4 — ships its .NET 10 iOS assembly only as net10.0-ios26.2.
-      # Building against an older iOS SDK (e.g. the 26.0 band default) makes
-      # NuGet silently fall back to SkiaSharp's net9.0-ios18.0 build, whose
-      # native libSkiaSharp.framework is NOT loaded on device, so the app
-      # crashes at launch with `DllNotFoundException: libSkiaSharp`. 26.2 is the
-      # lowest workload that satisfies this and has a matching Xcode on the
-      # runner — there is no 26.3 .NET iOS workload (the manifests jump
-      # 26.2 -> 26.4), and 26.4/26.5 need an Xcode the runner doesn't carry.
+      # Why pin the 26.2 workload: SkiaSharp 3.119.x — pulled in by Avalonia.Skia
+      # 12.0.4 — ships its .NET 10 iOS assembly only as net10.0-ios26.2. The band
+      # default (26.0) builds net10.0-ios26.0, so NuGet silently falls back to
+      # SkiaSharp's net9.0-ios18.0 build, whose native libSkiaSharp.framework is
+      # NOT loaded on device — the app then crashes at launch with
+      # `DllNotFoundException: libSkiaSharp`. The 26.2 workload builds
+      # net10.0-ios26.2 and resolves SkiaSharp's matching assets + framework.
       # The "Verify native frameworks" step guards against a regression.
-      - name: Select matching Xcode (26.2)
+      #
+      # Select the CANONICAL Xcode_26.3.app, not the Xcode_26.3.0.app symlink the
+      # runner also ships: selecting the symlinked Developer dir broke xcrun's
+      # macOS-SDK lookup, so actool (the asset-catalog compiler) wasn't found. We
+      # resolve to the real path and verify the macOS SDK is present first.
+      - name: Select matching Xcode (26.3)
         run: |
           set -e
-          CANDIDATES=$(ls -d /Applications/Xcode_26.2*.app 2>/dev/null | sort -V)
-          if [ -z "$CANDIDATES" ]; then
-            echo "::error title=Xcode 26.2 not on runner::The pinned iOS workload (26.2) requires Xcode 26.2. Available Xcodes on this runner:"
+          PICK=""
+          for x in /Applications/Xcode_26.3.app /Applications/Xcode_26.3*.app; do
+            [ -e "$x" ] || continue
+            REAL=$(readlink -f "$x")
+            if [ -d "$REAL/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk" ]; then
+              PICK="$REAL"; break
+            fi
+          done
+          if [ -z "$PICK" ]; then
+            echo "::error title=No complete Xcode 26.3::The pinned iOS workload (26.2.10233) requires Xcode 26.3 with a macOS SDK. Installed Xcodes:"
             ls -d /Applications/Xcode_*.app 2>/dev/null || echo "  (none)"
             exit 1
           fi
-          XCODE=$(echo "$CANDIDATES" | tail -n 1)
-          sudo xcode-select -s "$XCODE/Contents/Developer"
-          echo "Using $(xcodebuild -version | head -n 1) from $XCODE"
+          sudo xcode-select -s "$PICK/Contents/Developer"
+          echo "Using $(xcodebuild -version | head -n 1) from $PICK"
+          echo "macOS SDK: $(xcrun --sdk macosx --show-sdk-path 2>/dev/null || echo '(not found)')"
 
       # Design doc §14: "fail the build matrix loudly if [the iOS workload
       # is] absent". A silent skip would let the rest of the workflow look
@@ -265,24 +276,29 @@ jobs:
         with:
           dotnet-version: "10.0.2xx"
 
-      # Match the build-test job exactly. The pinned iOS workload (26.2) requires
-      # an EXACT Xcode match (26.2 — see the build-test job for why SkiaSharp
-      # forces the iOS SDK to >= 26.2), and build-test is the toolchain PR CI
-      # actually validates. Selecting "latest" here risked a workload/Xcode
-      # mismatch that only ever surfaced on a release tag — long after a
-      # contributor could catch it.
-      - name: Select matching Xcode (26.2)
+      # Match the build-test job exactly (see it for why the pinned 26.2 workload
+      # needs Xcode 26.3, and why we select the canonical Xcode_26.3.app rather
+      # than the .0 symlink). build-test is the toolchain PR CI actually
+      # validates; a mismatch here would only surface on a release tag.
+      - name: Select matching Xcode (26.3)
         run: |
           set -e
-          CANDIDATES=$(ls -d /Applications/Xcode_26.2*.app 2>/dev/null | sort -V)
-          if [ -z "$CANDIDATES" ]; then
-            echo "::error title=Xcode 26.2 not on runner::The pinned iOS workload (26.2) requires Xcode 26.2. Available Xcodes on this runner:"
+          PICK=""
+          for x in /Applications/Xcode_26.3.app /Applications/Xcode_26.3*.app; do
+            [ -e "$x" ] || continue
+            REAL=$(readlink -f "$x")
+            if [ -d "$REAL/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk" ]; then
+              PICK="$REAL"; break
+            fi
+          done
+          if [ -z "$PICK" ]; then
+            echo "::error title=No complete Xcode 26.3::The pinned iOS workload (26.2.10233) requires Xcode 26.3 with a macOS SDK. Installed Xcodes:"
             ls -d /Applications/Xcode_*.app 2>/dev/null || echo "  (none)"
             exit 1
           fi
-          XCODE=$(echo "$CANDIDATES" | tail -n 1)
-          sudo xcode-select -s "$XCODE/Contents/Developer"
-          echo "Using $(xcodebuild -version | head -n 1) from $XCODE"
+          sudo xcode-select -s "$PICK/Contents/Developer"
+          echo "Using $(xcodebuild -version | head -n 1) from $PICK"
+          echo "macOS SDK: $(xcrun --sdk macosx --show-sdk-path 2>/dev/null || echo '(not found)')"
 
       - name: Install iOS workload 26.2
         run: |
