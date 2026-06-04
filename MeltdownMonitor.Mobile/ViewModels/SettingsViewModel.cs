@@ -253,6 +253,216 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	public double RmssdAlertingDropPercent
+	{
+		get => _settings.Thresholds.RmssdAlertingDropFraction * 100;
+		set
+		{
+			double frac = Math.Clamp(value, 5, 95) / 100;
+			if (Math.Abs(_settings.Thresholds.RmssdAlertingDropFraction - frac) > 1e-6)
+			{
+				_settings.Thresholds = _settings.Thresholds with { RmssdAlertingDropFraction = frac };
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public double WarningHoldSeconds
+	{
+		get => _settings.Thresholds.WarningHoldDuration.TotalSeconds;
+		set
+		{
+			var span = TimeSpan.FromSeconds(Math.Clamp(value, 5, 300));
+			if (_settings.Thresholds.WarningHoldDuration != span)
+			{
+				_settings.Thresholds = _settings.Thresholds with { WarningHoldDuration = span };
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public double AlertingEscalationSeconds
+	{
+		get => _settings.Thresholds.AlertingEscalationDuration.TotalSeconds;
+		set
+		{
+			var span = TimeSpan.FromSeconds(Math.Clamp(value, 10, 600));
+			if (_settings.Thresholds.AlertingEscalationDuration != span)
+			{
+				_settings.Thresholds = _settings.Thresholds with { AlertingEscalationDuration = span };
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public double CooldownMinutes
+	{
+		get => _settings.Thresholds.CooldownDuration.TotalMinutes;
+		set
+		{
+			var span = TimeSpan.FromMinutes(Math.Clamp(value, 1, 60));
+			if (_settings.Thresholds.CooldownDuration != span)
+			{
+				_settings.Thresholds = _settings.Thresholds with { CooldownDuration = span };
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public double LobeOpacityPercent
+	{
+		get => _settings.LobeOpacity * 100;
+		set
+		{
+			double frac = Math.Clamp(value, 0, 100) / 100;
+			if (Math.Abs(_settings.LobeOpacity - frac) > 1e-6)
+			{
+				_settings.LobeOpacity = frac;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public double TrailOpacityPercent
+	{
+		get => _settings.TrailOpacity * 100;
+		set
+		{
+			double frac = Math.Clamp(value, 0, 100) / 100;
+			if (Math.Abs(_settings.TrailOpacity - frac) > 1e-6)
+			{
+				_settings.TrailOpacity = frac;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public double HistogramOpacityPercent
+	{
+		get => _settings.HistogramOpacity * 100;
+		set
+		{
+			double frac = Math.Clamp(value, 0, 100) / 100;
+			if (Math.Abs(_settings.HistogramOpacity - frac) > 1e-6)
+			{
+				_settings.HistogramOpacity = frac;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public double HeatmapOpacityPercent
+	{
+		get => _settings.HeatmapOpacity * 100;
+		set
+		{
+			double frac = Math.Clamp(value, 0, 100) / 100;
+			if (Math.Abs(_settings.HeatmapOpacity - frac) > 1e-6)
+			{
+				_settings.HeatmapOpacity = frac;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public double HeatmapPeakOpacityPercent
+	{
+		get => _settings.HeatmapPeakOpacity * 100;
+		set
+		{
+			double frac = Math.Clamp(value, 0, 100) / 100;
+			if (Math.Abs(_settings.HeatmapPeakOpacity - frac) > 1e-6)
+			{
+				_settings.HeatmapPeakOpacity = frac;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public double HeatmapRegionOpacityPercent
+	{
+		get => _settings.HeatmapRegionOpacity * 100;
+		set
+		{
+			double frac = Math.Clamp(value, 0, 100) / 100;
+			if (Math.Abs(_settings.HeatmapRegionOpacity - frac) > 1e-6)
+			{
+				_settings.HeatmapRegionOpacity = frac;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public double HeatmapRegionThresholdPercent
+	{
+		get => _settings.HeatmapRegionThreshold * 100;
+		set
+		{
+			double frac = Math.Clamp(value, 0, 100) / 100;
+			if (Math.Abs(_settings.HeatmapRegionThreshold - frac) > 1e-6)
+			{
+				_settings.HeatmapRegionThreshold = frac;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public int RegulationHeatmapLength
+	{
+		get => _settings.RegulationHeatmapLength;
+		set
+		{
+			int clamped = Math.Clamp(value, 60, 17280);
+			if (_settings.RegulationHeatmapLength != clamped)
+			{
+				_settings.RegulationHeatmapLength = clamped;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public double HrvEmitIntervalSeconds
+	{
+		get => _settings.HrvEmitIntervalSeconds;
+		set
+		{
+			double clamped = Math.Clamp(value, 0.5, 30.0);
+			if (Math.Abs(_settings.HrvEmitIntervalSeconds - clamped) > 1e-6)
+			{
+				_settings.HrvEmitIntervalSeconds = clamped;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public int SparklineWindowMinutes
+	{
+		get => _settings.SparklineWindowMinutes;
+		set
+		{
+			int clamped = Math.Clamp(value, 1, 360);
+			if (_settings.SparklineWindowMinutes != clamped)
+			{
+				_settings.SparklineWindowMinutes = clamped;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	public string PausedUntilLabel =>
 		_settings.PausedUntil is null
 			? "Not paused"
