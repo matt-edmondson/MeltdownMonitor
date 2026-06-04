@@ -101,6 +101,111 @@
                         Value="{Binding FieldVagalBuckets, Mode=TwoWay}" />
                 <TextBlock Text="Bucket resolution of the vagal-tone histogram. Higher = finer detail; default 16."
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Lobe opacity" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding LobeOpacityPercent, StringFormat='{}{0:F0}%'}" />
+                </Grid>
+                <Slider Minimum="0" Maximum="100"
+                        Value="{Binding LobeOpacityPercent, Mode=TwoWay}" />
+                <TextBlock Text="Opacity of the live-trace lobes. They glow additively and bloom where strokes overlap, so lower this if they saturate. Default 60%."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Trail opacity" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding TrailOpacityPercent, StringFormat='{}{0:F0}%'}" />
+                </Grid>
+                <Slider Minimum="0" Maximum="100"
+                        Value="{Binding TrailOpacityPercent, Mode=TwoWay}" />
+                <TextBlock Text="Opacity of the comet trail. It glows additively where the tail overlaps itself and the marker. Default 70%."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Histogram opacity" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding HistogramOpacityPercent, StringFormat='{}{0:F0}%'}" />
+                </Grid>
+                <Slider Minimum="0" Maximum="100"
+                        Value="{Binding HistogramOpacityPercent, Mode=TwoWay}" />
+                <TextBlock Text="Opacity of the arousal and vagal-tone histogram bars. Default 60%."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Heatmap opacity" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding HeatmapOpacityPercent, StringFormat='{}{0:F0}%'}" />
+                </Grid>
+                <Slider Minimum="0" Maximum="100"
+                        Value="{Binding HeatmapOpacityPercent, Mode=TwoWay}" />
+                <TextBlock Text="Overall opacity of the dwell heatmap — where regulation has settled over the window. 0 hides it; default 35%."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Peak crosshair" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding HeatmapPeakOpacityPercent, StringFormat='{}{0:F0}%'}" />
+                </Grid>
+                <Slider Minimum="0" Maximum="100"
+                        Value="{Binding HeatmapPeakOpacityPercent, Mode=TwoWay}" />
+                <TextBlock Text="Opacity of the crosshair pinning the busiest dwell bucket. 0 hides it; default 70%."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Dwell region" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding HeatmapRegionOpacityPercent, StringFormat='{}{0:F0}%'}" />
+                </Grid>
+                <Slider Minimum="0" Maximum="100"
+                        Value="{Binding HeatmapRegionOpacityPercent, Mode=TwoWay}" />
+                <TextBlock Text="Opacity of the dashed box framing the high-concentration dwell region. 0 hides it; default 55%."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Region threshold" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding HeatmapRegionThresholdPercent, StringFormat='{}{0:F0}%'}" />
+                </Grid>
+                <Slider Minimum="0" Maximum="100"
+                        Value="{Binding HeatmapRegionThresholdPercent, Mode=TwoWay}" />
+                <TextBlock Text="How busy a bucket must be — as a share of the peak — to sit inside the dashed region. Default 50%."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Heatmap window" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding RegulationHeatmapLength, StringFormat='{}{0} pts'}" />
+                </Grid>
+                <Slider Minimum="60" Maximum="17280"
+                        TickFrequency="1" IsSnapToTickEnabled="True"
+                        Value="{Binding RegulationHeatmapLength, Mode=TwoWay}" />
+                <TextBlock Text="How many recent readings the dwell heatmap accumulates over (≈1 h at 720, up to ≈24 h). Default 720."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="Refresh" FontWeight="SemiBold" />
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="HRV emit interval" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding HrvEmitIntervalSeconds, StringFormat='{}{0:F1} s'}" />
+                </Grid>
+                <Slider Minimum="0.5" Maximum="30"
+                        Value="{Binding HrvEmitIntervalSeconds, Mode=TwoWay}" />
+                <TextBlock Text="How often a new HRV sample is emitted. Lower = smoother live graphs but noisier metrics. Default 5 s."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="History window" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding SparklineWindowMinutes, StringFormat='{}{0} min'}" />
+                </Grid>
+                <Slider Minimum="1" Maximum="360"
+                        TickFrequency="1" IsSnapToTickEnabled="True"
+                        Value="{Binding SparklineWindowMinutes, Mode=TwoWay}" />
+                <TextBlock Text="How much history the Metrics charts show. Higher = longer trends; lower = recent detail. Default 60 min."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
             </StackPanel>
 
             <StackPanel Spacing="6">
@@ -120,6 +225,46 @@
                 </Grid>
                 <Slider Minimum="5" Maximum="50"
                         Value="{Binding HrWarningRisePercent, Mode=TwoWay}" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="RMSSD drop to alert" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding RmssdAlertingDropPercent, StringFormat='{}{0:F0}%'}" />
+                </Grid>
+                <Slider Minimum="5" Maximum="95"
+                        Value="{Binding RmssdAlertingDropPercent, Mode=TwoWay}" />
+                <TextBlock Text="RMSSD drop that escalates to an Alert. Lower = escalates more readily. Default 50%."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Warning hold" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding WarningHoldSeconds, StringFormat='{}{0:F0} s'}" />
+                </Grid>
+                <Slider Minimum="5" Maximum="300"
+                        Value="{Binding WarningHoldSeconds, Mode=TwoWay}" />
+                <TextBlock Text="How long warning conditions must hold before the state advances. Default 30 s."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Alert escalation" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding AlertingEscalationSeconds, StringFormat='{}{0:F0} s'}" />
+                </Grid>
+                <Slider Minimum="10" Maximum="600"
+                        Value="{Binding AlertingEscalationSeconds, Mode=TwoWay}" />
+                <TextBlock Text="How long a Warning must persist before escalating to Alerting. Default 60 s."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Cooldown" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding CooldownMinutes, StringFormat='{}{0:F0} min'}" />
+                </Grid>
+                <Slider Minimum="1" Maximum="60"
+                        Value="{Binding CooldownMinutes, Mode=TwoWay}" />
+                <TextBlock Text="Quiet period after an alert before another can fire. Default 10 min."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
             </StackPanel>
 
             <StackPanel Spacing="6">
