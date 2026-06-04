@@ -40,6 +40,10 @@ public sealed class RegulationField : Control
 	// Matches the desktop RegulationFieldView.MarkerYSpan.
 	private const float MarkerYSpan = 0.92f;
 
+	// Live lobe height factor at lowest / highest Poincaré roundness (desktop LobeHeightMin/Max).
+	private const float LobeHeightMin = 0.7f;
+	private const float LobeHeightMax = 1.18f;
+
 	private readonly RegulationFieldAnimator _animator = new();
 	private readonly Stopwatch _clock = new();
 	private DispatcherTimer? _timer;
@@ -386,6 +390,14 @@ public sealed class RegulationField : Control
 		float lobeHeight = (float)Math.Min(h * 0.34, halfWidth * 0.62f);
 		var centreV = new Vector2((float)centre.X, (float)centre.Y);
 
+		// Poincaré SD1/SD2 ratio shapes the live lobe height ("breathing"); the ghost stays at
+		// base height. The marker's vagal travel, the heatmap, and the Y-histogram all track the
+		// live height, mirroring the desktop renderer.
+		float roundness = (float)Math.Clamp(reading.LobeRoundness, 0.0, 1.0);
+		float liveLobeHeight = lobeHeight * (LobeHeightMin + ((LobeHeightMax - LobeHeightMin) * roundness));
+		float labelClearHeight = lobeHeight * LobeHeightMax; // keep labels/bars clear of the tallest lobe
+		float markerYClamp = liveLobeHeight * MarkerYSpan;
+
 		DrawLfHfHalo(context, centre, halfWidth, reading, confidence);
 
 		// Window of tolerance: a soft lavender zone marking the regulated centre.
@@ -393,19 +405,19 @@ public sealed class RegulationField : Control
 
 		DrawShutdownZone(context, centreV, halfWidth, lobeHeight, confidence);
 
-		DrawDensityHeatmap(context, centreV, halfWidth, lobeHeight * MarkerYSpan, confidence);
+		DrawDensityHeatmap(context, centreV, halfWidth, markerYClamp, confidence);
 
-		var ghost = LemniscateGeometry.Polyline(centreV, halfWidth, lobeHeight,
-			Math.Clamp(LobeSegments, LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments));
-		DrawTrace(context, ghost, centreV, halfWidth, reading, confidence);
-		DrawAxisHistograms(context, centre, w, h, halfWidth, lobeHeight, confidence);
+		int segments = Math.Clamp(LobeSegments, LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments);
+		var ghost = LemniscateGeometry.Polyline(centreV, halfWidth, lobeHeight, segments);
+		var live = LemniscateGeometry.Polyline(centreV, halfWidth, liveLobeHeight, segments);
+		DrawTrace(context, ghost, live, centreV, halfWidth, reading, confidence);
+		DrawAxisHistograms(context, centre, w, h, halfWidth, labelClearHeight, markerYClamp, confidence);
 
 		// Vagal axis + warning threshold lines. The vertical legend brackets the marker's
 		// vagal-tone travel (FRAGILE at the top extent, STEADY at the bottom) so the Y motion
 		// reads; the dashed verticals at ±WarningBoundaryIndex are the lines the marker/trail
 		// visibly cross on the way in and out of the warning zone. Mirrors the desktop DrawVagalAxis.
 		{
-			float markerYClamp = lobeHeight * MarkerYSpan;
 			double topY = centre.Y + RegulationFieldGeometry.VagalToneOffsetY(0.0, markerYClamp);
 			double botY = centre.Y + RegulationFieldGeometry.VagalToneOffsetY(1.0, markerYClamp);
 			context.DrawLine(new Pen(Brush(Overlay1, 0.22 * confidence), 1),
@@ -418,15 +430,15 @@ public sealed class RegulationField : Control
 			DrawDashedVertical(context, centre.X - warnOff, topY, botY, Brush(Sky, 0.28 * confidence), 1, 4, 3);
 		}
 
-		DrawTrail(context, centreV, halfWidth, lobeHeight, confidence);
-		DrawRecoveryTarget(context, centreV, halfWidth, lobeHeight, confidence);
-		DrawMarker(context, centreV, halfWidth, lobeHeight, confidence);
+		DrawTrail(context, centreV, halfWidth, markerYClamp, confidence);
+		DrawRecoveryTarget(context, centreV, halfWidth, liveLobeHeight, confidence);
+		DrawMarker(context, centreV, halfWidth, markerYClamp, confidence);
 
 		// Crossover node at the centre of the figure-8.
 		context.DrawEllipse(Brush(Lavender, confidence), null, centre, 6, 6);
 		context.DrawEllipse(Brush(Text, confidence), null, centre, 2.5, 2.5);
 
-		DrawLabels(context, centre, halfWidth, lobeHeight);
+		DrawLabels(context, centre, halfWidth, labelClearHeight);
 
 		if (confidence < 0.999)
 		{
@@ -695,14 +707,14 @@ public sealed class RegulationField : Control
 	// Peak trace deflection (px) from the real RR signal at 1× exaggeration (desktop MaxJitterPx).
 	private const float MaxJitterPx = 18f;
 
-	private void DrawTrace(DrawingContext context, IReadOnlyList<Vector2> ghost, Vector2 centre, float halfWidth, RegulationReading r, double confidence)
+	private void DrawTrace(DrawingContext context, IReadOnlyList<Vector2> ghost, IReadOnlyList<Vector2> live, Vector2 centre, float halfWidth, RegulationReading r, double confidence)
 	{
-		if (ghost.Count < 2)
+		if (ghost.Count < 2 || live.Count < 2)
 		{
 			return;
 		}
 
-		// Ghost baseline (symmetric resting frame) — crisp alpha-over chrome.
+		// Ghost baseline (symmetric resting frame) at the base height — crisp alpha-over chrome.
 		var ghostPen = new Pen(Brush(Overlay1, 0.28 * confidence), 1.5);
 		for (int i = 0; i < ghost.Count; i++)
 		{
@@ -719,11 +731,14 @@ public sealed class RegulationField : Control
 		float warmSwell = 1f + (MathF.Max(0f, clampedIndex) * 1.4f);
 		float coolSwell = 1f + (MathF.Max(0f, -clampedIndex) * 1.4f);
 		float quality = (float)Math.Clamp(r.VariabilityQuality, 0.0, 1.0);
+		// Deliberately thinner than the desktop's (4 + 6*quality): the mobile trace strokes
+		// overlapping segments where the desktop fills a single-pass ribbon, so additive
+		// overlap blooms brighter per pixel — the thinner stroke compensates. Tune on device.
 		float baseThick = (float)((3.0 + (4.0 * quality)) * Math.Clamp(LobeThickness, 0.5, 3.0));
 		double lobeAlpha = confidence * Math.Clamp(LobeOpacity, 0.0, 1.0);
 
 		float[] dev = RrTexture.BuildRrDeviations(Rr ?? []);
-		int n = ghost.Count;
+		int n = live.Count;
 		int devLen = dev.Length;
 		int quarter = n / 4;
 		double span = Math.Min(devLen - 1, n - 1);
@@ -736,7 +751,7 @@ public sealed class RegulationField : Control
 		var pts = new Vector2[n];
 		for (int i = 0; i < n; i++)
 		{
-			Vector2 v = ghost[i];
+			Vector2 v = live[i];
 			float depth = MathF.Min(1f, MathF.Abs(v.X - centre.X) / halfWidth);
 			float jitter = 0f;
 			if (devLen > 1)
@@ -750,7 +765,7 @@ public sealed class RegulationField : Control
 				jitter = d * MaxJitterPx * (float)Math.Clamp(JitterExaggeration, 0.0, 3.0) * depth;
 			}
 
-			Vector2 normal = Normal(ghost[(i - 1 + n) % n], ghost[(i + 1) % n]);
+			Vector2 normal = Normal(live[(i - 1 + n) % n], live[(i + 1) % n]);
 			pts[i] = v + (normal * jitter);
 		}
 
@@ -812,7 +827,7 @@ public sealed class RegulationField : Control
 	// index it counts — left=cool/REST, right=warm/MELTDOWN. Y (vagal tone) is a column
 	// of horizontal bars on the left margin, top=FRAGILE (low tone) to bottom=STEADY (high).
 	// Mirrors the desktop RegulationFieldView, computed from the same Core bucketing.
-	private void DrawAxisHistograms(DrawingContext context, Point centre, double w, double h, float halfWidth, float lobeHeight, double confidence)
+	private void DrawAxisHistograms(DrawingContext context, Point centre, double w, double h, float halfWidth, float labelClearHeight, float markerYClamp, double confidence)
 	{
 		var trail = Trail;
 		if (trail is null || trail.Count < 2)
@@ -829,7 +844,7 @@ public sealed class RegulationField : Control
 		// field's fixed [-1, 1] band (centre.X ± halfWidth), so all buckets stay within the field.
 		if (xHist.PeakCount > 0)
 		{
-			double baseY = centre.Y + lobeHeight + 16;
+			double baseY = centre.Y + labelClearHeight + 16;
 			double maxH = Math.Min(20, (h - 6) - baseY);
 			if (maxH > 1)
 			{
@@ -909,7 +924,6 @@ public sealed class RegulationField : Control
 			if (maxW > 1)
 			{
 				int n = yHist.BucketCount;
-				float markerYClamp = lobeHeight * MarkerYSpan;
 				double topY = centre.Y + RegulationFieldGeometry.VagalToneOffsetY(0.0, markerYClamp);
 				double span = markerYClamp;
 				double slot = (2 * span) / n;
@@ -946,15 +960,13 @@ public sealed class RegulationField : Control
 		}
 	}
 
-	private void DrawTrail(DrawingContext context, Vector2 centre, float halfWidth, float lobeHeight, double confidence)
+	private void DrawTrail(DrawingContext context, Vector2 centre, float halfWidth, float markerYClamp, double confidence)
 	{
 		var trail = Trail;
 		if (trail is null || trail.Count < 2)
 		{
 			return;
 		}
-
-		float markerYClamp = lobeHeight * MarkerYSpan;
 
 		// Map every trail reading to its 2D field position: X = arousal index, Y = vagal tone
 		// (FRAGILE up / STEADY down) — the same mapping as the live marker, so the comet records
@@ -1082,14 +1094,14 @@ public sealed class RegulationField : Control
 		}
 	}
 
-	private void DrawMarker(DrawingContext context, Vector2 centre, float halfWidth, float lobeHeight, double confidence)
+	private void DrawMarker(DrawingContext context, Vector2 centre, float halfWidth, float markerYClamp, double confidence)
 	{
 		// Eased position glides between the multi-second samples; the halo
 		// pulses at the current HR cadence (RegulationFieldAnimator).
 		Vector2 p = LemniscateGeometry.MarkerPoint((float)_animator.MarkerPos, centre, halfWidth);
 		// Y encodes vagal tone: grounded/low (STEADY) when HRV is healthy, lifted toward
 		// FRAGILE as it collapses — the same vertical mapping as the desktop marker.
-		p.Y += RegulationFieldGeometry.VagalToneOffsetY(Reading.VagalTone, lobeHeight * MarkerYSpan);
+		p.Y += RegulationFieldGeometry.VagalToneOffsetY(Reading.VagalTone, markerYClamp);
 		var at = P(p);
 
 		// The two surrounding halos glow additively (overlap with the trail head and each other

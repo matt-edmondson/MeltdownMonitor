@@ -15,7 +15,7 @@
                              Values="{Binding Pnn50}" Timestamps="{Binding RmssdTimestamps}"
                              WindowSeconds="{Binding WindowSeconds}" />
             <ctl:MetricChart Height="120" Title="SDNN (ms)"
-                             Values="{Binding Sdnn}" Timestamps="{Binding RmssdTimestamps}"
+                             Values="{Binding Sdnn}" Timestamps="{Binding ExtendedTimestamps}"
                              WindowSeconds="{Binding WindowSeconds}" />
 
             <TextBlock Text="Heart Rate" FontWeight="SemiBold" Margin="0,8,0,0" />
@@ -28,25 +28,25 @@
             <TextBlock Text="Frequency-Domain" FontWeight="SemiBold" Margin="0,8,0,0" />
             <ctl:MetricChart Height="140" Title="LF/HF ratio vs baseline"
                              Values="{Binding LfHfRatio}" BaselineValues="{Binding BaselineLfHf}"
-                             Timestamps="{Binding RmssdTimestamps}" WindowSeconds="{Binding WindowSeconds}" />
+                             Timestamps="{Binding ExtendedTimestamps}" WindowSeconds="{Binding WindowSeconds}" />
             <ctl:MetricChart Height="120" Title="LF power (ms²)"
-                             Values="{Binding LfPower}" Timestamps="{Binding RmssdTimestamps}"
+                             Values="{Binding LfPower}" Timestamps="{Binding ExtendedTimestamps}"
                              WindowSeconds="{Binding WindowSeconds}" />
             <ctl:MetricChart Height="120" Title="HF power (ms²)"
-                             Values="{Binding HfPower}" Timestamps="{Binding RmssdTimestamps}"
+                             Values="{Binding HfPower}" Timestamps="{Binding ExtendedTimestamps}"
                              WindowSeconds="{Binding WindowSeconds}" />
 
             <TextBlock Text="Poincaré" FontWeight="SemiBold" Margin="0,8,0,0" />
             <ctl:ScatterChart Height="220" Title="Poincaré (RR[i] vs RR[i+1])"
                               RrIntervals="{Binding RecentRr}" />
             <ctl:MetricChart Height="120" Title="SD1 (ms)"
-                             Values="{Binding Sd1}" Timestamps="{Binding RmssdTimestamps}"
+                             Values="{Binding Sd1}" Timestamps="{Binding ExtendedTimestamps}"
                              WindowSeconds="{Binding WindowSeconds}" />
             <ctl:MetricChart Height="120" Title="SD2 (ms)"
-                             Values="{Binding Sd2}" Timestamps="{Binding RmssdTimestamps}"
+                             Values="{Binding Sd2}" Timestamps="{Binding ExtendedTimestamps}"
                              WindowSeconds="{Binding WindowSeconds}" />
             <ctl:MetricChart Height="120" Title="SD1/SD2 ratio"
-                             Values="{Binding Sd1Sd2}" Timestamps="{Binding RmssdTimestamps}"
+                             Values="{Binding Sd1Sd2}" Timestamps="{Binding ExtendedTimestamps}"
                              WindowSeconds="{Binding WindowSeconds}" />
 
             <TextBlock Text="Sensor" FontWeight="SemiBold" Margin="0,8,0,0" />

@@ -56,6 +56,28 @@ public sealed class MetricsViewModelTests
 	}
 
 	[TestMethod]
+	public void Extended_series_keep_their_own_aligned_timestamps()
+	{
+		var vm = new MetricsViewModel(dispatcher: a => a());
+		var t0 = DateTimeOffset.UnixEpoch.AddSeconds(1000);
+
+		// First sample arrives during warm-up (no extended metrics); second carries them.
+		vm.OnSampleUpdated(SampleAt(t0, rmssd: 40, hr: 80));
+		var withExt = SampleAt(t0.AddSeconds(5), rmssd: 42, hr: 82) with
+		{
+			Extended = new ExtendedHrvMetrics(
+				LfPowerMs2: 120, HfPowerMs2: 80, LfHfRatio: 1.5,
+				SD1: 20, SD2: 40, SD1SD2Ratio: 0.5, Sdnn: 35),
+		};
+		vm.OnSampleUpdated(withExt);
+
+		Assert.AreEqual(2, vm.RmssdTimestamps.Count, "per-sample series advance every sample");
+		Assert.AreEqual(1, vm.ExtendedTimestamps.Count, "extended timestamps only advance with extended metrics");
+		Assert.AreEqual(vm.Sdnn.Count, vm.ExtendedTimestamps.Count, "extended series stay length-aligned with their axis");
+		Assert.AreEqual(vm.BaselineLfHf.Count, vm.ExtendedTimestamps.Count, "the LF/HF baseline overlay shares the extended axis");
+	}
+
+	[TestMethod]
 	public void Backfill_seeds_series_from_persisted_samples_oldest_first()
 	{
 		var vm = new MetricsViewModel(dispatcher: a => a());

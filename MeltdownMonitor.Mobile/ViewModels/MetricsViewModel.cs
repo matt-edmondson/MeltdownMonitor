@@ -38,6 +38,7 @@ public sealed class MetricsViewModel : ViewModelBase
 	private readonly List<double> _battery = [];
 	private readonly List<double> _contact = [];
 	private readonly List<double> _ts = [];
+	private readonly List<double> _extTs = [];
 	private readonly List<double> _batteryTs = [];
 	private readonly List<double> _contactTs = [];
 	private readonly List<double> _recentRr = [];
@@ -71,6 +72,12 @@ public sealed class MetricsViewModel : ViewModelBase
 	public IReadOnlyList<double> Battery => _battery;
 	public IReadOnlyList<double> Contact => _contact;
 	public IReadOnlyList<double> RmssdTimestamps => _ts;
+
+	/// <summary>Unix epoch seconds, one per extended-metric point (SDNN, LF, HF, LF/HF, SD1,
+	/// SD2, SD1/SD2). Kept separately from <see cref="RmssdTimestamps"/> because extended
+	/// metrics are absent during warm-up — sharing the per-sample list would desync the
+	/// lengths and silently drop the charts to index spacing.</summary>
+	public IReadOnlyList<double> ExtendedTimestamps => _extTs;
 	public IReadOnlyList<double> BatteryTimestamps => _batteryTs;
 	public IReadOnlyList<double> ContactTimestamps => _contactTs;
 	public IReadOnlyList<double> RecentRr => _recentRr;
@@ -89,7 +96,6 @@ public sealed class MetricsViewModel : ViewModelBase
 		Append(_pnn50, s.Pnn50);
 		Append(_meanHr, s.MeanHr);
 		Append(_baselineHr, s.BaselineHr);
-		Append(_baselineLfHf, s.BaselineLfHfRatio);
 		Append(_contact, s.SensorContact == SensorContactStatus.NotDetected ? 0.0 : 1.0);
 		Append(_contactTs, ts);
 		Append(_ts, ts);
@@ -103,6 +109,10 @@ public sealed class MetricsViewModel : ViewModelBase
 			Append(_sd1, ext.SD1);
 			Append(_sd2, ext.SD2);
 			Append(_sd1sd2, ext.SD1SD2Ratio);
+			// The LF/HF baseline overlays the LF/HF chart, whose X axis is the extended
+			// cadence — append it here so the two series stay length-aligned.
+			Append(_baselineLfHf, s.BaselineLfHfRatio);
+			Append(_extTs, ts);
 		}
 
 		RaiseAllSeriesChanged();
@@ -147,7 +157,6 @@ public sealed class MetricsViewModel : ViewModelBase
 			_pnn50.Add(s.Pnn50);
 			_meanHr.Add(s.MeanHr);
 			_baselineHr.Add(s.BaselineHr);
-			_baselineLfHf.Add(s.BaselineLfHfRatio);
 			_contact.Add(s.SensorContact == SensorContactStatus.NotDetected ? 0.0 : 1.0);
 			_contactTs.Add(ts);
 			_ts.Add(ts);
@@ -161,6 +170,8 @@ public sealed class MetricsViewModel : ViewModelBase
 				_sd1.Add(ext.SD1);
 				_sd2.Add(ext.SD2);
 				_sd1sd2.Add(ext.SD1SD2Ratio);
+				_baselineLfHf.Add(s.BaselineLfHfRatio);
+				_extTs.Add(ts);
 			}
 		}
 
@@ -235,6 +246,7 @@ public sealed class MetricsViewModel : ViewModelBase
 		Raise(nameof(Sd1Sd2));
 		Raise(nameof(Contact));
 		Raise(nameof(RmssdTimestamps));
+		Raise(nameof(ExtendedTimestamps));
 		Raise(nameof(ContactTimestamps));
 		Raise(nameof(WindowSeconds));
 	}
