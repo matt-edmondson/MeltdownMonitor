@@ -986,22 +986,19 @@ public sealed class RegulationFieldView : IDisposable
 
 		// X axis (arousal index), below the field, bars growing downward from a baseline that
 		// clears the lowest lobe tip. Clamp the strip so it never collides with the readout.
-		// The axis range is dynamic: always at least [-1, 1] but expands when extreme index
-		// values are present, so meltdown samples get their own buckets rather than stacking
-		// at the edge. Pixel mapping: index=0 → centre.X, scale = halfWidth per unit.
+		// The axis spans the field's fixed [-1, 1] band (centre.X ± halfWidth), so all buckets
+		// stay within the lemniscate bounds. Pixel mapping: index=0 → centre.X, scale = halfWidth per unit.
 		if (xHist.PeakCount > 0)
 		{
 			float baseY = centre.Y + lobeClearHeight + (16f * _drawScale);
 			float maxH = MathF.Max(0f, MathF.Min(22f * _drawScale, (origin.Y + height - 26f) - baseY));
 			if (maxH > 1f)
 			{
-				float histLeft = centre.X + (float)(xHist.Min * halfWidth);
-				float histRight = centre.X + (float)(xHist.Max * halfWidth);
-				float totalW = histRight - histLeft;
+				float histLeft = centre.X - halfWidth;
 				int n = xHist.BucketCount;
-				float slot = totalW / n;
+				float slot = (halfWidth * 2f) / n;
 				float barW = MathF.Max(1f, slot - (1.5f * _drawScale));
-				draw.AddLine(new Vector2(histLeft, baseY), new Vector2(histRight, baseY), axisCol, 1f * _drawScale);
+				draw.AddLine(new Vector2(histLeft, baseY), new Vector2(centre.X + halfWidth, baseY), axisCol, 1f * _drawScale);
 				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
 				for (int b = 0; b < n; b++)
 				{

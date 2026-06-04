@@ -39,18 +39,18 @@ public class RegulationFieldHistogramTests
 	}
 
 	[TestMethod]
-	public void IndexAxis_DynamicRange_ExpandsForExtremes()
+	public void IndexAxis_FixedRange_SkipsExtremes_ExactMaxCountsInLastBucket()
 	{
-		// The axis expands to cover all finite readings. Values beyond ±1 get their own buckets
-		// rather than being skipped or piled into the edge bucket.
+		// The index axis is fixed at [-1, 1] (matching the field marker/heatmap). Values strictly
+		// outside that band are skipped so they don't stretch the axis off-screen or inflate the
+		// edge buckets; exact-max (1.0) still counts in the last bucket.
 		RegulationTrailPoint[] trail = [Point(-2.0), Point(1.0), Point(5.0)];
 		var hist = RegulationFieldHistogram.IndexAxis(trail, bucketCount: 4);
-		Assert.AreEqual(-2.0, hist.Min, 1e-9, "axis min extends to the lowest reading");
-		Assert.AreEqual(5.0, hist.Max, 1e-9, "axis max extends to the highest reading");
-		Assert.AreEqual(3, hist.TotalCount, "all three values are counted in the expanded range");
-		Assert.AreEqual(1, hist.Counts[0], "-2.0 lands in the first bucket");
-		Assert.AreEqual(1, hist.Counts[^1], "5.0 lands in the last bucket");
-		Assert.IsTrue(hist.Counts[1] + hist.Counts[2] + hist.Counts[3] >= 1, "1.0 lands in a middle or last bucket");
+		Assert.AreEqual(-1.0, hist.Min, 1e-9, "axis min stays fixed at -1");
+		Assert.AreEqual(1.0, hist.Max, 1e-9, "axis max stays fixed at 1");
+		Assert.AreEqual(0, hist.Counts[0], "below-min (-2.0) is skipped, not counted in first bucket");
+		Assert.AreEqual(1, hist.Counts[^1], "exact max (1.0) lands in last bucket");
+		Assert.AreEqual(1, hist.TotalCount, "only the in-range point (1.0) counts");
 	}
 
 	[TestMethod]
