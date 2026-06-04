@@ -44,6 +44,11 @@ public sealed class RegulationField : Control
 	private DispatcherTimer? _timer;
 	private TimeSpan _lastFrame;
 
+	// Free-running smooth scroll over the absolute beat timeline for the live RR texture —
+	// the same mechanism the desktop view uses to decouple the texture flow from the
+	// irregular, batched arrival of BLE beats.
+	private RrTexturePlayhead _playhead;
+
 	public static readonly StyledProperty<RegulationReading> ReadingProperty =
 		AvaloniaProperty.Register<RegulationField, RegulationReading>(
 			nameof(Reading), new RegulationReading(0.0, 1.0, 0.0, 0.5, 0.0));
@@ -96,6 +101,28 @@ public sealed class RegulationField : Control
 	private static readonly Color Peach = Color.FromRgb(0xf5, 0xa9, 0x7f);
 	private static readonly Color Maroon = Color.FromRgb(0xee, 0x99, 0xa0);
 	private static readonly Color Green = Color.FromRgb(0xa6, 0xda, 0x95);
+
+	public static readonly StyledProperty<IReadOnlyList<double>?> RrProperty =
+		AvaloniaProperty.Register<RegulationField, IReadOnlyList<double>?>(nameof(Rr));
+
+	public static readonly StyledProperty<long> RrBeatsAppendedProperty =
+		AvaloniaProperty.Register<RegulationField, long>(nameof(RrBeatsAppended));
+
+	/// <summary>Recent non-artifact RR intervals (ms), oldest first — the real beat-to-beat
+	/// signal texturing the live trace. Smooth/flat when fewer than RrTexture.MinRrForJitter.</summary>
+	public IReadOnlyList<double>? Rr
+	{
+		get => GetValue(RrProperty);
+		set => SetValue(RrProperty, value);
+	}
+
+	/// <summary>Total non-artifact beats ever appended — the absolute timeline the RR texture
+	/// playhead scrolls along (newest buffer sample = RrBeatsAppended - 1).</summary>
+	public long RrBeatsAppended
+	{
+		get => GetValue(RrBeatsAppendedProperty);
+		set => SetValue(RrBeatsAppendedProperty, value);
+	}
 
 	public static readonly StyledProperty<double> HypoarousalProperty =
 		AvaloniaProperty.Register<RegulationField, double>(nameof(Hypoarousal));
@@ -233,6 +260,11 @@ public sealed class RegulationField : Control
 
 		_animator.JitterExaggeration = Math.Clamp(JitterExaggeration, 0.0, 3.0);
 		_animator.Step(dt, Reading.Index, HeartRate, Dynamics.NormalizedSpeed);
+
+		// Scroll the RR texture along the absolute beat timeline at the real beat rate,
+		// driven purely by frame time so it stays fluid despite batched BLE arrivals.
+		_playhead.Advance(dt, Math.Max(40.0, HeartRate) / 60.0, RrBeatsAppended - 1);
+
 		InvalidateVisual();
 	}
 

@@ -21,10 +21,17 @@ public sealed class NowViewModel : ViewModelBase
 {
 	private const int SparklineMaxPoints = 360; // ~60 s at 6 Hz update cadence
 
+	// Recent RR intervals feeding the Regulation Field's live-trace texture — the same
+	// window the desktop RegulationFieldView keeps (RrBufferLength).
+	private const int RrBufferLength = 160;
+
 	private readonly ObservableCollection<double> _rmssdHistory = [];
 	private readonly ObservableCollection<double> _baselineHistory = [];
 	private readonly ObservableCollection<double> _rmssdTimestamps = [];
 	private readonly List<RegulationTrailPoint> _regulationTrail = [];
+	private readonly List<double> _rrBuffer = [];
+	private IReadOnlyList<double> _recentRr = [];
+	private long _rrBeatsAppended;
 
 	private readonly Func<Task>? _onConnect;
 	private readonly Func<Task>? _onDisconnect;
@@ -473,6 +480,7 @@ public sealed class NowViewModel : ViewModelBase
 		pipeline.BatteryUpdated += OnBatteryUpdated;
 		pipeline.ContactChanged += OnContactChanged;
 		pipeline.DeviceInfoUpdated += OnDeviceInfoUpdated;
+		pipeline.BeatReceived += OnBeatReceived;
 		_coldCalibratedProvider = () => pipeline.IsColdCalibrated;
 
 		// Seed the comet trail from persisted history so the field isn't blank on launch.
@@ -575,6 +583,46 @@ public sealed class NowViewModel : ViewModelBase
 	/// and marshalled to the UI thread. Public so tests can drive it without a live pipeline.
 	/// </summary>
 	public void OnDeviceInfoUpdated(DeviceInformation info) => RunOnUi(() => DeviceInfo = info);
+
+	/// <summary>Recent non-artifact RR intervals (ms), oldest first, feeding the Regulation
+	/// Field's live-trace texture. A fresh instance is published per beat so the control's
+	/// AffectsRender binding fires.</summary>
+	public IReadOnlyList<double> RecentRr
+	{
+		get => _recentRr;
+		private set => SetField(ref _recentRr, value);
+	}
+
+	/// <summary>Total non-artifact beats ever appended — the absolute beat timeline the
+	/// RR texture playhead scrolls along (mirrors the desktop view's _beatsAppended).</summary>
+	public long RrBeatsAppended
+	{
+		get => _rrBeatsAppended;
+		private set => SetField(ref _rrBeatsAppended, value);
+	}
+
+	/// <summary>
+	/// Push one raw beat into the VM's RR texture buffer. Wired to
+	/// <see cref="Pipeline.BeatReceived"/> and marshalled to the UI thread like the other
+	/// handlers. Artifacts are skipped, as the desktop consumers do. Public so tests can
+	/// drive the buffer without a live pipeline.
+	/// </summary>
+	public void OnBeatReceived(Beat beat) => RunOnUi(() =>
+	{
+		if (beat.IsArtifact)
+		{
+			return;
+		}
+
+		_rrBuffer.Add(beat.RrMs);
+		while (_rrBuffer.Count > RrBufferLength)
+		{
+			_rrBuffer.RemoveAt(0);
+		}
+
+		RrBeatsAppended++;
+		RecentRr = _rrBuffer.ToArray();
+	});
 
 	/// <summary>
 	/// Push a fresh Regulation Field reading into the VM, appending it to the

@@ -528,6 +528,44 @@ public class NowViewModelTests
 		Assert.AreEqual(rising, vm.HypoarousalDynamics);
 	}
 
+	[TestMethod]
+	public void OnBeatReceived_CollectsNonArtifactRrAndCounts()
+	{
+		var vm = new NowViewModel();
+
+		vm.OnBeatReceived(new Beat(DateTimeOffset.UnixEpoch, 820, 73, IsArtifact: false));
+		vm.OnBeatReceived(new Beat(DateTimeOffset.UnixEpoch, 9999, 73, IsArtifact: true));
+		vm.OnBeatReceived(new Beat(DateTimeOffset.UnixEpoch, 810, 74, IsArtifact: false));
+
+		CollectionAssert.AreEqual(new[] { 820.0, 810.0 }, vm.RecentRr.ToList());
+		Assert.AreEqual(2L, vm.RrBeatsAppended, "artifacts must not advance the beat timeline");
+	}
+
+	[TestMethod]
+	public void OnBeatReceived_CapsBufferAt160KeepingNewest()
+	{
+		var vm = new NowViewModel();
+		for (int i = 0; i < 200; i++)
+		{
+			vm.OnBeatReceived(new Beat(DateTimeOffset.UnixEpoch, 800 + i, 70, IsArtifact: false));
+		}
+
+		Assert.AreEqual(160, vm.RecentRr.Count, "buffer must cap at the desktop's RrBufferLength");
+		Assert.AreEqual(999.0, vm.RecentRr[^1], 1e-9, "newest beat must be kept");
+		Assert.AreEqual(200L, vm.RrBeatsAppended, "the absolute timeline keeps counting past the cap");
+	}
+
+	[TestMethod]
+	public void OnBeatReceived_PublishesAFreshRrInstance()
+	{
+		var vm = new NowViewModel();
+		vm.OnBeatReceived(new Beat(DateTimeOffset.UnixEpoch, 820, 73, IsArtifact: false));
+		var first = vm.RecentRr;
+		vm.OnBeatReceived(new Beat(DateTimeOffset.UnixEpoch, 810, 74, IsArtifact: false));
+
+		Assert.AreNotSame(first, vm.RecentRr, "a new list instance must be published so AffectsRender fires");
+	}
+
 	private static HrvSample Sample(double rmssd, double meanHr, double baseline, DetectorState state) =>
 		new(
 			DateTimeOffset.UtcNow,
