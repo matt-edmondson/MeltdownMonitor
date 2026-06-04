@@ -737,12 +737,15 @@ public sealed class RegulationFieldView : IDisposable
 	// magma-style Catppuccin ramp (see HeatColor) normalised to the busiest bucket, so the peak-dwell
 	// cell shows the hottest colour; quieter cells stay dim near the background. Overall opacity is
 	// user-configurable. A separately-configurable crosshair pins the peak-dwell bucket — where
-	// regulation has settled most over the window. Drawn beneath the trace and comet so they read on top.
+	// regulation has settled most over the window — and a separately-configurable dashed box frames
+	// the wider high-concentration region of busy buckets around it. Drawn beneath the trace and
+	// comet so they read on top.
 	private void DrawDensityHeatmap(ImDrawListPtr draw, Vector2 centre, float halfWidth, float markerYClamp, RegulationTrailPoint[] trail, float confidence)
 	{
 		float opacity = (float)_pipeline.HeatmapOpacity;
 		float peakOpacity = (float)_pipeline.HeatmapPeakOpacity;
-		if (opacity <= 0f && peakOpacity <= 0f)
+		float regionOpacity = (float)_pipeline.HeatmapRegionOpacity;
+		if (opacity <= 0f && peakOpacity <= 0f && regionOpacity <= 0f)
 		{
 			return;
 		}
@@ -808,6 +811,20 @@ public sealed class RegulationFieldView : IDisposable
 			ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 		}
 
+		// Dashed box around the high-concentration region — the block of busy buckets the dwell
+		// clusters into, wider than the single peak cell the crosshair pins. Drawn beneath the
+		// crosshair so the pointer still reads on top. Alpha-over so the dashes stay crisp.
+		if (regionOpacity > 0f)
+		{
+			var bounds = density.HighDensityBounds(_pipeline.HeatmapRegionThreshold);
+			if (bounds is { } b)
+			{
+				var topLeft = new Vector2(left0 + (b.MinX * cellW), top0 + (b.MinY * cellH));
+				var bottomRight = new Vector2(left0 + ((b.MaxX + 1) * cellW), top0 + ((b.MaxY + 1) * cellH));
+				DrawHeatmapDensityRegion(draw, topLeft, bottomRight, regionOpacity * confidence);
+			}
+		}
+
 		// Crosshair over the busiest bucket's centre, so the peak-dwell spot is unmistakable even
 		// when the heatmap is faint or hidden. Alpha-over (not additive) so it reads as a crisp pointer.
 		if (peakOpacity > 0f && density.PeakX >= 0)
@@ -816,6 +833,54 @@ public sealed class RegulationFieldView : IDisposable
 				left0 + ((density.PeakX + 0.5f) * cellW),
 				top0 + ((density.PeakY + 0.5f) * cellH));
 			DrawHeatmapPeakCrosshair(draw, peakCentre, cellW, cellH, peakOpacity * confidence);
+		}
+	}
+
+	// A dashed rectangle framing the dwell heatmap's high-concentration region. Drawn with a darker
+	// shadow underlay then a bright Sky dash on top (matching the peak crosshair palette) so it stays
+	// legible over both hot magma cells and the dark canvas. Alpha is the caller's already-
+	// confidence-scaled region opacity.
+	private void DrawHeatmapDensityRegion(ImDrawListPtr draw, Vector2 topLeft, Vector2 bottomRight, float alpha)
+	{
+		if (alpha <= 0f)
+		{
+			return;
+		}
+
+		uint line = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Sky, alpha));
+		uint shadow = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Mantle, alpha * 0.6f));
+		float thick = 1.5f * _drawScale;
+		float dash = 6f * _drawScale;
+		float gap = 4f * _drawScale;
+
+		var tr = new Vector2(bottomRight.X, topLeft.Y);
+		var bl = new Vector2(topLeft.X, bottomRight.Y);
+		DrawDashedLine(draw, topLeft, tr, line, shadow, thick, dash, gap);
+		DrawDashedLine(draw, tr, bottomRight, line, shadow, thick, dash, gap);
+		DrawDashedLine(draw, bottomRight, bl, line, shadow, thick, dash, gap);
+		DrawDashedLine(draw, bl, topLeft, line, shadow, thick, dash, gap);
+	}
+
+	// One dashed edge: walk from a to b laying down dash-length segments separated by gaps, each a
+	// shadow underlay then a bright line on top (same treatment as the crosshair strokes).
+	private static void DrawDashedLine(
+		ImDrawListPtr draw, Vector2 a, Vector2 b, uint line, uint shadow, float thick, float dash, float gap)
+	{
+		Vector2 delta = b - a;
+		float length = delta.Length();
+		if (length <= 0f)
+		{
+			return;
+		}
+
+		Vector2 dir = delta / length;
+		float step = dash + gap;
+		for (float pos = 0f; pos < length; pos += step)
+		{
+			Vector2 segStart = a + (dir * pos);
+			Vector2 segEnd = a + (dir * MathF.Min(pos + dash, length));
+			draw.AddLine(segStart, segEnd, shadow, thick + 2f);
+			draw.AddLine(segStart, segEnd, line, thick);
 		}
 	}
 
