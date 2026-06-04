@@ -14,6 +14,9 @@
             <TabItem Header="Now">
                 <views:NowView DataContext="{Binding Now}" />
             </TabItem>
+            <TabItem Header="Metrics">
+                <views:MetricsView DataContext="{Binding Metrics}" />
+            </TabItem>
             <TabItem Header="History">
                 <views:HistoryView DataContext="{Binding History}" />
             </TabItem>

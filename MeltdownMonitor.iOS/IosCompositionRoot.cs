@@ -28,6 +28,7 @@ public static class IosCompositionRoot
 	private static MobileSettings? _settings;
 	private static NowViewModel? _now;
 	private static HistoryViewModel? _history;
+	private static MetricsViewModel? _metrics;
 	private static PolarHrSource? _source;
 	private static Pipeline? _pipeline;
 
@@ -123,6 +124,9 @@ public static class IosCompositionRoot
 			vagalBucketsProvider: () => settings.FieldVagalBuckets,
 			lobeSegmentsProvider: () => settings.LobeSegments);
 		_history = new HistoryViewModel();
+		_metrics = new MetricsViewModel(
+			windowMinutesProvider: () => settings.SparklineWindowMinutes,
+			emitIntervalProvider: () => settings.HrvEmitIntervalSeconds);
 
 		var settingsTab = new SettingsViewModel(
 			settings,
@@ -131,7 +135,7 @@ public static class IosCompositionRoot
 			exportDatabase: () => exporter.ExportAsync(DatabasePath()),
 			onChanged: () => _store.Save(settings));
 
-		return new RootViewModel(settings, _now, _history, settingsTab, _store);
+		return new RootViewModel(settings, _now, _history, settingsTab, _metrics, _store);
 	}
 
 	/// <summary>
@@ -177,6 +181,17 @@ public static class IosCompositionRoot
 		_liveActivity = new LiveActivityPublisher(pipeline, new LiveActivityController(), settings);
 
 		_pipeline = pipeline;
+
+		// Feed the Metrics tab the same live streams the desktop StatusWindow charts.
+		// The handlers marshal to the UI thread themselves; backfill seeds the charts
+		// from persisted history so they aren't blank on first open.
+		if (_metrics is not null)
+		{
+			pipeline.SampleUpdated += _metrics.OnSampleUpdated;
+			pipeline.BeatReceived += _metrics.OnBeatReceived;
+			pipeline.BatteryUpdated += _metrics.OnBatteryUpdated;
+			_ = _metrics.LoadFromRepositoryAsync(dbPath);
+		}
 
 		// ObservableCollection mutations and pill updates must land on the UI
 		// thread, regardless of which thread the warm-start finished on.

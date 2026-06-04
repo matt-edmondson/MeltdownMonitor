@@ -20,6 +20,7 @@ public sealed class MetricsViewModel : ViewModelBase
 
 	private readonly Func<int> _windowMinutes;
 	private readonly Func<double> _emitInterval;
+	private readonly Action<Action> _dispatch;
 
 	private readonly List<double> _rmssd = [];
 	private readonly List<double> _baselineRmssd = [];
@@ -41,10 +42,17 @@ public sealed class MetricsViewModel : ViewModelBase
 	private readonly List<double> _contactTs = [];
 	private readonly List<double> _recentRr = [];
 
-	public MetricsViewModel(Func<int>? windowMinutesProvider = null, Func<double>? emitIntervalProvider = null)
+	/// <param name="dispatcher">Marshals a mutation onto the UI thread. Defaults to the Avalonia
+	/// <see cref="Dispatcher.UIThread"/> (apply inline when already on it, else Post). Injectable so
+	/// unit tests can run synchronously without binding the process-global UI-thread dispatcher.</param>
+	public MetricsViewModel(
+		Func<int>? windowMinutesProvider = null,
+		Func<double>? emitIntervalProvider = null,
+		Action<Action>? dispatcher = null)
 	{
 		_windowMinutes = windowMinutesProvider ?? (() => 60);
 		_emitInterval = emitIntervalProvider ?? (() => 5.0);
+		_dispatch = dispatcher ?? RunOnUi;
 	}
 
 	public IReadOnlyList<double> Rmssd => _rmssd;
@@ -73,7 +81,7 @@ public sealed class MetricsViewModel : ViewModelBase
 	private int Capacity =>
 		Math.Max(60, (int)(_windowMinutes() * 60.0 / Math.Max(0.5, _emitInterval())));
 
-	public void OnSampleUpdated(HrvSample s) => RunOnUi(() =>
+	public void OnSampleUpdated(HrvSample s) => _dispatch(() =>
 	{
 		double ts = s.Timestamp.ToUnixTimeMilliseconds() / 1000.0;
 		Append(_rmssd, s.Rmssd);
@@ -100,7 +108,7 @@ public sealed class MetricsViewModel : ViewModelBase
 		RaiseAllSeriesChanged();
 	});
 
-	public void OnBeatReceived(Beat beat) => RunOnUi(() =>
+	public void OnBeatReceived(Beat beat) => _dispatch(() =>
 	{
 		if (beat.IsArtifact)
 		{
@@ -116,7 +124,7 @@ public sealed class MetricsViewModel : ViewModelBase
 		Raise(nameof(RecentRr));
 	});
 
-	public void OnBatteryUpdated(BatteryReading reading) => RunOnUi(() =>
+	public void OnBatteryUpdated(BatteryReading reading) => _dispatch(() =>
 	{
 		_battery.Add(reading.Percent);
 		_batteryTs.Add(reading.Timestamp.ToUnixTimeMilliseconds() / 1000.0);
@@ -128,7 +136,7 @@ public sealed class MetricsViewModel : ViewModelBase
 
 	/// <summary>Seeds the series from persisted history (oldest first) so the charts aren't
 	/// blank on open. Mirrors the desktop StatusWindow.BackfillFromRepository.</summary>
-	public void Backfill(IReadOnlyList<HrvSample> samples, IReadOnlyList<BatteryReading> batteries) => RunOnUi(() =>
+	public void Backfill(IReadOnlyList<HrvSample> samples, IReadOnlyList<BatteryReading> batteries) => _dispatch(() =>
 	{
 		int cap = Capacity;
 		foreach (var s in samples.TakeLast(cap))

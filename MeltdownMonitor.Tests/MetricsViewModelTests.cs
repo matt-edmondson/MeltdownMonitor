@@ -18,7 +18,7 @@ public sealed class MetricsViewModelTests
 	[TestMethod]
 	public void OnSampleUpdated_appends_rmssd_and_baseline_with_timestamps()
 	{
-		var vm = new MetricsViewModel();
+		var vm = new MetricsViewModel(dispatcher: a => a());
 		var t0 = DateTimeOffset.UnixEpoch.AddSeconds(1000);
 		vm.OnSampleUpdated(SampleAt(t0, rmssd: 40, hr: 80));
 		vm.OnSampleUpdated(SampleAt(t0.AddSeconds(5), rmssd: 42, hr: 82));
@@ -32,7 +32,7 @@ public sealed class MetricsViewModelTests
 	[TestMethod]
 	public void OnBeatReceived_collects_non_artifact_rr_only()
 	{
-		var vm = new MetricsViewModel();
+		var vm = new MetricsViewModel(dispatcher: a => a());
 		vm.OnBeatReceived(new Beat(DateTimeOffset.UnixEpoch, 820, 73, IsArtifact: false));
 		vm.OnBeatReceived(new Beat(DateTimeOffset.UnixEpoch, 9999, 73, IsArtifact: true));
 		vm.OnBeatReceived(new Beat(DateTimeOffset.UnixEpoch, 810, 74, IsArtifact: false));
@@ -43,7 +43,7 @@ public sealed class MetricsViewModelTests
 	public void Capacity_trims_oldest_when_window_exceeded()
 	{
 		// 1-minute window at 5 s cadence floors to the 60-sample minimum capacity.
-		var vm = new MetricsViewModel(windowMinutesProvider: () => 1, emitIntervalProvider: () => 5.0);
+		var vm = new MetricsViewModel(windowMinutesProvider: () => 1, emitIntervalProvider: () => 5.0, dispatcher: a => a());
 		var t0 = DateTimeOffset.UnixEpoch.AddSeconds(1000);
 		for (int i = 0; i < 80; i++)
 		{
@@ -58,7 +58,7 @@ public sealed class MetricsViewModelTests
 	[TestMethod]
 	public void Backfill_seeds_series_from_persisted_samples_oldest_first()
 	{
-		var vm = new MetricsViewModel();
+		var vm = new MetricsViewModel(dispatcher: a => a());
 		var t0 = DateTimeOffset.UnixEpoch.AddSeconds(1000);
 		var history = new List<HrvSample>
 		{
