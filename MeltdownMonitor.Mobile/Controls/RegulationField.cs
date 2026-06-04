@@ -159,6 +159,28 @@ public sealed class RegulationField : Control
 		set => SetValue(HeatmapRegionThresholdProperty, value);
 	}
 
+	public static readonly StyledProperty<double> TrailOpacityProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(TrailOpacity), 0.70);
+
+	public static readonly StyledProperty<double> HistogramOpacityProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(HistogramOpacity), 0.60);
+
+	/// <summary>Opacity of the comet trail. It draws additively and blooms where the tail
+	/// overlaps itself and the marker, so lower this if it saturates; default 70%.</summary>
+	public double TrailOpacity
+	{
+		get => GetValue(TrailOpacityProperty);
+		set => SetValue(TrailOpacityProperty, value);
+	}
+
+	/// <summary>Opacity of the axis histograms (the arousal and vagal-tone bars). They draw
+	/// additively, so lower this if they saturate; default 60%.</summary>
+	public double HistogramOpacity
+	{
+		get => GetValue(HistogramOpacityProperty);
+		set => SetValue(HistogramOpacityProperty, value);
+	}
+
 	public static readonly StyledProperty<double> LobeOpacityProperty =
 		AvaloniaProperty.Register<RegulationField, double>(nameof(LobeOpacity), 0.60);
 
@@ -808,6 +830,10 @@ public sealed class RegulationField : Control
 				double slot = (halfWidth * 2.0) / n;
 				double barW = Math.Max(1.0, slot - 1.5);
 				context.DrawLine(axisPen, new Point(histLeft, baseY), new Point(centre.X + halfWidth, baseY));
+				// Bars draw additively (scaled by the histogram-opacity knob) so they glow like
+				// the desktop's; the thin axis baseline above stays alpha-over as crisp chrome.
+				double barAlpha = 0.55 * confidence * Math.Clamp(HistogramOpacity, 0.0, 1.0);
+				var bars = new List<(SKRect Rect, SKColor Col)>(n);
 				for (int b = 0; b < n; b++)
 				{
 					int c = xHist.Counts[b];
@@ -819,8 +845,20 @@ public sealed class RegulationField : Control
 					double bx = histLeft + ((b + 0.5) * slot);
 					Color hue = bx >= centre.X ? Peach : Sky;
 					double bh = maxH * (c / (double)xHist.PeakCount);
-					context.FillRectangle(Brush(hue, 0.55 * confidence), new Rect(bx - (barW / 2), baseY, barW, bh));
+					bars.Add((new SKRect(
+						(float)(bx - (barW / 2)), (float)baseY,
+						(float)(bx + (barW / 2)), (float)(baseY + bh)), Sk(hue, barAlpha)));
 				}
+
+				context.Custom(new AdditiveSkiaLayer(new Rect(Bounds.Size), (canvas, paint) =>
+				{
+					paint.Style = SKPaintStyle.Fill;
+					foreach ((SKRect rect, SKColor col) in bars)
+					{
+						paint.Color = col;
+						canvas.DrawRect(rect, paint);
+					}
+				}));
 
 				// Recovery arrows: cascade-pulsing left-pointing triangles when an alert is active.
 				// Gated by Recovery.IsActive (true during Warning/Alerting).
@@ -869,6 +907,9 @@ public sealed class RegulationField : Control
 				double slot = (2 * span) / n;
 				double barH = Math.Max(1.0, slot - 1.5);
 				context.DrawLine(axisPen, new Point(axisX, topY), new Point(axisX, centre.Y + span));
+				double barAlpha = 0.55 * confidence * Math.Clamp(HistogramOpacity, 0.0, 1.0);
+				SKColor barCol = Sk(Lavender, barAlpha);
+				var bars = new List<SKRect>(n);
 				for (int b = 0; b < n; b++)
 				{
 					int c = yHist.Counts[b];
@@ -879,8 +920,20 @@ public sealed class RegulationField : Control
 
 					double by = topY + ((b + 0.5) * slot);
 					double bw = maxW * (c / (double)yHist.PeakCount);
-					context.FillRectangle(Brush(Lavender, 0.55 * confidence), new Rect(axisX, by - (barH / 2), bw, barH));
+					bars.Add(new SKRect(
+						(float)axisX, (float)(by - (barH / 2)),
+						(float)(axisX + bw), (float)(by + (barH / 2))));
 				}
+
+				context.Custom(new AdditiveSkiaLayer(new Rect(Bounds.Size), (canvas, paint) =>
+				{
+					paint.Style = SKPaintStyle.Fill;
+					paint.Color = barCol;
+					foreach (SKRect rect in bars)
+					{
+						canvas.DrawRect(rect, paint);
+					}
+				}));
 			}
 		}
 	}
@@ -895,29 +948,76 @@ public sealed class RegulationField : Control
 
 		float markerYClamp = lobeHeight * MarkerYSpan;
 
-		// Oldest faint → newest bright, ending just behind the marker.
-		for (int i = 0; i < trail.Count - 1; i++)
+		// Map every trail reading to its 2D field position: X = arousal index, Y = vagal tone
+		// (FRAGILE up / STEADY down) — the same mapping as the live marker, so the comet records
+		// the marker's true path. The head is the eased marker position, so the last segment
+		// lands exactly on the marker.
+		int count = trail.Count;
+		var pts = new Vector2[count];
+		for (int i = 0; i < count; i++)
 		{
-			double frac = i / (double)(trail.Count - 1);
 			Vector2 p = LemniscateGeometry.MarkerPoint((float)trail[i].Reading.Index, centre, halfWidth);
-			// Y encodes vagal tone (FRAGILE up / STEADY down), matching the live marker so the
-			// comet records the marker's true 2D path — not just its horizontal arousal travel.
 			p.Y += RegulationFieldGeometry.VagalToneOffsetY(trail[i].Reading.VagalTone, markerYClamp);
-			double radius = 1.5 + (3.0 * frac);
-			// Each point keeps the colour of the state it was captured under, so the trail
-			// records the journey through states rather than recolouring to the current one.
-			Color stateCol = MeltdownMonitor.Mobile.StateColors.ColorFor(trail[i].State);
-			// Leading edge (newest, frac->1) brightens with speed and tints by trend so the
-			// comet visibly "leans" the way arousal is heading; older segments stay their own colour.
-			Color tint = Dynamics.Trend switch
-			{
-				RegulationTrend.Escalating => Lerp(stateCol, Peach, frac * _animator.DisplayedSpeed),
-				RegulationTrend.DeEscalating => Lerp(stateCol, Sky, frac * _animator.DisplayedSpeed),
-				_ => stateCol,
-			};
-			double alpha = (0.5 + (0.3 * _animator.DisplayedSpeed)) * frac * confidence;
-			context.DrawEllipse(Brush(tint, alpha), null, P(p), radius, radius);
+			pts[i] = p;
 		}
+
+		Vector2 head = LemniscateGeometry.MarkerPoint((float)_animator.MarkerPos, centre, halfWidth);
+		head.Y += RegulationFieldGeometry.VagalToneOffsetY(Reading.VagalTone, markerYClamp);
+		pts[^1] = head;
+
+		// One smooth comet tail through the points (Catmull-Rom): oldest faint → newest bright,
+		// thickening toward the head. Each segment keeps the colour of the state it was captured
+		// under; the leading edge brightens with speed and tints by trend so the comet visibly
+		// "leans" the way arousal is heading. Pre-computed here; the additive layer just strokes
+		// the sub-segments so overlaps bloom rather than darken (mirrors the desktop comet).
+		const int sub = 8;
+		double speed = _animator.DisplayedSpeed;
+		double trailOpacity = Math.Clamp(TrailOpacity, 0.0, 1.0);
+		var trend = Dynamics.Trend;
+		int segCount = (count - 1) * sub;
+		var linePts = new SKPoint[segCount + 1];
+		var cols = new SKColor[segCount];
+		var widths = new float[segCount];
+		int w = 0;
+		linePts[0] = new SKPoint(pts[0].X, pts[0].Y);
+		for (int i = 0; i < count - 1; i++)
+		{
+			Vector2 p0 = pts[Math.Max(0, i - 1)];
+			Vector2 p1 = pts[i];
+			Vector2 p2 = pts[i + 1];
+			Vector2 p3 = pts[Math.Min(count - 1, i + 2)];
+
+			Color segBase = MeltdownMonitor.Mobile.StateColors.ColorFor(trail[i].State);
+			for (int s = 1; s <= sub; s++)
+			{
+				float t = s / (float)sub;
+				Vector2 cur = CatmullRom(p0, p1, p2, p3, t);
+				double frac = (i + t) / (count - 1);
+				Color segCol = trend switch
+				{
+					RegulationTrend.Escalating => Lerp(segBase, Peach, frac * speed),
+					RegulationTrend.DeEscalating => Lerp(segBase, Sky, frac * speed),
+					_ => segBase,
+				};
+				double segAlpha = (0.55 + (0.3 * speed)) * frac * confidence * trailOpacity;
+				cols[w] = Sk(segCol, segAlpha);
+				widths[w] = (float)(1.0 + (2.5 * frac));
+				w++;
+				linePts[w] = new SKPoint(cur.X, cur.Y);
+			}
+		}
+
+		context.Custom(new AdditiveSkiaLayer(new Rect(Bounds.Size), (canvas, paint) =>
+		{
+			paint.Style = SKPaintStyle.Stroke;
+			paint.StrokeCap = SKStrokeCap.Butt;
+			for (int i = 0; i < segCount; i++)
+			{
+				paint.Color = cols[i];
+				paint.StrokeWidth = widths[i];
+				canvas.DrawLine(linePts[i], linePts[i + 1], paint);
+			}
+		}));
 	}
 
 	// During an active episode, mark the warm-side warning boundary the marker must fall back
@@ -983,16 +1083,29 @@ public sealed class RegulationField : Control
 		// FRAGILE as it collapses — the same vertical mapping as the desktop marker.
 		p.Y += RegulationFieldGeometry.VagalToneOffsetY(Reading.VagalTone, lobeHeight * MarkerYSpan);
 		var at = P(p);
-		double halo = 14 * _animator.HaloPulse;
-		context.DrawEllipse(Brush(StateColor, 0.18 * confidence), null, at, halo, halo); // halo
-		// Outer collapse halo: Slate, non-pulsing, radius grows with the collapse signal. Layers
-		// outside the pulsing state halo so the two read as distinct (different colour + motion).
+
+		// The two surrounding halos glow additively (overlap with the trail head and each other
+		// blooms toward white); the solid core and pupil below stay alpha-over so they read as
+		// crisp, opaque points — the same split the desktop marker uses.
+		var skAt = new SKPoint(p.X, p.Y);
+		float halo = (float)(14 * _animator.HaloPulse);
+		SKColor pulseCol = Sk(StateColor, 0.18 * confidence);
 		double collapse = HypoarousalVisual.Intensity(Hypoarousal);
-		if (collapse > 0.0)
+		float collapseRing = (float)(14 + (10 * collapse));
+		SKColor collapseCol = Sk(Slate, 0.30 * collapse * confidence);
+		context.Custom(new AdditiveSkiaLayer(new Rect(Bounds.Size), (canvas, paint) =>
 		{
-			double ring = 14 + (10 * collapse);
-			context.DrawEllipse(Brush(Slate, 0.30 * collapse * confidence), null, at, ring, ring);
-		}
+			paint.Style = SKPaintStyle.Fill;
+			paint.Color = pulseCol;
+			canvas.DrawCircle(skAt, halo, paint);
+			// Outer collapse halo: Slate, non-pulsing, radius grows with the collapse signal.
+			// Layered outside the pulsing state halo so the two read as distinct.
+			if (collapse > 0.0)
+			{
+				paint.Color = collapseCol;
+				canvas.DrawCircle(skAt, collapseRing, paint);
+			}
+		}));
 
 		context.DrawEllipse(Brush(StateColor, confidence), null, at, 6, 6);              // core
 		context.DrawEllipse(Brush(Base, confidence), null, at, 2.5, 2.5);                // pupil
