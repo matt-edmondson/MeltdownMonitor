@@ -131,4 +131,12 @@ public static class CrashReporting
 		ArgumentNullException.ThrowIfNull(exception);
 		SentrySdk.CaptureException(exception);
 	}
+
+	/// <summary>
+	/// Blocks until queued events are sent, or the timeout elapses. Used on the
+	/// crash path (e.g. an exception escaping the iOS launch sequence) so a
+	/// just-captured report is flushed before a fatal process exit takes it down
+	/// with us. No-ops when the SDK was never initialized (no DSN configured).
+	/// </summary>
+	public static void Flush(TimeSpan timeout) => SentrySdk.Flush(timeout);
 }
