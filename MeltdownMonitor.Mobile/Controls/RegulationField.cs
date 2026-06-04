@@ -370,21 +370,19 @@ public sealed class RegulationField : Control
 		var axisBrush = Brush(Overlay1, 0.22 * confidence);
 		var axisPen = new Pen(axisBrush, 1);
 
-		// X axis (arousal index), below the field, bars growing downward.
-		// Axis range is dynamic: at least [-1, 1] but expands for extreme index readings.
+		// X axis (arousal index), below the field, bars growing downward. The axis spans the
+		// field's fixed [-1, 1] band (centre.X ± halfWidth), so all buckets stay within the field.
 		if (xHist.PeakCount > 0)
 		{
 			double baseY = centre.Y + lobeHeight + 16;
 			double maxH = Math.Min(20, (h - 6) - baseY);
 			if (maxH > 1)
 			{
-				double histLeft = centre.X + (xHist.Min * halfWidth);
-				double histRight = centre.X + (xHist.Max * halfWidth);
-				double totalW = histRight - histLeft;
+				double histLeft = centre.X - halfWidth;
 				int n = xHist.BucketCount;
-				double slot = totalW / n;
+				double slot = (halfWidth * 2.0) / n;
 				double barW = Math.Max(1.0, slot - 1.5);
-				context.DrawLine(axisPen, new Point(histLeft, baseY), new Point(histRight, baseY));
+				context.DrawLine(axisPen, new Point(histLeft, baseY), new Point(centre.X + halfWidth, baseY));
 				for (int b = 0; b < n; b++)
 				{
 					int c = xHist.Counts[b];
