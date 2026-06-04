@@ -93,6 +93,12 @@ public sealed class Pipeline : IDisposable
 	/// connect). Only ever raised when the injected source implements <see cref="IDeviceInfoSource"/>.</summary>
 	public event Action<DeviceInformation>? DeviceInfoUpdated;
 
+	/// <summary>Fires for each beat the source delivers while not paused, after it is
+	/// persisted. Mirrors the desktop pipeline's BeatReceived so the Metrics charts and
+	/// the Regulation Field's RR-textured trace can consume the raw RR stream. Handlers
+	/// filter <see cref="Beat.IsArtifact"/> themselves, as the desktop consumers do.</summary>
+	public event Action<Beat>? BeatReceived;
+
 	/// <summary>Fires after <see cref="SampleUpdated"/> with the Regulation Field
 	/// reading derived from the same sample, so the Now screen can drive the
 	/// field without recomputing the calculator inputs itself.</summary>
@@ -299,6 +305,7 @@ public sealed class Pipeline : IDisposable
 			}
 
 			_repository.InsertBeat(beat);
+			BeatReceived?.Invoke(beat);
 
 			var sample = _hrv.AddBeat(
 				beat,
