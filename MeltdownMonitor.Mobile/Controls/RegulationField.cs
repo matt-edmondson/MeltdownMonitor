@@ -822,14 +822,16 @@ public sealed class RegulationField : Control
 			+ ((-p0 + (3f * p1) - (3f * p2) + p3) * t3));
 	}
 
-	// Axis density histograms: how the samples currently in the trail window are distributed.
+	// Axis density histograms: how the samples in the dwell window are distributed.
 	// X (arousal index) is a row of vertical bars below the field, each column aligned with the
 	// index it counts — left=cool/REST, right=warm/MELTDOWN. Y (vagal tone) is a column
 	// of horizontal bars on the left margin, top=FRAGILE (low tone) to bottom=STEADY (high).
-	// Mirrors the desktop RegulationFieldView, computed from the same Core bucketing.
+	// Mirrors the desktop RegulationFieldView, computed from the same Core bucketing — and over
+	// the same DwellTrail the heatmap accumulates, so the two axes stay the true marginals of the
+	// heatmap rather than counting a shorter comet-length slice.
 	private void DrawAxisHistograms(DrawingContext context, Point centre, double w, double h, float halfWidth, float labelClearHeight, float markerYClamp, double confidence)
 	{
-		var trail = Trail;
+		var trail = DwellTrail;
 		if (trail is null || trail.Count < 2)
 		{
 			return;
