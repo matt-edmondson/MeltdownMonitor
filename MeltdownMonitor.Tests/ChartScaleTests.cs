@@ -41,4 +41,20 @@ public sealed class ChartScaleTests
 		Assert.AreEqual(200.0, ChartScale.TimeX(1000, now: 1000, windowSec: 60, width: 200), 1e-9);
 		Assert.AreEqual(0.0, ChartScale.TimeX(940, now: 1000, windowSec: 60, width: 200), 1e-9);
 	}
+
+	[TestMethod]
+	public void ConsecutivePairs_builds_rr_i_vs_rr_iplus1()
+	{
+		var (xs, ys) = ScatterSeries.ConsecutivePairs([800.0, 810.0, 790.0]);
+		CollectionAssert.AreEqual(new[] { 800.0, 810.0 }, xs);
+		CollectionAssert.AreEqual(new[] { 810.0, 790.0 }, ys);
+	}
+
+	[TestMethod]
+	public void ConsecutivePairs_short_input_is_empty()
+	{
+		var (xs, ys) = ScatterSeries.ConsecutivePairs([800.0]);
+		Assert.AreEqual(0, xs.Length);
+		Assert.AreEqual(0, ys.Length);
+	}
 }
