@@ -18,6 +18,7 @@ public sealed class RootViewModel : ViewModelBase
 		NowViewModel now,
 		HistoryViewModel history,
 		SettingsViewModel settings_tab,
+		MetricsViewModel metrics,
 		IMobileSettingsStore? store = null)
 	{
 		_settings = settings;
@@ -25,12 +26,14 @@ public sealed class RootViewModel : ViewModelBase
 		Now = now;
 		History = history;
 		Settings = settings_tab;
+		Metrics = metrics;
 		Disclaimer = new DisclaimerViewModel(AcceptDisclaimer);
 	}
 
 	public NowViewModel Now { get; }
 	public HistoryViewModel History { get; }
 	public SettingsViewModel Settings { get; }
+	public MetricsViewModel Metrics { get; }
 	public DisclaimerViewModel Disclaimer { get; }
 
 	public bool IsDisclaimerAccepted => _settings.IsDisclaimerAccepted;
@@ -49,7 +52,8 @@ public sealed class RootViewModel : ViewModelBase
 			settings,
 			new NowViewModel(),
 			new HistoryViewModel(),
-			new SettingsViewModel(settings));
+			new SettingsViewModel(settings),
+			new MetricsViewModel());
 	}
 
 	private void AcceptDisclaimer()

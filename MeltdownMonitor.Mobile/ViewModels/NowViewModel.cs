@@ -21,20 +21,36 @@ public sealed class NowViewModel : ViewModelBase
 {
 	private const int SparklineMaxPoints = 360; // ~60 s at 6 Hz update cadence
 
+	// Recent RR intervals feeding the Regulation Field's live-trace texture — the same
+	// window the desktop RegulationFieldView keeps (RrBufferLength).
+	private const int RrBufferLength = 160;
+
 	private readonly ObservableCollection<double> _rmssdHistory = [];
 	private readonly ObservableCollection<double> _baselineHistory = [];
 	private readonly ObservableCollection<double> _rmssdTimestamps = [];
 	private readonly List<RegulationTrailPoint> _regulationTrail = [];
+	private readonly List<double> _rrBuffer = [];
+	private IReadOnlyList<double> _recentRr = [];
+	private long _rrBeatsAppended;
 
 	private readonly Func<Task>? _onConnect;
 	private readonly Func<Task>? _onDisconnect;
 	private readonly Func<AnnotationLabel, string?, Task>? _onAnnotate;
 	private readonly Func<int>? _trailLengthProvider;
+	private readonly Func<int>? _heatmapLengthProvider;
 	private readonly Func<double>? _jitterExaggerationProvider;
 	private readonly Func<double>? _lobeThicknessProvider;
 	private readonly Func<int>? _indexBucketsProvider;
 	private readonly Func<int>? _vagalBucketsProvider;
 	private readonly Func<int>? _lobeSegmentsProvider;
+	private readonly Func<double>? _lobeOpacityProvider;
+	private readonly Func<double>? _trailOpacityProvider;
+	private readonly Func<double>? _histogramOpacityProvider;
+	private readonly Func<double>? _heatmapOpacityProvider;
+	private readonly Func<double>? _heatmapPeakOpacityProvider;
+	private readonly Func<double>? _heatmapRegionOpacityProvider;
+	private readonly Func<double>? _heatmapRegionThresholdProvider;
+	private readonly Func<bool>? _useLfHfCorroborationProvider;
 	private Func<bool>? _coldCalibratedProvider;
 
 	private DetectorState _state = DetectorState.Idle;
@@ -54,6 +70,7 @@ public sealed class NowViewModel : ViewModelBase
 	private RegulationDynamics _dynamics = RegulationDynamics.Steady;
 	private RecoveryProgress _recovery = RecoveryProgress.Inactive;
 	private IReadOnlyList<RegulationTrailPoint> _regulationTrailSnapshot = [];
+	private IReadOnlyList<RegulationTrailPoint> _dwellTrailSnapshot = [];
 	private bool _isAnnotationSheetOpen;
 	private string _annotationNotes = string.Empty;
 	private double _jitterExaggeration = 1.0;
@@ -61,6 +78,14 @@ public sealed class NowViewModel : ViewModelBase
 	private int _indexBuckets = 24;
 	private int _vagalBuckets = 16;
 	private int _lobeSegments = LemniscateGeometry.DefaultSegments;
+	private double _lobeOpacity = 0.60;
+	private double _trailOpacity = 0.70;
+	private double _histogramOpacity = 0.60;
+	private double _heatmapOpacity = 0.35;
+	private double _heatmapPeakOpacity = 0.70;
+	private double _heatmapRegionOpacity = 0.55;
+	private double _heatmapRegionThreshold = 0.50;
+	private bool _useLfHfCorroboration = true;
 
 	public NowViewModel(
 		Func<Task>? onConnect = null,
@@ -71,17 +96,35 @@ public sealed class NowViewModel : ViewModelBase
 		Func<double>? lobeThicknessProvider = null,
 		Func<int>? indexBucketsProvider = null,
 		Func<int>? vagalBucketsProvider = null,
-		Func<int>? lobeSegmentsProvider = null)
+		Func<int>? lobeSegmentsProvider = null,
+		Func<int>? heatmapLengthProvider = null,
+		Func<double>? lobeOpacityProvider = null,
+		Func<double>? trailOpacityProvider = null,
+		Func<double>? histogramOpacityProvider = null,
+		Func<double>? heatmapOpacityProvider = null,
+		Func<double>? heatmapPeakOpacityProvider = null,
+		Func<double>? heatmapRegionOpacityProvider = null,
+		Func<double>? heatmapRegionThresholdProvider = null,
+		Func<bool>? useLfHfCorroborationProvider = null)
 	{
 		_onConnect = onConnect;
 		_onDisconnect = onDisconnect;
 		_onAnnotate = onAnnotate;
 		_trailLengthProvider = trailLengthProvider;
+		_heatmapLengthProvider = heatmapLengthProvider;
 		_jitterExaggerationProvider = jitterExaggerationProvider;
 		_lobeThicknessProvider = lobeThicknessProvider;
 		_indexBucketsProvider = indexBucketsProvider;
 		_vagalBucketsProvider = vagalBucketsProvider;
 		_lobeSegmentsProvider = lobeSegmentsProvider;
+		_lobeOpacityProvider = lobeOpacityProvider;
+		_trailOpacityProvider = trailOpacityProvider;
+		_histogramOpacityProvider = histogramOpacityProvider;
+		_heatmapOpacityProvider = heatmapOpacityProvider;
+		_heatmapPeakOpacityProvider = heatmapPeakOpacityProvider;
+		_heatmapRegionOpacityProvider = heatmapRegionOpacityProvider;
+		_heatmapRegionThresholdProvider = heatmapRegionThresholdProvider;
+		_useLfHfCorroborationProvider = useLfHfCorroborationProvider;
 		ToggleConnectionCommand = new RelayCommand(ToggleConnection);
 		OpenAnnotationCommand = new RelayCommand(() => IsAnnotationSheetOpen = true);
 		CancelAnnotationCommand = new RelayCommand(CloseAnnotationSheet);
@@ -195,6 +238,17 @@ public sealed class NowViewModel : ViewModelBase
 		private set => SetField(ref _regulationTrailSnapshot, value);
 	}
 
+	/// <summary>The longer dwell window (oldest first) the field's density heatmap accumulates
+	/// over — where regulation has settled, distinct from the shorter comet trail. The backing
+	/// buffer holds max(comet, heatmap) points, mirroring the desktop view's single capped
+	/// buffer; this publishes the whole buffer while <see cref="RegulationTrail"/> stays the
+	/// recent comet slice.</summary>
+	public IReadOnlyList<RegulationTrailPoint> DwellTrail
+	{
+		get => _dwellTrailSnapshot;
+		private set => SetField(ref _dwellTrailSnapshot, value);
+	}
+
 	/// <summary>Configured Regulation Field jitter exaggeration multiplier (clamped 0–3),
 	/// driving the live trace's variability undulation. Refreshed on each reading so a
 	/// setting change applies live, mirroring the comet-trail length.</summary>
@@ -236,6 +290,64 @@ public sealed class NowViewModel : ViewModelBase
 	{
 		get => _lobeSegments;
 		private set => SetField(ref _lobeSegments, value);
+	}
+
+	/// <summary>Configured opacity of the live-trace lobes (0–1, additive). Refreshed on each
+	/// reading so a setting change applies live, like the other field knobs.</summary>
+	public double LobeOpacity
+	{
+		get => _lobeOpacity;
+		private set => SetField(ref _lobeOpacity, value);
+	}
+
+	/// <summary>Configured opacity of the comet trail (0–1, additive). Refreshed on each reading.</summary>
+	public double TrailOpacity
+	{
+		get => _trailOpacity;
+		private set => SetField(ref _trailOpacity, value);
+	}
+
+	/// <summary>Configured opacity of the axis histograms (0–1, additive). Refreshed on each reading.</summary>
+	public double HistogramOpacity
+	{
+		get => _histogramOpacity;
+		private set => SetField(ref _histogramOpacity, value);
+	}
+
+	/// <summary>Configured overall opacity of the dwell heatmap (0–1). Refreshed on each reading.</summary>
+	public double HeatmapOpacity
+	{
+		get => _heatmapOpacity;
+		private set => SetField(ref _heatmapOpacity, value);
+	}
+
+	/// <summary>Configured opacity of the peak-dwell crosshair (0–1). Refreshed on each reading.</summary>
+	public double HeatmapPeakOpacity
+	{
+		get => _heatmapPeakOpacity;
+		private set => SetField(ref _heatmapPeakOpacity, value);
+	}
+
+	/// <summary>Configured opacity of the dashed high-density region box (0–1). Refreshed on each reading.</summary>
+	public double HeatmapRegionOpacity
+	{
+		get => _heatmapRegionOpacity;
+		private set => SetField(ref _heatmapRegionOpacity, value);
+	}
+
+	/// <summary>Configured peak-share threshold for the dashed region (0–1). Refreshed on each reading.</summary>
+	public double HeatmapRegionThreshold
+	{
+		get => _heatmapRegionThreshold;
+		private set => SetField(ref _heatmapRegionThreshold, value);
+	}
+
+	/// <summary>Mirrors DetectionThresholds.UseLfHfCorroboration — gates the field's LF/HF
+	/// balance halo. Refreshed on each reading.</summary>
+	public bool UseLfHfCorroboration
+	{
+		get => _useLfHfCorroboration;
+		private set => SetField(ref _useLfHfCorroboration, value);
 	}
 
 	/// <summary>The detector-state accent the field's marker and trail take.</summary>
@@ -473,12 +585,16 @@ public sealed class NowViewModel : ViewModelBase
 		pipeline.BatteryUpdated += OnBatteryUpdated;
 		pipeline.ContactChanged += OnContactChanged;
 		pipeline.DeviceInfoUpdated += OnDeviceInfoUpdated;
+		pipeline.BeatReceived += OnBeatReceived;
 		_coldCalibratedProvider = () => pipeline.IsColdCalibrated;
 
-		// Seed the comet trail from persisted history so the field isn't blank on launch.
+		// Seed the comet trail + dwell window from persisted history so the field isn't
+		// blank on launch. Capacity holds the longer of the two windows; the comet
+		// publishes its recent slice.
 		if (_regulationTrail.Count == 0)
 		{
-			int cap = Math.Clamp(_trailLengthProvider?.Invoke() ?? 48, 12, 2160);
+			int cometCap = CometCap;
+			int cap = Math.Max(cometCap, HeatmapCap);
 			var seed = pipeline.LoadRecentRegulationTrail(cap);
 			if (seed.Count > 0)
 			{
@@ -488,7 +604,9 @@ public sealed class NowViewModel : ViewModelBase
 					_regulationTrail.RemoveAt(0);
 				}
 
-				RegulationTrail = _regulationTrail.ToArray();
+				var snapshot = _regulationTrail.ToArray();
+				RegulationTrail = snapshot.Length > cometCap ? snapshot[^cometCap..] : snapshot;
+				DwellTrail = snapshot;
 			}
 		}
 
@@ -576,6 +694,46 @@ public sealed class NowViewModel : ViewModelBase
 	/// </summary>
 	public void OnDeviceInfoUpdated(DeviceInformation info) => RunOnUi(() => DeviceInfo = info);
 
+	/// <summary>Recent non-artifact RR intervals (ms), oldest first, feeding the Regulation
+	/// Field's live-trace texture. A fresh instance is published per beat so the control's
+	/// AffectsRender binding fires.</summary>
+	public IReadOnlyList<double> RecentRr
+	{
+		get => _recentRr;
+		private set => SetField(ref _recentRr, value);
+	}
+
+	/// <summary>Total non-artifact beats ever appended — the absolute beat timeline the
+	/// RR texture playhead scrolls along (mirrors the desktop view's _beatsAppended).</summary>
+	public long RrBeatsAppended
+	{
+		get => _rrBeatsAppended;
+		private set => SetField(ref _rrBeatsAppended, value);
+	}
+
+	/// <summary>
+	/// Push one raw beat into the VM's RR texture buffer. Wired to
+	/// <see cref="Pipeline.BeatReceived"/> and marshalled to the UI thread like the other
+	/// handlers. Artifacts are skipped, as the desktop consumers do. Public so tests can
+	/// drive the buffer without a live pipeline.
+	/// </summary>
+	public void OnBeatReceived(Beat beat) => RunOnUi(() =>
+	{
+		if (beat.IsArtifact)
+		{
+			return;
+		}
+
+		_rrBuffer.Add(beat.RrMs);
+		while (_rrBuffer.Count > RrBufferLength)
+		{
+			_rrBuffer.RemoveAt(0);
+		}
+
+		RrBeatsAppended++;
+		RecentRr = _rrBuffer.ToArray();
+	});
+
 	/// <summary>
 	/// Push a fresh Regulation Field reading into the VM, appending it to the
 	/// comet trail. Wired to <see cref="Pipeline.ReadingUpdated"/> and marshalled
@@ -589,15 +747,20 @@ public sealed class NowViewModel : ViewModelBase
 
 		// Capture the current detector state with the point so the segment keeps the
 		// colour it was drawn in, rather than recolouring as the state later advances.
+		// The buffer holds the longer of the comet and dwell-heatmap windows (one buffer,
+		// two views — mirroring the desktop); the comet publishes its recent slice.
 		_regulationTrail.Add(new RegulationTrailPoint(reading, _state));
-		int cap = Math.Clamp(_trailLengthProvider?.Invoke() ?? 48, 12, 2160);
+		int cometCap = CometCap;
+		int cap = Math.Max(cometCap, HeatmapCap);
 		while (_regulationTrail.Count > cap)
 		{
 			_regulationTrail.RemoveAt(0);
 		}
 
-		// Hand the control a fresh list instance so its AffectsRender binding fires.
-		RegulationTrail = _regulationTrail.ToArray();
+		// Hand the control fresh list instances so its AffectsRender bindings fire.
+		var snapshot = _regulationTrail.ToArray();
+		RegulationTrail = snapshot.Length > cometCap ? snapshot[^cometCap..] : snapshot;
+		DwellTrail = snapshot;
 
 		// Pick up any live Regulation Field display changes the same way (settings can
 		// be adjusted while the Now screen is open).
@@ -608,6 +771,14 @@ public sealed class NowViewModel : ViewModelBase
 		LobeSegments = Math.Clamp(
 			_lobeSegmentsProvider?.Invoke() ?? LemniscateGeometry.DefaultSegments,
 			LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments);
+		LobeOpacity = Math.Clamp(_lobeOpacityProvider?.Invoke() ?? 0.60, 0.0, 1.0);
+		TrailOpacity = Math.Clamp(_trailOpacityProvider?.Invoke() ?? 0.70, 0.0, 1.0);
+		HistogramOpacity = Math.Clamp(_histogramOpacityProvider?.Invoke() ?? 0.60, 0.0, 1.0);
+		HeatmapOpacity = Math.Clamp(_heatmapOpacityProvider?.Invoke() ?? 0.35, 0.0, 1.0);
+		HeatmapPeakOpacity = Math.Clamp(_heatmapPeakOpacityProvider?.Invoke() ?? 0.70, 0.0, 1.0);
+		HeatmapRegionOpacity = Math.Clamp(_heatmapRegionOpacityProvider?.Invoke() ?? 0.55, 0.0, 1.0);
+		HeatmapRegionThreshold = Math.Clamp(_heatmapRegionThresholdProvider?.Invoke() ?? 0.50, 0.0, 1.0);
+		UseLfHfCorroboration = _useLfHfCorroborationProvider?.Invoke() ?? true;
 	});
 
 	/// <summary>
@@ -625,6 +796,12 @@ public sealed class NowViewModel : ViewModelBase
 	public void OnRecoveryUpdated(RecoveryProgress recovery) => RunOnUi(() => Recovery = recovery);
 
 	public void TickTimeDisplay() => Raise(nameof(TimeSinceStateChange));
+
+	// Comet length (12–2160) and dwell-heatmap window (60–17280), clamped to the same
+	// ranges the desktop knobs expose. The trail buffer holds the longer of the two.
+	private int CometCap => Math.Clamp(_trailLengthProvider?.Invoke() ?? 48, 12, 2160);
+
+	private int HeatmapCap => Math.Clamp(_heatmapLengthProvider?.Invoke() ?? 720, 60, 17280);
 
 	private static void RunOnUi(Action apply)
 	{

@@ -10,6 +10,15 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.0.4" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.4" />
+    <!--
+      Managed SkiaSharp + the Avalonia Skia integration are needed by the Regulation Field's
+      additive-blend custom draw operation (SKBlendMode.Plus glow), which Avalonia's DrawingContext
+      cannot express. The iOS head already ships the matching native assets (SkiaSharp.NativeAssets.iOS
+      3.119.4); these are the managed assemblies the control compiles against. Versions track
+      Avalonia.Skia 12.0.4's managed SkiaSharp.
+    -->
+    <PackageReference Include="Avalonia.Skia" Version="12.0.4" />
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
   </ItemGroup>
 
   <ItemGroup>

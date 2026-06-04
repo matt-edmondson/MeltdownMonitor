@@ -19,10 +19,8 @@ namespace MeltdownMonitor.App.Regulation;
 public sealed class RegulationFieldView : IDisposable
 {
 	private const int RrBufferLength = 160;      // recent RR intervals for the live trace texture
-	private const int MinRrForJitter = 8;        // below this, draw a smooth (flat) trace
 	private const float LobeSwellFactor = 1.4f;  // how much a lobe thickens at full index
 	private const float MaxJitterPx = 18f;       // peak trace deflection from the real RR signal at 1× exaggeration
-	private const float RrDevScaleMs = 30f;      // beat-to-beat difference that maps to full deflection
 	private const int RibbonSub = 4;             // Catmull-Rom sub-steps per lobe segment for the ribbon centreline
 	private const float RibbonMiterLimit = 4f;   // cap the trace's miter extension so the self-crossing doesn't spike
 	private const float LobeHeightMin = 0.7f;    // live lobe height factor at lowest Poincaré roundness
@@ -301,7 +299,7 @@ public sealed class RegulationFieldView : IDisposable
 
 		// Live two-tone trace at the Poincaré-shaped height, textured with the real signal.
 		var live = LemniscateGeometry.Polyline(centre, halfWidth, liveLobeHeight, _pipeline.LobeSegments);
-		float[] dev = BuildRrDeviations(rr);
+		float[] dev = RrTexture.BuildRrDeviations(rr);
 		float clampedIndex = Math.Clamp((float)r.Index, -1f, 1f);
 		float warmSwell = 1f + (MathF.Max(0f, clampedIndex) * LobeSwellFactor);
 		float coolSwell = 1f + (MathF.Max(0f, -clampedIndex) * LobeSwellFactor);
@@ -427,24 +425,6 @@ public sealed class RegulationFieldView : IDisposable
 			draw.PrimWriteIdx((ushort)rb);
 			draw.PrimWriteIdx((ushort)lb);
 		}
-	}
-
-	// Normalised beat-to-beat differences in [-1, 1]. An (almost) flat result when variability
-	// has collapsed; jagged when it is healthy. Empty when too few clean beats have arrived.
-	private static float[] BuildRrDeviations(double[] rr)
-	{
-		if (rr.Length < MinRrForJitter)
-		{
-			return [];
-		}
-
-		var dev = new float[rr.Length];
-		for (int i = 1; i < rr.Length; i++)
-		{
-			dev[i] = Math.Clamp((float)(rr[i] - rr[i - 1]) / RrDevScaleMs, -1f, 1f);
-		}
-
-		return dev;
 	}
 
 	private void DrawTrail(ImDrawListPtr draw, Vector2 centre, float halfWidth, float liveLobeHeight, RegulationTrailPoint[] trail, RegulationReading disp, float confidence)
