@@ -529,6 +529,21 @@ public class NowViewModelTests
 	}
 
 	[TestMethod]
+	public void DwellTrail_AccumulatesBeyondTheCometSlice()
+	{
+		// Comet capped at 12; dwell window at its 60-point floor. The buffer holds the
+		// longer window while RegulationTrail stays the recent comet slice.
+		var vm = new NowViewModel(trailLengthProvider: () => 12, heatmapLengthProvider: () => 60);
+		for (int i = 0; i < 80; i++)
+		{
+			vm.OnReadingUpdated(new RegulationReading(0.1, 1.0, 1.0, 0.5, 0.0));
+		}
+
+		Assert.AreEqual(12, vm.RegulationTrail.Count, "comet stays at its configured length");
+		Assert.AreEqual(60, vm.DwellTrail.Count, "dwell window holds the longer heatmap cap");
+	}
+
+	[TestMethod]
 	public void OnBeatReceived_CollectsNonArtifactRrAndCounts()
 	{
 		var vm = new NowViewModel();

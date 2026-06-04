@@ -102,6 +102,62 @@ public sealed class RegulationField : Control
 	private static readonly Color Peach = Color.FromRgb(0xf5, 0xa9, 0x7f);
 	private static readonly Color Maroon = Color.FromRgb(0xee, 0x99, 0xa0);
 	private static readonly Color Green = Color.FromRgb(0xa6, 0xda, 0x95);
+	// Dwell-heatmap magma ramp + crosshair shadow (match the desktop MacchiatoPalette).
+	private static readonly Color Mantle = Color.FromRgb(0x1e, 0x20, 0x30);
+	private static readonly Color Mauve = Color.FromRgb(0xc6, 0xa0, 0xf6);
+	private static readonly Color Red = Color.FromRgb(0xed, 0x87, 0x96);
+	private static readonly Color Yellow = Color.FromRgb(0xee, 0xd4, 0x9f);
+
+	public static readonly StyledProperty<IReadOnlyList<RegulationTrailPoint>?> DwellTrailProperty =
+		AvaloniaProperty.Register<RegulationField, IReadOnlyList<RegulationTrailPoint>?>(nameof(DwellTrail));
+
+	public static readonly StyledProperty<double> HeatmapOpacityProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(HeatmapOpacity), 0.35);
+
+	public static readonly StyledProperty<double> HeatmapPeakOpacityProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(HeatmapPeakOpacity), 0.70);
+
+	public static readonly StyledProperty<double> HeatmapRegionOpacityProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(HeatmapRegionOpacity), 0.55);
+
+	public static readonly StyledProperty<double> HeatmapRegionThresholdProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(HeatmapRegionThreshold), 0.50);
+
+	/// <summary>The longer dwell window the density heatmap accumulates over (oldest first) —
+	/// distinct from the shorter comet <see cref="Trail"/>. Bound from NowViewModel.DwellTrail.</summary>
+	public IReadOnlyList<RegulationTrailPoint>? DwellTrail
+	{
+		get => GetValue(DwellTrailProperty);
+		set => SetValue(DwellTrailProperty, value);
+	}
+
+	/// <summary>Overall opacity of the dwell heatmap (0 hides it). Default 35%.</summary>
+	public double HeatmapOpacity
+	{
+		get => GetValue(HeatmapOpacityProperty);
+		set => SetValue(HeatmapOpacityProperty, value);
+	}
+
+	/// <summary>Opacity of the crosshair pinning the peak-dwell bucket (0 hides it). Default 70%.</summary>
+	public double HeatmapPeakOpacity
+	{
+		get => GetValue(HeatmapPeakOpacityProperty);
+		set => SetValue(HeatmapPeakOpacityProperty, value);
+	}
+
+	/// <summary>Opacity of the dashed box framing the high-density region (0 hides it). Default 55%.</summary>
+	public double HeatmapRegionOpacity
+	{
+		get => GetValue(HeatmapRegionOpacityProperty);
+		set => SetValue(HeatmapRegionOpacityProperty, value);
+	}
+
+	/// <summary>Share of the peak bucket a cell must reach to sit inside the dashed region. Default 50%.</summary>
+	public double HeatmapRegionThreshold
+	{
+		get => GetValue(HeatmapRegionThresholdProperty);
+		set => SetValue(HeatmapRegionThresholdProperty, value);
+	}
 
 	public static readonly StyledProperty<bool> UseLfHfCorroborationProperty =
 		AvaloniaProperty.Register<RegulationField, bool>(nameof(UseLfHfCorroboration), true);
@@ -304,6 +360,8 @@ public sealed class RegulationField : Control
 
 		DrawShutdownZone(context, centreV, halfWidth, lobeHeight, confidence);
 
+		DrawDensityHeatmap(context, centreV, halfWidth, lobeHeight * MarkerYSpan, confidence);
+
 		var ghost = LemniscateGeometry.Polyline(centreV, halfWidth, lobeHeight,
 			Math.Clamp(LobeSegments, LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments));
 		DrawTrace(context, ghost, centreV, halfWidth, reading, confidence);
@@ -372,6 +430,199 @@ public sealed class RegulationField : Control
 	/// <summary>Avalonia colour → SKColor with a [0,1] alpha, for the additive Skia layers.</summary>
 	private static SKColor Sk(Color c, double alpha) =>
 		new(c.R, c.G, c.B, (byte)Math.Clamp(alpha * 255.0, 0.0, 255.0));
+
+	// Dwell heatmap: a grid of buckets showing where the field has spent its time over the
+	// (configurable, usually long) dwell window — the 2D joint of the two axis histograms.
+	// Cells lay out through the same X = arousal index, Y = vagal tone mapping as the marker.
+	// The magma cells draw additively (they glow rather than sit as flat tiles); the dashed
+	// high-density region box and the peak crosshair stay alpha-over as crisp chrome. Ported
+	// from the desktop RegulationFieldView.DrawDensityHeatmap against the same Core bucketing.
+	private void DrawDensityHeatmap(DrawingContext context, Vector2 centre, float halfWidth, float markerYClamp, double confidence)
+	{
+		double opacity = Math.Clamp(HeatmapOpacity, 0.0, 1.0);
+		double peakOpacity = Math.Clamp(HeatmapPeakOpacity, 0.0, 1.0);
+		double regionOpacity = Math.Clamp(HeatmapRegionOpacity, 0.0, 1.0);
+		if (opacity <= 0.0 && peakOpacity <= 0.0 && regionOpacity <= 0.0)
+		{
+			return;
+		}
+
+		// Need a little dwell before a density reads as anything but noise.
+		var trail = DwellTrail;
+		if (trail is null || trail.Count < 4)
+		{
+			return;
+		}
+
+		// Grid resolution is the same per-axis bucket count that drives the axis histograms,
+		// so the heatmap stays a true 2D joint of them.
+		int xb = Math.Clamp(IndexBuckets, 6, 64);
+		int yb = Math.Clamp(VagalBuckets, 6, 64);
+		var density = RegulationFieldHistogram.FieldDensity(trail, xb, yb);
+		if (density.PeakCount <= 0)
+		{
+			return;
+		}
+
+		float cellW = (halfWidth * 2f) / xb;
+		float cellH = (markerYClamp * 2f) / yb;
+		float left0 = centre.X - halfWidth;
+		float top0 = centre.Y - markerYClamp;
+		float peak = density.PeakCount;
+
+		if (opacity > 0.0)
+		{
+			context.Custom(new AdditiveSkiaLayer(new Rect(Bounds.Size), (canvas, paint) =>
+			{
+				paint.Style = SKPaintStyle.Fill;
+				for (int y = 0; y < yb; y++)
+				{
+					float top = top0 + (y * cellH);
+					for (int x = 0; x < xb; x++)
+					{
+						int c = density.Count(x, y);
+						if (c == 0)
+						{
+							continue;
+						}
+
+						// Gamma-lift the normalised dwell so mid-traffic cells read distinctly.
+						float t = MathF.Pow(c / peak, 0.6f);
+						float left = left0 + (x * cellW);
+						paint.Color = Sk(HeatColor(t), opacity * confidence);
+						canvas.DrawRect(left, top, cellW, cellH, paint);
+					}
+				}
+			}));
+		}
+
+		// Dashed box around the high-concentration region — drawn beneath the crosshair so
+		// the pointer still reads on top. Alpha-over so the dashes stay crisp.
+		if (regionOpacity > 0.0
+			&& density.HighDensityBounds(Math.Clamp(HeatmapRegionThreshold, 0.0, 1.0)) is { } b)
+		{
+			var topLeft = new Point(left0 + (b.MinX * cellW), top0 + (b.MinY * cellH));
+			var bottomRight = new Point(left0 + ((b.MaxX + 1) * cellW), top0 + ((b.MaxY + 1) * cellH));
+			DrawHeatmapDensityRegion(context, topLeft, bottomRight, regionOpacity * confidence);
+		}
+
+		// Crosshair over the busiest bucket's centre, so the peak-dwell spot is unmistakable
+		// even when the heatmap is faint or hidden.
+		if (peakOpacity > 0.0 && density.PeakX >= 0)
+		{
+			var peakCentre = new Point(
+				left0 + ((density.PeakX + 0.5f) * cellW),
+				top0 + ((density.PeakY + 0.5f) * cellH));
+			DrawHeatmapPeakCrosshair(context, peakCentre, cellW, cellH, peakOpacity * confidence);
+		}
+	}
+
+	// Dwell-heatmap gradient: a magma-style ramp built from Catppuccin Macchiato hues — dark
+	// field background (low dwell) → Mauve → Red → Peach → Yellow (peak dwell). Stops are
+	// positioned (not evenly spaced) to keep the purple band wide and the bright top tight.
+	private static readonly (float Pos, Color Color)[] HeatStops =
+	[
+		(0.00f, Base),
+		(0.22f, Mauve),
+		(0.48f, Red),
+		(0.74f, Peach),
+		(1.00f, Yellow),
+	];
+
+	private static Color HeatColor(float t)
+	{
+		t = Math.Clamp(t, 0f, 1f);
+		for (int i = 1; i < HeatStops.Length; i++)
+		{
+			if (t <= HeatStops[i].Pos)
+			{
+				(float aPos, Color aCol) = HeatStops[i - 1];
+				(float bPos, Color bCol) = HeatStops[i];
+				float span = bPos - aPos;
+				return Lerp(aCol, bCol, span > 0f ? (t - aPos) / span : 0f);
+			}
+		}
+
+		return HeatStops[^1].Color;
+	}
+
+	// A dashed rectangle framing the dwell heatmap's high-concentration region: a darker
+	// shadow underlay then a bright Sky dash on top, so it stays legible over both hot magma
+	// cells and the dark canvas.
+	private static void DrawHeatmapDensityRegion(DrawingContext context, Point topLeft, Point bottomRight, double alpha)
+	{
+		if (alpha <= 0.0)
+		{
+			return;
+		}
+
+		var tr = new Point(bottomRight.X, topLeft.Y);
+		var bl = new Point(topLeft.X, bottomRight.Y);
+		DrawDashedShadowedLine(context, topLeft, tr, alpha);
+		DrawDashedShadowedLine(context, tr, bottomRight, alpha);
+		DrawDashedShadowedLine(context, bottomRight, bl, alpha);
+		DrawDashedShadowedLine(context, bl, topLeft, alpha);
+	}
+
+	// One dashed edge: walk from a to b laying down dash-length segments separated by gaps,
+	// each a Mantle shadow underlay then a bright Sky line on top.
+	private static void DrawDashedShadowedLine(DrawingContext context, Point a, Point b, double alpha)
+	{
+		double dx = b.X - a.X;
+		double dy = b.Y - a.Y;
+		double length = Math.Sqrt((dx * dx) + (dy * dy));
+		if (length <= 0.0)
+		{
+			return;
+		}
+
+		double ux = dx / length;
+		double uy = dy / length;
+		const double thick = 1.5;
+		const double dash = 6.0;
+		const double gap = 4.0;
+		var shadowPen = new Pen(Brush(Mantle, alpha * 0.6), thick + 2);
+		var linePen = new Pen(Brush(Sky, alpha), thick);
+		for (double pos = 0.0; pos < length; pos += dash + gap)
+		{
+			double end = Math.Min(pos + dash, length);
+			var segStart = new Point(a.X + (ux * pos), a.Y + (uy * pos));
+			var segEnd = new Point(a.X + (ux * end), a.Y + (uy * end));
+			context.DrawLine(shadowPen, segStart, segEnd);
+			context.DrawLine(linePen, segStart, segEnd);
+		}
+	}
+
+	// A crosshair pinning the peak-dwell bucket: four arms reaching out from a centre ring,
+	// with a gap so the bucket itself stays visible. Shadow underlay then bright Sky on top.
+	private static void DrawHeatmapPeakCrosshair(DrawingContext context, Point centre, double cellW, double cellH, double alpha)
+	{
+		if (alpha <= 0.0)
+		{
+			return;
+		}
+
+		double span = Math.Max(cellW, cellH);
+		double gap = span * 0.55;
+		double reach = span * 1.3;
+		const double thick = 1.5;
+		var shadowPen = new Pen(Brush(Mantle, alpha * 0.6), thick + 2);
+		var linePen = new Pen(Brush(Sky, alpha), thick);
+
+		void Stroke(Point from, Point to)
+		{
+			context.DrawLine(shadowPen, from, to);
+			context.DrawLine(linePen, from, to);
+		}
+
+		Stroke(new Point(centre.X - gap, centre.Y), new Point(centre.X - gap - reach, centre.Y));
+		Stroke(new Point(centre.X + gap, centre.Y), new Point(centre.X + gap + reach, centre.Y));
+		Stroke(new Point(centre.X, centre.Y - gap), new Point(centre.X, centre.Y - gap - reach));
+		Stroke(new Point(centre.X, centre.Y + gap), new Point(centre.X, centre.Y + gap + reach));
+
+		context.DrawEllipse(null, shadowPen, centre, gap, gap);
+		context.DrawEllipse(null, linePen, centre, gap, gap);
+	}
 
 	// Upper-cool quadrant (cool/left side, low variability) = collapse territory. Fill it with Slate
 	// at an opacity that tracks the collapse signal, so approach is visible before the latch.

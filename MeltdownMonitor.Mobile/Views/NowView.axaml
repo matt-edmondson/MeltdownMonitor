@@ -28,7 +28,8 @@
                                          Hypoarousal="{Binding Reading.Hypoarousal}"
                                          HypoarousalDynamics="{Binding HypoarousalDynamics}"
                                          Rr="{Binding RecentRr}"
-                                         RrBeatsAppended="{Binding RrBeatsAppended}" />
+                                         RrBeatsAppended="{Binding RrBeatsAppended}"
+                                         DwellTrail="{Binding DwellTrail}" />
                     <ctl:Sparkline Grid.Row="1"
                                    Height="48"
                                    Margin="0,8,0,0"

@@ -37,6 +37,7 @@ public sealed class NowViewModel : ViewModelBase
 	private readonly Func<Task>? _onDisconnect;
 	private readonly Func<AnnotationLabel, string?, Task>? _onAnnotate;
 	private readonly Func<int>? _trailLengthProvider;
+	private readonly Func<int>? _heatmapLengthProvider;
 	private readonly Func<double>? _jitterExaggerationProvider;
 	private readonly Func<double>? _lobeThicknessProvider;
 	private readonly Func<int>? _indexBucketsProvider;
@@ -61,6 +62,7 @@ public sealed class NowViewModel : ViewModelBase
 	private RegulationDynamics _dynamics = RegulationDynamics.Steady;
 	private RecoveryProgress _recovery = RecoveryProgress.Inactive;
 	private IReadOnlyList<RegulationTrailPoint> _regulationTrailSnapshot = [];
+	private IReadOnlyList<RegulationTrailPoint> _dwellTrailSnapshot = [];
 	private bool _isAnnotationSheetOpen;
 	private string _annotationNotes = string.Empty;
 	private double _jitterExaggeration = 1.0;
@@ -78,12 +80,14 @@ public sealed class NowViewModel : ViewModelBase
 		Func<double>? lobeThicknessProvider = null,
 		Func<int>? indexBucketsProvider = null,
 		Func<int>? vagalBucketsProvider = null,
-		Func<int>? lobeSegmentsProvider = null)
+		Func<int>? lobeSegmentsProvider = null,
+		Func<int>? heatmapLengthProvider = null)
 	{
 		_onConnect = onConnect;
 		_onDisconnect = onDisconnect;
 		_onAnnotate = onAnnotate;
 		_trailLengthProvider = trailLengthProvider;
+		_heatmapLengthProvider = heatmapLengthProvider;
 		_jitterExaggerationProvider = jitterExaggerationProvider;
 		_lobeThicknessProvider = lobeThicknessProvider;
 		_indexBucketsProvider = indexBucketsProvider;
@@ -200,6 +204,17 @@ public sealed class NowViewModel : ViewModelBase
 	{
 		get => _regulationTrailSnapshot;
 		private set => SetField(ref _regulationTrailSnapshot, value);
+	}
+
+	/// <summary>The longer dwell window (oldest first) the field's density heatmap accumulates
+	/// over — where regulation has settled, distinct from the shorter comet trail. The backing
+	/// buffer holds max(comet, heatmap) points, mirroring the desktop view's single capped
+	/// buffer; this publishes the whole buffer while <see cref="RegulationTrail"/> stays the
+	/// recent comet slice.</summary>
+	public IReadOnlyList<RegulationTrailPoint> DwellTrail
+	{
+		get => _dwellTrailSnapshot;
+		private set => SetField(ref _dwellTrailSnapshot, value);
 	}
 
 	/// <summary>Configured Regulation Field jitter exaggeration multiplier (clamped 0–3),
@@ -483,10 +498,13 @@ public sealed class NowViewModel : ViewModelBase
 		pipeline.BeatReceived += OnBeatReceived;
 		_coldCalibratedProvider = () => pipeline.IsColdCalibrated;
 
-		// Seed the comet trail from persisted history so the field isn't blank on launch.
+		// Seed the comet trail + dwell window from persisted history so the field isn't
+		// blank on launch. Capacity holds the longer of the two windows; the comet
+		// publishes its recent slice.
 		if (_regulationTrail.Count == 0)
 		{
-			int cap = Math.Clamp(_trailLengthProvider?.Invoke() ?? 48, 12, 2160);
+			int cometCap = CometCap;
+			int cap = Math.Max(cometCap, HeatmapCap);
 			var seed = pipeline.LoadRecentRegulationTrail(cap);
 			if (seed.Count > 0)
 			{
@@ -496,7 +514,9 @@ public sealed class NowViewModel : ViewModelBase
 					_regulationTrail.RemoveAt(0);
 				}
 
-				RegulationTrail = _regulationTrail.ToArray();
+				var snapshot = _regulationTrail.ToArray();
+				RegulationTrail = snapshot.Length > cometCap ? snapshot[^cometCap..] : snapshot;
+				DwellTrail = snapshot;
 			}
 		}
 
@@ -637,15 +657,20 @@ public sealed class NowViewModel : ViewModelBase
 
 		// Capture the current detector state with the point so the segment keeps the
 		// colour it was drawn in, rather than recolouring as the state later advances.
+		// The buffer holds the longer of the comet and dwell-heatmap windows (one buffer,
+		// two views — mirroring the desktop); the comet publishes its recent slice.
 		_regulationTrail.Add(new RegulationTrailPoint(reading, _state));
-		int cap = Math.Clamp(_trailLengthProvider?.Invoke() ?? 48, 12, 2160);
+		int cometCap = CometCap;
+		int cap = Math.Max(cometCap, HeatmapCap);
 		while (_regulationTrail.Count > cap)
 		{
 			_regulationTrail.RemoveAt(0);
 		}
 
-		// Hand the control a fresh list instance so its AffectsRender binding fires.
-		RegulationTrail = _regulationTrail.ToArray();
+		// Hand the control fresh list instances so its AffectsRender bindings fire.
+		var snapshot = _regulationTrail.ToArray();
+		RegulationTrail = snapshot.Length > cometCap ? snapshot[^cometCap..] : snapshot;
+		DwellTrail = snapshot;
 
 		// Pick up any live Regulation Field display changes the same way (settings can
 		// be adjusted while the Now screen is open).
@@ -673,6 +698,12 @@ public sealed class NowViewModel : ViewModelBase
 	public void OnRecoveryUpdated(RecoveryProgress recovery) => RunOnUi(() => Recovery = recovery);
 
 	public void TickTimeDisplay() => Raise(nameof(TimeSinceStateChange));
+
+	// Comet length (12–2160) and dwell-heatmap window (60–17280), clamped to the same
+	// ranges the desktop knobs expose. The trail buffer holds the longer of the two.
+	private int CometCap => Math.Clamp(_trailLengthProvider?.Invoke() ?? 48, 12, 2160);
+
+	private int HeatmapCap => Math.Clamp(_heatmapLengthProvider?.Invoke() ?? 720, 60, 17280);
 
 	private static void RunOnUi(Action apply)
 	{
