@@ -49,9 +49,12 @@ public static class RegulationFieldCalculator
 		double warnH = Math.Max(thresholds.HrWarningRiseFraction, 1e-6);
 
 		// Positive combined = activation toward the warm lobe; negative = calmer than baseline.
+		// Not clamped: severe states produce values outside [-1, 1]. The display layers
+		// (marker, heatmap) clip to ±1; the trail stores the raw value so out-of-range
+		// readings don't pile up artificially in the edge histogram buckets.
 		double combined = (RmssdWeight * rmssdDrop / warnR)
 						+ (HrWeight * hrRise / warnH);
-		double index = Math.Clamp(combined * WarningBoundaryIndex, -1.0, 1.0);
+		double index = combined * WarningBoundaryIndex;
 
 		double quality = Math.Clamp(sample.Rmssd / sample.BaselineRmssd, 0.0, 1.0);
 

@@ -39,7 +39,8 @@ public class RegulationFieldRampTests
 
 		// Crosses into clear activation by the Warning-threshold sample.
 		Assert.IsTrue(indices[3] >= 0.55, $"expected ~0.6 at Warning, got {indices[3]}");
-		Assert.AreEqual(1.0, indices[^1], 0.001);
+		// Severe state exceeds the ±1 display range (not clamped at source).
+		Assert.IsTrue(indices[^1] > 1.0, $"severe state should exceed display range, got {indices[^1]}");
 
 		// Recovery: returning toward baseline pulls the index back down close to the
 		// regulated centre — well below the Warning-threshold position (~0.6), not merely

@@ -5,9 +5,11 @@ namespace MeltdownMonitor.Core.Regulation;
 /// relative to the personal baseline.
 /// </summary>
 /// <param name="Index">
-/// Signed arousal-vs-baseline in [-1, 1]. Positive = sympathetic activation (toward the
-/// warm "meltdown" lobe); 0 = at baseline (centre of the window of tolerance); negative =
-/// calmer than baseline = rest/recovery (the cool lobe). NOT a shutdown signal.
+/// Signed arousal-vs-baseline. Positive = sympathetic activation (toward the warm "meltdown"
+/// lobe); 0 = at baseline (centre of the window of tolerance); negative = calmer than baseline
+/// = rest/recovery (the cool lobe). NOT a shutdown signal. Magnitude is unbounded — severe
+/// states can exceed ±1. The display clips to ±1 (marker position, heatmap axis); the raw
+/// value is kept so genuinely extreme readings do not pile up in the edge histogram buckets.
 /// </param>
 /// <param name="VariabilityQuality">
 /// RMSSD relative to baseline in [0, 1]: 1 = healthy variability (a fat, lively trace),

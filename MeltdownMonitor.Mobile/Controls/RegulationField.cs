@@ -314,8 +314,9 @@ public sealed class RegulationField : Control
 
 		// Live two-tone trace: the warm (right) lobe swells with positive index,
 		// the cool (left) lobe with negative; stroke thins as variability collapses.
-		float warmSwell = 1f + (MathF.Max(0f, (float)r.Index) * 1.4f);
-		float coolSwell = 1f + (MathF.Max(0f, -(float)r.Index) * 1.4f);
+		float clampedIndex = Math.Clamp((float)r.Index, -1f, 1f);
+		float warmSwell = 1f + (MathF.Max(0f, clampedIndex) * 1.4f);
+		float coolSwell = 1f + (MathF.Max(0f, -clampedIndex) * 1.4f);
 		float quality = (float)Math.Clamp(r.VariabilityQuality, 0.0, 1.0);
 		double baseThick = (3.0 + (4.0 * quality)) * Math.Clamp(LobeThickness, 0.5, 3.0);
 
@@ -359,28 +360,79 @@ public sealed class RegulationField : Control
 		var axisPen = new Pen(axisBrush, 1);
 
 		// X axis (arousal index), below the field, bars growing downward.
-		if (xHist.PeakCount > 0)
+		// Axis range is dynamic: at least [-1, 1] but expands for extreme index readings.
 		{
 			double baseY = centre.Y + lobeHeight + 16;
 			double maxH = Math.Min(20, (h - 6) - baseY);
 			if (maxH > 1)
 			{
+				double histLeft = centre.X + (xHist.Min * halfWidth);
+				double histRight = centre.X + (xHist.Max * halfWidth);
+				double totalW = histRight - histLeft;
 				int n = xHist.BucketCount;
-				double slot = (halfWidth * 2.0) / n;
+				double slot = totalW / n;
 				double barW = Math.Max(1.0, slot - 1.5);
-				context.DrawLine(axisPen, new Point(centre.X - halfWidth, baseY), new Point(centre.X + halfWidth, baseY));
-				for (int b = 0; b < n; b++)
-				{
-					int c = xHist.Counts[b];
-					if (c == 0)
-					{
-						continue;
-					}
+				context.DrawLine(axisPen, new Point(histLeft, baseY), new Point(histRight, baseY));
 
-					double bx = centre.X - halfWidth + ((b + 0.5) * slot);
-					Color hue = bx >= centre.X ? Peach : Sky;
-					double bh = maxH * (c / (double)xHist.PeakCount);
-					context.FillRectangle(Brush(hue, 0.55 * confidence), new Rect(bx - (barW / 2), baseY, barW, bh));
+				if (xHist.PeakCount > 0)
+				{
+					for (int b = 0; b < n; b++)
+					{
+						int c = xHist.Counts[b];
+						if (c == 0)
+						{
+							continue;
+						}
+
+						double bx = histLeft + ((b + 0.5) * slot);
+						Color hue = bx >= centre.X ? Peach : Sky;
+						double bh = maxH * (c / (double)xHist.PeakCount);
+						context.FillRectangle(Brush(hue, 0.55 * confidence), new Rect(bx - (barW / 2), baseY, barW, bh));
+					}
+				}
+
+				// Warning threshold: dashed vertical line at ±WarningBoundaryIndex (0.6).
+				double warnOff = RegulationFieldCalculator.WarningBoundaryIndex * halfWidth;
+				if (xHist.Max > 0)
+				{
+					DrawDashedVertical(context, centre.X + warnOff, baseY - 2, baseY + maxH,
+						Brush(Peach, 0.45 * confidence), 1, 4, 3);
+				}
+
+				if (xHist.Min < 0)
+				{
+					DrawDashedVertical(context, centre.X - warnOff, baseY - 2, baseY + maxH,
+						Brush(Sky, 0.45 * confidence), 1, 4, 3);
+				}
+
+				// Recovery arrows: cascade-pulsing left-pointing triangles when an alert is active.
+				// Gated by Recovery.IsActive (true during Warning/Alerting) — avoids needing a
+				// DetectorState prop on the control; uses StateColor for the appropriate hue.
+				if (Recovery.IsActive)
+				{
+					double warnX = centre.X + warnOff;
+					double zoneW = warnX - centre.X;
+					double spacing = zoneW / 4.0;
+					double arrowW = 7;
+					double arrowH = 5;
+					double arrowY = baseY + (maxH * 0.5);
+					Color stateCol = StateColor;
+					for (int i = 0; i < 3; i++)
+					{
+						double phase = (_animator.AnimTime * 3.5) - (i * 1.3);
+						double alpha = Math.Clamp(0.25 + 0.65 * Math.Sin(phase), 0.1, 1.0);
+						double ax = warnX - ((i + 1) * spacing);
+						var geom = new StreamGeometry();
+						using (var ctx = geom.Open())
+						{
+							ctx.BeginFigure(new Point(ax - (arrowW / 2), arrowY), true);
+							ctx.LineTo(new Point(ax + (arrowW / 2), arrowY - arrowH));
+							ctx.LineTo(new Point(ax + (arrowW / 2), arrowY + arrowH));
+							ctx.EndFigure(true);
+						}
+
+						context.DrawGeometry(Brush(stateCol, alpha * confidence), null, geom);
+					}
 				}
 			}
 		}
@@ -581,6 +633,17 @@ public sealed class RegulationField : Control
 		}
 
 		context.DrawGeometry(Brush(hue, alpha), null, geo);
+	}
+
+	private static void DrawDashedVertical(DrawingContext context, double x, double yTop, double yBot,
+		IBrush brush, double thick, double dash, double gap)
+	{
+		var pen = new Pen(brush, thick);
+		double step = dash + gap;
+		for (double y = yTop; y < yBot; y += step)
+		{
+			context.DrawLine(pen, new Point(x, y), new Point(x, Math.Min(y + dash, yBot)));
+		}
 	}
 
 	private static void DrawLabels(DrawingContext context, Point centre, float halfWidth, float lobeHeight)
