@@ -257,6 +257,17 @@ public sealed class RegulationField : Control
 			Math.Clamp(LobeSegments, LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments));
 		DrawTrace(context, ghost, centreV, halfWidth, reading, confidence);
 		DrawAxisHistograms(context, centre, w, h, halfWidth, lobeHeight, confidence);
+
+		// Warning threshold dashed lines on the field: vertical markers at ±WarningBoundaryIndex
+		// (0.6) that the moving marker/trail crosses as arousal rises or falls.
+		{
+			double warnOff = RegulationFieldCalculator.WarningBoundaryIndex * halfWidth;
+			double topY = centre.Y - (lobeHeight * 0.92);
+			double botY = centre.Y + (lobeHeight * 0.92);
+			DrawDashedVertical(context, centre.X + warnOff, topY, botY, Brush(Peach, 0.28 * confidence), 1, 4, 3);
+			DrawDashedVertical(context, centre.X - warnOff, topY, botY, Brush(Sky, 0.28 * confidence), 1, 4, 3);
+		}
+
 		DrawTrail(context, centreV, halfWidth, confidence);
 		DrawRecoveryTarget(context, centreV, halfWidth, lobeHeight, confidence);
 		DrawMarker(context, centreV, halfWidth, confidence);
@@ -361,6 +372,7 @@ public sealed class RegulationField : Control
 
 		// X axis (arousal index), below the field, bars growing downward.
 		// Axis range is dynamic: at least [-1, 1] but expands for extreme index readings.
+		if (xHist.PeakCount > 0)
 		{
 			double baseY = centre.Y + lobeHeight + 16;
 			double maxH = Math.Min(20, (h - 6) - baseY);
@@ -373,44 +385,25 @@ public sealed class RegulationField : Control
 				double slot = totalW / n;
 				double barW = Math.Max(1.0, slot - 1.5);
 				context.DrawLine(axisPen, new Point(histLeft, baseY), new Point(histRight, baseY));
-
-				if (xHist.PeakCount > 0)
+				for (int b = 0; b < n; b++)
 				{
-					for (int b = 0; b < n; b++)
+					int c = xHist.Counts[b];
+					if (c == 0)
 					{
-						int c = xHist.Counts[b];
-						if (c == 0)
-						{
-							continue;
-						}
-
-						double bx = histLeft + ((b + 0.5) * slot);
-						Color hue = bx >= centre.X ? Peach : Sky;
-						double bh = maxH * (c / (double)xHist.PeakCount);
-						context.FillRectangle(Brush(hue, 0.55 * confidence), new Rect(bx - (barW / 2), baseY, barW, bh));
+						continue;
 					}
-				}
 
-				// Warning threshold: dashed vertical line at ±WarningBoundaryIndex (0.6).
-				double warnOff = RegulationFieldCalculator.WarningBoundaryIndex * halfWidth;
-				if (xHist.Max > 0)
-				{
-					DrawDashedVertical(context, centre.X + warnOff, baseY - 2, baseY + maxH,
-						Brush(Peach, 0.45 * confidence), 1, 4, 3);
-				}
-
-				if (xHist.Min < 0)
-				{
-					DrawDashedVertical(context, centre.X - warnOff, baseY - 2, baseY + maxH,
-						Brush(Sky, 0.45 * confidence), 1, 4, 3);
+					double bx = histLeft + ((b + 0.5) * slot);
+					Color hue = bx >= centre.X ? Peach : Sky;
+					double bh = maxH * (c / (double)xHist.PeakCount);
+					context.FillRectangle(Brush(hue, 0.55 * confidence), new Rect(bx - (barW / 2), baseY, barW, bh));
 				}
 
 				// Recovery arrows: cascade-pulsing left-pointing triangles when an alert is active.
-				// Gated by Recovery.IsActive (true during Warning/Alerting) — avoids needing a
-				// DetectorState prop on the control; uses StateColor for the appropriate hue.
+				// Gated by Recovery.IsActive (true during Warning/Alerting).
 				if (Recovery.IsActive)
 				{
-					double warnX = centre.X + warnOff;
+					double warnX = centre.X + (RegulationFieldCalculator.WarningBoundaryIndex * halfWidth);
 					double zoneW = warnX - centre.X;
 					double spacing = zoneW / 4.0;
 					double arrowW = 7;
