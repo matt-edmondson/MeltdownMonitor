@@ -1,0 +1,61 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:MeltdownMonitor.Mobile.ViewModels"
+             xmlns:ctl="clr-namespace:MeltdownMonitor.Mobile.Controls"
+             x:Class="MeltdownMonitor.Mobile.Views.MetricsView"
+             x:DataType="vm:MetricsViewModel">
+    <ScrollViewer>
+        <StackPanel Margin="16" Spacing="14">
+
+            <TextBlock Text="Time-Domain" FontWeight="SemiBold" />
+            <ctl:MetricChart Height="140" Title="RMSSD vs baseline (ms)"
+                             Values="{Binding Rmssd}" BaselineValues="{Binding BaselineRmssd}"
+                             Timestamps="{Binding RmssdTimestamps}" WindowSeconds="{Binding WindowSeconds}" />
+            <ctl:MetricChart Height="120" Title="pNN50 (%)"
+                             Values="{Binding Pnn50}" Timestamps="{Binding RmssdTimestamps}"
+                             WindowSeconds="{Binding WindowSeconds}" />
+            <ctl:MetricChart Height="120" Title="SDNN (ms)"
+                             Values="{Binding Sdnn}" Timestamps="{Binding RmssdTimestamps}"
+                             WindowSeconds="{Binding WindowSeconds}" />
+
+            <TextBlock Text="Heart Rate" FontWeight="SemiBold" Margin="0,8,0,0" />
+            <ctl:MetricChart Height="140" Title="Heart rate vs baseline (bpm)"
+                             Values="{Binding MeanHr}" BaselineValues="{Binding BaselineHr}"
+                             Timestamps="{Binding RmssdTimestamps}" WindowSeconds="{Binding WindowSeconds}" />
+            <ctl:MetricChart Height="120" Title="RR intervals (ms, recent beats)"
+                             Values="{Binding RecentRr}" />
+
+            <TextBlock Text="Frequency-Domain" FontWeight="SemiBold" Margin="0,8,0,0" />
+            <ctl:MetricChart Height="140" Title="LF/HF ratio vs baseline"
+                             Values="{Binding LfHfRatio}" BaselineValues="{Binding BaselineLfHf}"
+                             Timestamps="{Binding RmssdTimestamps}" WindowSeconds="{Binding WindowSeconds}" />
+            <ctl:MetricChart Height="120" Title="LF power (ms²)"
+                             Values="{Binding LfPower}" Timestamps="{Binding RmssdTimestamps}"
+                             WindowSeconds="{Binding WindowSeconds}" />
+            <ctl:MetricChart Height="120" Title="HF power (ms²)"
+                             Values="{Binding HfPower}" Timestamps="{Binding RmssdTimestamps}"
+                             WindowSeconds="{Binding WindowSeconds}" />
+
+            <TextBlock Text="Poincaré" FontWeight="SemiBold" Margin="0,8,0,0" />
+            <ctl:ScatterChart Height="220" Title="Poincaré (RR[i] vs RR[i+1])"
+                              RrIntervals="{Binding RecentRr}" />
+            <ctl:MetricChart Height="120" Title="SD1 (ms)"
+                             Values="{Binding Sd1}" Timestamps="{Binding RmssdTimestamps}"
+                             WindowSeconds="{Binding WindowSeconds}" />
+            <ctl:MetricChart Height="120" Title="SD2 (ms)"
+                             Values="{Binding Sd2}" Timestamps="{Binding RmssdTimestamps}"
+                             WindowSeconds="{Binding WindowSeconds}" />
+            <ctl:MetricChart Height="120" Title="SD1/SD2 ratio"
+                             Values="{Binding Sd1Sd2}" Timestamps="{Binding RmssdTimestamps}"
+                             WindowSeconds="{Binding WindowSeconds}" />
+
+            <TextBlock Text="Sensor" FontWeight="SemiBold" Margin="0,8,0,0" />
+            <ctl:MetricChart Height="100" Title="Battery (%)"
+                             Values="{Binding Battery}" Timestamps="{Binding BatteryTimestamps}"
+                             WindowSeconds="{Binding WindowSeconds}" YMin="0" YMax="100" />
+            <ctl:MetricChart Height="60" Title="Sensor contact (1=OK, 0=lost)" Stairs="True"
+                             Values="{Binding Contact}" Timestamps="{Binding ContactTimestamps}"
+                             WindowSeconds="{Binding WindowSeconds}" YMin="0" YMax="1" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
