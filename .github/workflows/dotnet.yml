@@ -59,7 +59,7 @@ jobs:
           distribution: "zulu" # Alternative distribution options are available.
 
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0 # Full history for versioning
           fetch-tags: true
@@ -203,7 +203,7 @@ jobs:
 
     steps:
       - name: Checkout Release Commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ needs.build.outputs.release_hash }}
 
