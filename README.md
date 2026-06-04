@@ -5,7 +5,7 @@ A real-time monitor for **autonomic nervous system (ANS)** dysregulation. It str
 It ships as two front-ends over a shared, platform-neutral core:
 
 - **Windows desktop** — a tray-resident **Dear ImGui** app with a live status window, a translucent always-on-top **Regulation Field** overlay, chime, and Windows toast.
-- **iOS / mobile** — a cross-platform **Avalonia** app (`MeltdownMonitor.Mobile` + the `MeltdownMonitor.iOS` head) with HealthKit baseline warm-start, episode write-back, a Lock-Screen Live Activity, and local notifications.
+- **iOS / mobile** — a cross-platform **Avalonia** app (`MeltdownMonitor.Mobile` + the `MeltdownMonitor.iOS` head) with the full metrics chart suite (Metrics tab), HealthKit baseline warm-start, episode write-back, a Lock-Screen Live Activity, and local notifications.
 
 Intended for people with nervous system dysregulation conditions — **PTSD** (post-traumatic stress disorder), **C-PTSD** (complex PTSD), autism, and similar — who want passive real-time awareness without adding to sensory load.
 
@@ -137,7 +137,7 @@ The Regulation Field is the app's signature glanceable instrument: a lemniscate 
 - a **lobe roundness** derived from the Poincaré SD1/SD2 ratio, and
 - a signed **LF/HF balance** relative to the LF/HF baseline.
 
-The renderers are platform-specific — `MeltdownMonitor.App/Regulation/RegulationFieldView.cs` (ImGui draw-list) and `MeltdownMonitor.Mobile/Controls/RegulationField.cs` (Avalonia) — while the geometry (`LemniscateGeometry`) and the calculation live in Core. The desktop renderer adds extras (LF/HF halo, vagal axis, recovery target, RR-texture playhead).
+The renderers are platform-specific — `MeltdownMonitor.App/Regulation/RegulationFieldView.cs` (ImGui draw-list) and `MeltdownMonitor.Mobile/Controls/RegulationField.cs` (Avalonia + a SkiaSharp additive-blend draw op for the glow layers) — while the geometry (`LemniscateGeometry`), the calculation, and the RR-texture playhead live in Core. Both renderers now draw the full layer set (LF/HF halo, dwell heatmap + peak crosshair + region box, vagal axis with marker/trail tone travel, recovery target, RR-textured trace).
 
 ---
 
