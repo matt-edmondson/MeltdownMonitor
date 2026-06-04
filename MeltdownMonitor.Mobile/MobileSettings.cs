@@ -88,4 +88,49 @@ public sealed class MobileSettings
 	/// <summary>Bucket resolution along the vagal-tone (Y) axis — the number of bars in the
 	/// vagal-tone histogram (6–64; clamped at the consumer). Higher = finer detail. Default 16.</summary>
 	public int FieldVagalBuckets { get; set; } = 16;
+
+	/// <summary>Overall opacity of the Regulation Field's live-trace lobes (0–1; clamped at the
+	/// consumer). The lobes are drawn with additive blending so densely overlapping segments bloom
+	/// toward white; this knob pulls the stroke alpha down to compensate. Default 0.6.</summary>
+	public double LobeOpacity { get; set; } = 0.60;
+
+	/// <summary>Overall opacity of the Regulation Field's comet trail (0–1; clamped at the
+	/// consumer). The trail is drawn with additive blending; this scales the per-segment alpha to
+	/// compensate for the bloom. Default 0.7.</summary>
+	public double TrailOpacity { get; set; } = 0.70;
+
+	/// <summary>Overall opacity of the Regulation Field dwell heatmap (0–1; clamped at the
+	/// consumer). 0 hides it; default 0.35 keeps it a faint underlay beneath the comet and marker.</summary>
+	public double HeatmapOpacity { get; set; } = 0.35;
+
+	/// <summary>Opacity of the crosshair marking the dwell heatmap's peak (busiest) bucket
+	/// (0–1; clamped at the consumer). 0 hides it; default 0.7 keeps it a clear pointer over
+	/// the faint underlay.</summary>
+	public double HeatmapPeakOpacity { get; set; } = 0.70;
+
+	/// <summary>Opacity of the dashed box outlining the dwell heatmap's high-concentration region
+	/// (0–1; clamped at the consumer). 0 hides it; default 0.55 keeps it a soft frame around
+	/// where regulation clusters.</summary>
+	public double HeatmapRegionOpacity { get; set; } = 0.55;
+
+	/// <summary>Fraction of the busiest bucket's count a bucket must reach to join the
+	/// high-concentration region (0–1; clamped at the consumer). Default 0.5 wraps the buckets
+	/// holding at least half the peak's dwell.</summary>
+	public double HeatmapRegionThreshold { get; set; } = 0.50;
+
+	/// <summary>Overall opacity of the Regulation Field's axis histograms (0–1; clamped at the
+	/// consumer). The bars are drawn with additive blending; this scales their alpha to compensate
+	/// for the bloom. Default 0.6.</summary>
+	public double HistogramOpacity { get; set; } = 0.60;
+
+	/// <summary>How many recent readings the Regulation Field dwell heatmap accumulates over
+	/// (60–17280; clamped at the consumer). Default 720 ≈ 1 h at the 5 s emit cadence.</summary>
+	public int RegulationHeatmapLength { get; set; } = 720;
+
+	/// <summary>Minimum gap between HRV sample emissions (0.5–30 s). Lower = smoother graphs.
+	/// Default 5.0 s.</summary>
+	public double HrvEmitIntervalSeconds { get; set; } = 5.0;
+
+	/// <summary>How much history the sparklines display (1–360 min). Default 60 min.</summary>
+	public int SparklineWindowMinutes { get; set; } = 60;
 }

@@ -133,4 +133,41 @@ public class MobileSettingsSerializerTests
 	{
 		Assert.AreEqual(96, new MobileSettings().LobeSegments);
 	}
+
+	[TestMethod]
+	public void Roundtrip_preserves_new_regulation_and_refresh_knobs()
+	{
+		var s = new MobileSettings
+		{
+			LobeOpacity = 0.55, TrailOpacity = 0.65, HeatmapOpacity = 0.40,
+			HeatmapPeakOpacity = 0.72, HeatmapRegionOpacity = 0.58, HeatmapRegionThreshold = 0.45,
+			HistogramOpacity = 0.62, RegulationHeatmapLength = 900,
+			HrvEmitIntervalSeconds = 4.0, SparklineWindowMinutes = 30,
+		};
+		var back = MobileSettingsSerializer.Deserialize(MobileSettingsSerializer.Serialize(s));
+		Assert.AreEqual(0.55, back.LobeOpacity, 1e-9);
+		Assert.AreEqual(0.65, back.TrailOpacity, 1e-9);
+		Assert.AreEqual(0.40, back.HeatmapOpacity, 1e-9);
+		Assert.AreEqual(0.72, back.HeatmapPeakOpacity, 1e-9);
+		Assert.AreEqual(0.58, back.HeatmapRegionOpacity, 1e-9);
+		Assert.AreEqual(0.45, back.HeatmapRegionThreshold, 1e-9);
+		Assert.AreEqual(0.62, back.HistogramOpacity, 1e-9);
+		Assert.AreEqual(900, back.RegulationHeatmapLength);
+		Assert.AreEqual(4.0, back.HrvEmitIntervalSeconds, 1e-9);
+		Assert.AreEqual(30, back.SparklineWindowMinutes);
+	}
+
+	[TestMethod]
+	public void Defaults_match_desktop_tuned_values()
+	{
+		var s = new MobileSettings();
+		Assert.AreEqual(0.60, s.LobeOpacity, 1e-9);
+		Assert.AreEqual(0.70, s.TrailOpacity, 1e-9);
+		Assert.AreEqual(0.35, s.HeatmapOpacity, 1e-9);
+		Assert.AreEqual(0.70, s.HeatmapPeakOpacity, 1e-9);
+		Assert.AreEqual(0.55, s.HeatmapRegionOpacity, 1e-9);
+		Assert.AreEqual(0.50, s.HeatmapRegionThreshold, 1e-9);
+		Assert.AreEqual(0.60, s.HistogramOpacity, 1e-9);
+		Assert.AreEqual(720, s.RegulationHeatmapLength);
+	}
 }
