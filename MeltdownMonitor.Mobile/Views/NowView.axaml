@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:MeltdownMonitor.Mobile.ViewModels"
              xmlns:ctl="clr-namespace:MeltdownMonitor.Mobile.Controls"
+             xmlns:conv="clr-namespace:MeltdownMonitor.Mobile.Converters"
              x:Class="MeltdownMonitor.Mobile.Views.NowView"
              x:DataType="vm:NowViewModel">
     <Grid>
@@ -108,10 +109,12 @@
                            TextAlignment="Center"
                            HorizontalAlignment="Center"
                            IsVisible="{Binding IsColdCalibrated}" />
+                <!-- Hidden via opacity, not IsVisible, so the bar keeps its layout
+                     footprint and its neighbours don't jump when the trend appears. -->
                 <StackPanel Orientation="Horizontal"
                             HorizontalAlignment="Center"
                             Spacing="8"
-                            IsVisible="{Binding IsTrendVisible}">
+                            Opacity="{Binding IsTrendVisible, Converter={x:Static conv:BoolToOpacityConverter.Instance}}">
                     <TextBlock Text="{Binding TrendLabel}"
                                Foreground="#CAD3F5"
                                FontSize="13"
@@ -128,7 +131,7 @@
                 <StackPanel Orientation="Horizontal"
                             HorizontalAlignment="Center"
                             Spacing="8"
-                            IsVisible="{Binding IsRecoveryVisible}">
+                            Opacity="{Binding IsRecoveryVisible, Converter={x:Static conv:BoolToOpacityConverter.Instance}}">
                     <TextBlock Text="{Binding RecoveryText}"
                                Foreground="#A6DA95"
                                FontSize="13"
