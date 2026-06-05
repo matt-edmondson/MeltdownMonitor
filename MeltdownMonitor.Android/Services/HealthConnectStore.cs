@@ -1,38 +1,274 @@
+using Android.Runtime;
+using AndroidX.Health.Connect.Client;
+using AndroidX.Health.Connect.Client.Records;
+using AndroidX.Health.Connect.Client.Records.Metadata;
+using AndroidX.Health.Connect.Client.Request;
+using AndroidX.Health.Connect.Client.Response;
+using AndroidX.Health.Connect.Client.Time;
+using Java.Time;
+using Kotlin.Coroutines;
+using Kotlin.Coroutines.Intrinsics;
+using Kotlin.Jvm;
 using MeltdownMonitor.Mobile.Services;
+using AndroidContext = Android.Content.Context;
 
 namespace MeltdownMonitor.Android.Services;
 
 /// <summary>
-/// <see cref="IHealthStore"/> placeholder for the Health Connect warm-start
-/// (design doc §5.3 / Phase 5). Health Connect (<c>androidx.health.connect</c>)
-/// is the platform successor to the deprecated Google Fit APIs and the Android
-/// analog of iOS HealthKit; reading the last 24 h of <c>HeartRateRecord</c> will
-/// warm the EWMA baseline through the existing <see cref="MeltdownMonitor.Mobile.Pipeline.WarmStartAsync"/>.
+/// <see cref="IHealthStore"/> backed by Health Connect (<c>androidx.health.connect</c>),
+/// the platform successor to the deprecated Google Fit APIs and the Android analog
+/// of iOS HealthKit (design doc §5.3 / Phase 5). Reads the last 24 h of
+/// <c>HeartRateRecord</c> to warm the EWMA HR baseline through
+/// <see cref="MeltdownMonitor.Mobile.Pipeline.WarmStartAsync"/>, removing the
+/// cold-start calibration on relaunch — exactly as <c>HealthKitStore</c> feeds the
+/// iOS pipeline.
 ///
 /// <para>
-/// The managed binding choice (<c>Xamarin.AndroidX.Health.Connect.Client</c> vs.
-/// a thin JNI read-path wrapper) is the open question logged in design doc §11.1
-/// and is deliberately deferred. Until it is resolved this implementation reports
-/// no authorization and reads no samples, so the pipeline simply starts cold —
-/// exactly the graceful degradation §5.3 calls for when Health Connect is absent.
-/// Live beats then warm the baseline as usual; nothing else in the head depends
-/// on this returning data.
+/// Health Connect's Kotlin client exposes <c>readRecords</c> / <c>getGrantedPermissions</c>
+/// as <c>suspend</c> functions. The managed binding surfaces those with a trailing
+/// <see cref="IContinuation"/> and returns the awaited value through
+/// <see cref="IContinuation.ResumeWith"/>; <see cref="AwaitSuspendAsync"/> bridges that
+/// to a <see cref="Task"/>. The §11.1 binding question is resolved in favour of the
+/// managed <c>Xamarin.AndroidX.Health.Connect.ConnectClient</c> binding rather than a
+/// JNI read-path wrapper.
+/// </para>
+///
+/// <para>
+/// Every path degrades to a cold start when Health Connect is absent, the read
+/// permission is not granted, or the IPC read fails — the pipeline already tolerates
+/// an <see cref="IHealthStore"/> that yields nothing, and live beats then warm the
+/// baseline as usual (design doc §5.3). Writes (per-beat HR and episode records) stay
+/// no-ops until the Phase 8 write-back fast-follow.
 /// </para>
 /// </summary>
 public sealed class HealthConnectStore : IHealthStore
 {
-	// No Health Connect client yet (§11.1) — report unavailable so callers fall back to a cold start.
-	public Task<bool> RequestAuthorizationAsync() => Task.FromResult(false);
+	// The string HealthPermission.getReadPermission(HeartRateRecord::class) resolves to.
+	// Declared in AndroidManifest.xml so it can be granted through Health Connect's UI.
+	private const string ReadHeartRatePermission = "android.permission.health.READ_HEART_RATE";
+
+	// A single read page is capped at this many records; 24 h of HR is paged through
+	// PageToken below. The ceiling bounds a pathological provider that never returns a
+	// null token.
+	private const int PageSize = 1000;
+	private const int MaxPages = 50;
+
+	// Warm-start is best-effort and runs before Start, with no caller cancellation, so a
+	// wedged provider must never hang launch — the suspend bridge is bounded by this.
+	private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(20);
+
+	private readonly AndroidContext _context;
+
+	public HealthConnectStore(AndroidContext context) =>
+		_context = context ?? throw new ArgumentNullException(nameof(context));
+
+	/// <summary>
+	/// Reports whether the heart-rate read permission is already granted. Health Connect
+	/// grants are made through its own permission UI (an <c>ActivityResultContract</c>),
+	/// not a manifest runtime grant, and that UI can only be launched from an Activity —
+	/// wiring the request flow behind the first-run disclaimer is the Phase 4
+	/// permission-sequencing work. This check lets Settings reflect the current state
+	/// truthfully in the meantime, and the warm-start read below works as soon as the
+	/// grant exists.
+	/// </summary>
+	public async Task<bool> RequestAuthorizationAsync()
+	{
+		var client = TryGetClient();
+		if (client is null)
+		{
+			return false;
+		}
+
+		try
+		{
+			// client is non-null here, but the capture reverts to its nullable declared
+			// type inside the lambda, so assert it.
+			var result = await AwaitSuspendAsync(c => client!.PermissionController.GetGrantedPermissions(c))
+				.ConfigureAwait(false);
+
+			// The resume value is marshalled to the ResumeWith parameter's declared type
+			// (Java.Lang.Object), so re-wrap the handle as the Kotlin Set<String> with
+			// JavaCast rather than a managed pattern match, which would never match.
+			var permissions = result?.JavaCast<Java.Util.ICollection>();
+			return permissions is not null && permissions.Contains(new Java.Lang.String(ReadHeartRatePermission));
+		}
+		catch (Java.Lang.Exception)
+		{
+			return false;
+		}
+		catch (InvalidCastException)
+		{
+			return false;
+		}
+	}
 
 	public async IAsyncEnumerable<HrSample> ReadRecentHeartRateAsync(TimeSpan lookback)
 	{
-		// Cold start: yield nothing until the Health Connect read path lands (Phase 5).
-		await Task.CompletedTask.ConfigureAwait(false);
-		yield break;
+		var client = TryGetClient();
+		if (client is null)
+		{
+			yield break;
+		}
+
+		var end = Instant.Now()!;
+		var start = end.MinusMillis((long)lookback.TotalMilliseconds)!;
+		var timeRange = TimeRangeFilter.Between(start, end)!;
+		var recordType = JvmClassMappingKt.GetKotlinClass(Java.Lang.Class.FromType(typeof(HeartRateRecord))!)!;
+		var allOrigins = new List<DataOrigin>();
+
+		string? pageToken = null;
+		int pages = 0;
+		do
+		{
+			// pageToken is null for the first page; the `!` keeps the call compiling
+			// whether or not the binding annotates the parameter nullable (it only ever
+			// affects compile-time flow analysis — the provider expects null here).
+			var request = new ReadRecordsRequest(
+				recordType, timeRange, allOrigins,
+				ascendingOrder: true, pageSize: PageSize, pageToken: pageToken!);
+
+			// Collect the page off the suspend bridge inside the try; yield outside it,
+			// since C# forbids `yield return` from a try with a catch clause.
+			List<HrSample>? page = null;
+			string? nextToken = null;
+			try
+			{
+				// client is non-null past the guard above; the lambda capture needs the assert.
+				var result = await AwaitSuspendAsync(c => client!.ReadRecords(request, c)).ConfigureAwait(false);
+
+				// The resume value arrives typed as the ResumeWith parameter (Java.Lang.Object),
+				// so re-wrap the handle as the concrete response with JavaCast. A null result is
+				// the read timeout; a Kotlin Result.Failure (denied permission, provider fault)
+				// is not assignable and throws InvalidCastException — both degrade to a cold
+				// start (design doc §5.3).
+				var response = result?.JavaCast<ReadRecordsResponse>();
+				if (response is not null)
+				{
+					page = ExtractSamples(response);
+					nextToken = response.PageToken;
+				}
+			}
+			catch (Java.Lang.Exception)
+			{
+				yield break;
+			}
+			catch (InvalidCastException)
+			{
+				yield break;
+			}
+
+			if (page is null)
+			{
+				yield break;
+			}
+
+			foreach (var sample in page)
+			{
+				yield return sample;
+			}
+
+			pageToken = nextToken;
+		}
+		while (!string.IsNullOrEmpty(pageToken) && ++pages < MaxPages);
 	}
 
+	// Episode write-back and per-beat HR write-back are the Phase 8 fast-follow
+	// (design doc §5.3 / §13). The read path above is the v1 deliverable.
 	public Task WriteHrSampleAsync(HrSample sample) => Task.CompletedTask;
 
-	// Episode write-back is the Phase 8 fast-follow (design doc §5.3 / §13).
 	public Task WriteEpisodeAsync(EpisodeRecord episode) => Task.CompletedTask;
+
+	private static List<HrSample> ExtractSamples(ReadRecordsResponse response)
+	{
+		var samples = new List<HrSample>();
+		foreach (var record in response.Records)
+		{
+			if (record is not HeartRateRecord heartRate || heartRate.Samples is null)
+			{
+				continue;
+			}
+
+			foreach (var sample in heartRate.Samples)
+			{
+				double bpm = sample.BeatsPerMinute;
+				var time = sample.Time;
+				if (bpm <= 0 || time is null)
+				{
+					continue;
+				}
+
+				var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(time.ToEpochMilli());
+				samples.Add(new HrSample(timestamp, bpm));
+			}
+		}
+
+		return samples;
+	}
+
+	private IHealthConnectClient? TryGetClient()
+	{
+		try
+		{
+			// SdkAvailable is the only status that supports reads; SdkUnavailable and
+			// SdkUnavailableProviderUpdateRequired both mean "start cold" (design doc §5.3).
+			return HealthConnectClient.GetSdkStatus(_context) == HealthConnectClient.SdkAvailable
+				? HealthConnectClient.GetOrCreate(_context)
+				: null;
+		}
+		catch (Java.Lang.Exception)
+		{
+			return null;
+		}
+	}
+
+	/// <summary>
+	/// Invokes a Kotlin <c>suspend</c> function and awaits its result. The bound method
+	/// takes a trailing <see cref="IContinuation"/> and either returns its result
+	/// synchronously or, more usually for an IPC-backed call, returns the
+	/// <c>COROUTINE_SUSPENDED</c> sentinel and resumes the continuation later. A timeout
+	/// guards against a provider that never resumes, so a best-effort warm-start can
+	/// never hang launch.
+	/// </summary>
+	private static async Task<Java.Lang.Object?> AwaitSuspendAsync(Func<IContinuation, Java.Lang.Object?> call)
+	{
+		var continuation = new SuspendContinuation();
+		var immediate = call(continuation);
+		if (immediate is not null && !IsSuspendSentinel(immediate))
+		{
+			return immediate;
+		}
+
+		var finished = await Task.WhenAny(continuation.Task, Task.Delay(ReadTimeout)).ConfigureAwait(false);
+		return finished == continuation.Task ? continuation.Task.Result : null;
+	}
+
+	private static bool IsSuspendSentinel(Java.Lang.Object value)
+	{
+		try
+		{
+			return value.Equals(IntrinsicsKt.COROUTINE_SUSPENDED);
+		}
+		catch (Java.Lang.Exception)
+		{
+			return false;
+		}
+	}
+
+	/// <summary>
+	/// Bridges a Kotlin continuation to a <see cref="Task"/>. <see cref="EmptyCoroutineContext"/>
+	/// is the correct empty context for a top-level resume, and the success value (or a
+	/// boxed <c>kotlin.Result.Failure</c>, which casts to neither response type and so
+	/// degrades to a cold start) arrives through <see cref="ResumeWith"/>.
+	/// </summary>
+	private sealed class SuspendContinuation : Java.Lang.Object, IContinuation
+	{
+		private readonly TaskCompletionSource<Java.Lang.Object?> _completion =
+			new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+		public Task<Java.Lang.Object?> Task => _completion.Task;
+
+		public ICoroutineContext Context => EmptyCoroutineContext.Instance!;
+
+		public void ResumeWith(Java.Lang.Object? result) => _completion.TrySetResult(result);
+	}
 }

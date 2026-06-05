@@ -1,21 +1,27 @@
 # MeltdownMonitor for Android — Design Document
 
-Status: **Implementation underway** — Phases 1–4, 6, 7 landed; Phase 5 (Health
-Connect warm-start) and Phase 8 (episode write-back) deferred. See
-§13 for the phase map and the implementation note below.
+Status: **Implementation underway** — Phases 1–7 landed; Phase 8 (episode
+write-back) deferred. See §13 for the phase map and the implementation note
+below.
 Author: design pass, June 2026
 
 > **Implementation note (June 2026).** The two Android projects
 > (`MeltdownMonitor.Ble.Android`, `MeltdownMonitor.Android`) are scaffolded and
 > their C# compiles against the .NET 10 `android` workload. The BLE source,
 > foreground service, composition root, the notification / chime / settings /
-> export services, and the ongoing-notification status surface are implemented
-> (Phases 1–4, 6). `HealthConnectStore` ships as a cold-start placeholder until
-> the binding decision in §11.1 is made (Phase 5), and episode write-back
-> (Phase 8) is unimplemented. CI is `.github/workflows/android.yml` (Phase 7).
-> The Android-SDK packaging/resource steps and all real-time BLE behaviour can
-> only be verified on a runner/device with the full Android SDK and a real
-> sensor — the same caveat the repo documents for every head.
+> export services, the ongoing-notification status surface, and the Health
+> Connect warm-start read are implemented (Phases 1–6). The §11.1 binding
+> question is resolved in favour of the managed
+> `Xamarin.AndroidX.Health.Connect.ConnectClient` binding: `HealthConnectStore`
+> reads 24 h of `HeartRateRecord` through it, bridging the Kotlin `suspend`
+> `readRecords`/`getGrantedPermissions` to `Task` with a hand-rolled
+> `IContinuation`. Launching Health Connect's permission UI is folded into the
+> Phase 4 permission-sequencing follow-up, and episode write-back (Phase 8) is
+> unimplemented. CI is `.github/workflows/android.yml` (Phase 7). The
+> Android-SDK packaging/resource steps, the Health Connect read, and all
+> real-time BLE behaviour can only be verified on a runner/device with the full
+> Android SDK, Health Connect installed, and a real sensor — the same caveat the
+> repo documents for every head.
 Scope: add an Android head to the existing cross-platform .NET app, reusing the
 platform-neutral `MeltdownMonitor.Mobile` and `MeltdownMonitor.Core` assemblies
 that already ship on iOS. This is a sibling-head project, not a port.
@@ -443,9 +449,15 @@ Play policy notes, the analog of the iOS App Store rules in the iOS doc:
 
 ## 11. Open questions to resolve before coding
 
-1. **Health Connect binding maturity.** Is `Xamarin.AndroidX.Health.Connect.Client`
+1. **Health Connect binding maturity.** ~~Is `Xamarin.AndroidX.Health.Connect.Client`
    solid on `net10.0-android`, or do we need a thin JNI wrapper for the read
-   path? (§5.3)
+   path?~~ **Resolved (Phase 5):** the managed
+   `Xamarin.AndroidX.Health.Connect.ConnectClient` 1.1.0.2 binding is used. Its
+   only friction is that `readRecords`/`getGrantedPermissions` are Kotlin
+   `suspend` functions, surfaced with a trailing `IContinuation`;
+   `HealthConnectStore` bridges that to a `Task` with a small `SuspendContinuation`
+   (returning `EmptyCoroutineContext.Instance`) and re-wraps the resumed handle
+   with `JavaCast<T>()`. No JNI wrapper was needed. (§5.3)
 2. **minSdkVersion.** API 26 (widest reach, keeps the legacy location-permission
    dance for API <= 30) versus API 31 (drops the location workaround, loses
    older devices). What is the target audience's device floor?
@@ -541,12 +553,25 @@ the iOS equivalents were.
 - `Services/IntentDatabaseExporter.cs` — `ACTION_SEND` via `FileProvider`.
 - Runtime-permission sequencing behind the first-run disclaimer.
 
-### Phase 5 — Health Connect warm-start
+### Phase 5 — Health Connect warm-start ✅ landed
 
-- `Services/HealthConnectStore.cs` implementing `IHealthStore`: request read
-  permission, pull 24 h of `HeartRateRecord`, feed `BaselineHrvTracker` before
-  live beats arrive. Degrade to cold start when Health Connect is absent or
-  denied.
+- `Services/HealthConnectStore.cs` implements `IHealthStore` over the managed
+  `Xamarin.AndroidX.Health.Connect.ConnectClient` binding: it pages 24 h of
+  `HeartRateRecord` (via `TimeRangeFilter.Between` + `ReadRecordsRequest`,
+  following `PageToken`) and feeds `BaselineHrvTracker` through
+  `Pipeline.WarmStartAsync` before live beats arrive. The Kotlin `suspend`
+  `readRecords` is awaited through a hand-rolled `IContinuation`→`Task` bridge,
+  bounded by a 20 s timeout. It degrades to a cold start when Health Connect is
+  absent (`GetSdkStatus != SdkAvailable`), the read permission is not granted, or
+  the IPC read faults — the pipeline already tolerates an `IHealthStore` that
+  yields nothing.
+- `AndroidManifest.xml` declares `android.permission.health.READ_HEART_RATE` and
+  the Health Connect package-visibility `<queries>` block so the provider
+  resolves on Android 13 and below.
+- Carried into Phase 4 permission sequencing: launching Health Connect's
+  `ActivityResultContract` permission request from the Activity.
+  `RequestAuthorizationAsync` currently only reports whether the grant already
+  exists.
 
 ### Phase 6 — live status surface
 

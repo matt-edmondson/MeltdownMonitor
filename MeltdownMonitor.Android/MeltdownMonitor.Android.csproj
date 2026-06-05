@@ -58,6 +58,15 @@
       via AndroidX.AppCompat — so it is not referenced again here to avoid a
       version downgrade against Avalonia's pinned graph.
     -->
+
+    <!--
+      Health Connect managed binding for the baseline warm-start read (design doc
+      §5.3 / §11.1 — resolved in favour of the managed binding over a JNI wrapper).
+      HealthConnectStore reads 24 h of HeartRateRecord through this. It pulls in
+      Xamarin.Kotlin.StdLib / KotlinX.Coroutines transitively; the suspend-function
+      result is bridged to a Task via a Kotlin IContinuation in HealthConnectStore.
+    -->
+    <PackageReference Include="Xamarin.AndroidX.Health.Connect.ConnectClient" Version="1.1.0.2" />
   </ItemGroup>
 
   <ItemGroup>
