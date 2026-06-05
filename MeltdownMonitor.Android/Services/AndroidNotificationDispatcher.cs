@@ -84,7 +84,7 @@ public sealed class AndroidNotificationDispatcher : INotificationDispatcher
 			}
 		}
 
-		Notify(NextAlertId(), builder.Build());
+		Notify(NextAlertId(), builder.Build()!);
 		return Task.CompletedTask;
 	}
 
@@ -103,7 +103,7 @@ public sealed class AndroidNotificationDispatcher : INotificationDispatcher
 			.SetSmallIcon(global::Android.Resource.Drawable.IcMenuInfoDetails)!
 			.SetAutoCancel(true)!;
 
-		Notify(NextAlertId(), builder.Build());
+		Notify(NextAlertId(), builder.Build()!);
 		return Task.CompletedTask;
 	}
 

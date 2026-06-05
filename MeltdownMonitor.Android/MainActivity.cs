@@ -1,26 +1,24 @@
 using Android.App;
 using Android.Content.PM;
 using Android.OS;
-using Avalonia;
 using Avalonia.Android;
-using MobileApp = MeltdownMonitor.Mobile.App;
 
 namespace MeltdownMonitor.Android;
 
 /// <summary>
-/// Single-Activity Avalonia host for the Android head. Mirrors the iOS
-/// <c>AppDelegate</c>: installs the composition root's factory and start hook
-/// before Avalonia initializes, then lets the shared Mobile <c>App</c> bring up
-/// the same single-view UI it runs on iOS (design doc §5 / §13 Phase 1).
+/// Single-Activity Avalonia host for the Android head (design doc §5 / §13
+/// Phase 1). In Avalonia 12 the app-builder wiring lives in the
+/// <see cref="MainApplication"/> (an <c>Application</c> subclass), so this
+/// activity is just the launcher surface — <see cref="AvaloniaMainActivity"/>
+/// hosts the shared single-view UI the app runs on iOS.
 ///
 /// <para>
 /// <c>LaunchMode.SingleTask</c> is the Android analog of the iOS single-instance
-/// guarantee (design doc §6) — a launch while already running re-uses this
-/// Activity rather than stacking a second copy on top of the live pipeline. The
-/// pipeline itself is owned in application scope by <see cref="AndroidCompositionRoot"/>
-/// and kept alive by the foreground <see cref="MonitoringService"/>, so a config
-/// change that recreates this Activity rebinds to the running pipeline instead of
-/// restarting it (design doc §5.8).
+/// guarantee — a launch while already running re-uses this Activity rather than
+/// stacking a second copy. The pipeline is application-scoped on
+/// <see cref="AndroidCompositionRoot"/> and kept alive by the foreground
+/// <see cref="MonitoringService"/>, so a config change that recreates this
+/// Activity rebinds to the running pipeline instead of restarting it (§5.8).
 /// </para>
 /// </summary>
 [Activity(
@@ -29,22 +27,9 @@ namespace MeltdownMonitor.Android;
 	MainLauncher = true,
 	LaunchMode = LaunchMode.SingleTask,
 	ConfigurationChanges = ConfigChanges.Orientation | ConfigChanges.ScreenSize | ConfigChanges.UiMode)]
-public sealed class MainActivity : AvaloniaMainActivity<MobileApp>
+public sealed class MainActivity : AvaloniaMainActivity
 {
 	private const int PermissionRequestCode = 4711;
-
-	protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
-	{
-		// Install the Android factory so Avalonia's OnFrameworkInitializationCompleted
-		// builds a fully composed view model instead of the design-time stub, and
-		// kick off the live pipeline once the view models exist (design doc §5 / §13).
-		MobileApp.RootViewModelFactory = AndroidCompositionRoot.BuildRootViewModel;
-		MobileApp.Started = () => _ = AndroidCompositionRoot.BuildAndStartPipelineAsync();
-
-		// FluentTheme (set in the shared App.axaml) falls back to the platform
-		// font (Roboto) on Android, so no extra font package is pulled in here.
-		return base.CustomizeAppBuilder(builder);
-	}
 
 	protected override void OnCreate(Bundle? savedInstanceState)
 	{

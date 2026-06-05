@@ -23,9 +23,16 @@ namespace MeltdownMonitor.Android;
 /// doubles as the live status surface (design doc §5.5).
 /// </para>
 /// </summary>
+// CA1416: ForegroundServiceType.TypeConnectedDevice is API 29, above the API 26
+// floor, and an attribute argument can't be version-guarded the way the runtime
+// StartForeground call below is. The manifest already gates the typed permission
+// (FOREGROUND_SERVICE_CONNECTED_DEVICE) on API 34, and pre-29 devices ignore the
+// foregroundServiceType, so this is safe to assert here.
+#pragma warning disable CA1416
 [Service(
 	Exported = false,
 	ForegroundServiceType = ForegroundService.TypeConnectedDevice)]
+#pragma warning restore CA1416
 public sealed class MonitoringService : Service
 {
 	/// <summary>Low-importance, silent channel for the ongoing monitoring notification (§5.4).</summary>
@@ -36,13 +43,24 @@ public sealed class MonitoringService : Service
 	// Latest content to render. Updated by OngoingNotificationActivityController
 	// (the ILiveActivityController implementation) and read when (re)building the
 	// notification. Defaults to a generic "monitoring" line before any sample.
-	private static volatile LiveActivityContent? _content;
+	// A nullable struct can't be volatile, so a lock guards the cross-thread
+	// access (the publisher updates off the UI thread; OnStartCommand reads on it).
+	private static readonly object _contentGate = new();
+	private static LiveActivityContent? _content;
+
+	private static LiveActivityContent? CurrentContent()
+	{
+		lock (_contentGate)
+		{
+			return _content;
+		}
+	}
 
 	public override IBinder? OnBind(Intent? intent) => null;
 
 	public override StartCommandResult OnStartCommand(Intent? intent, StartCommandFlags flags, int startId)
 	{
-		var notification = BuildNotification(this, _content);
+		var notification = BuildNotification(this, CurrentContent());
 
 		if (OperatingSystem.IsAndroidVersionAtLeast(29))
 		{
@@ -75,7 +93,11 @@ public sealed class MonitoringService : Service
 	/// <summary>Stops the service and dismisses its ongoing notification.</summary>
 	public static void Stop(Context context)
 	{
-		_content = null;
+		lock (_contentGate)
+		{
+			_content = null;
+		}
+
 		context.StopService(new Intent(context, typeof(MonitoringService)));
 	}
 
@@ -86,7 +108,10 @@ public sealed class MonitoringService : Service
 	/// </summary>
 	public static void UpdateContent(Context context, LiveActivityContent content)
 	{
-		_content = content;
+		lock (_contentGate)
+		{
+			_content = content;
+		}
 
 		var manager = (NotificationManager?)context.GetSystemService(NotificationService);
 		manager?.Notify(NotificationId, BuildNotification(context, content));
@@ -122,7 +147,8 @@ public sealed class MonitoringService : Service
 			builder.SetColor(color);
 		}
 
-		return builder.Build();
+		// Build() is typed nullable in the binding but never returns null here.
+		return builder.Build()!;
 	}
 
 	private static string FormatLine(LiveActivityContent c)

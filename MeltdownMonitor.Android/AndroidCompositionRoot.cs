@@ -42,7 +42,8 @@ public static class AndroidCompositionRoot
 	private static IDisposable? _crashReporting;
 
 	private static Context AppContext =>
-		AndroidApplication.Context;
+		AndroidApplication.Context
+		?? throw new InvalidOperationException("Android Application.Context is not available yet.");
 
 	/// <summary>The running pipeline once composed, or null before then.</summary>
 	public static Pipeline? Pipeline => _pipeline;
