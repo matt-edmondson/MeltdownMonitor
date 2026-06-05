@@ -1,8 +1,9 @@
 # MeltdownMonitor for Android — Design Document
 
 Status: **Implementation underway** — Phases 1–7 landed; Phase 8 (episode
-write-back) deferred. See §13 for the phase map and the implementation note
-below.
+write-back) implemented, gated on the still-pending Phase 4 permission-UI
+launcher for the write grant. See §13 for the phase map and the implementation
+note below.
 Author: design pass, June 2026
 
 > **Implementation note (June 2026).** The two Android projects
@@ -16,8 +17,14 @@ Author: design pass, June 2026
 > reads 24 h of `HeartRateRecord` through it, bridging the Kotlin `suspend`
 > `readRecords`/`getGrantedPermissions` to `Task` with a hand-rolled
 > `IContinuation`. Launching Health Connect's permission UI is folded into the
-> Phase 4 permission-sequencing follow-up, and episode write-back (Phase 8) is
-> unimplemented. CI is `.github/workflows/android.yml` (Phase 7). The
+> Phase 4 permission-sequencing follow-up. Episode write-back (Phase 8) is now
+> implemented: `HealthConnectStore.WriteEpisodeAsync` records each opt-in alert
+> as an "other workout" `ExerciseSessionRecord` through the same suspend bridge
+> (`InsertRecords`), gated upstream by `HealthKitEpisodeRecorder` on the
+> `WriteEpisodesToHealthKit` flag (default off). The write grant
+> (`android.permission.health.WRITE_EXERCISE`, declared in the manifest) still
+> depends on the Phase 4 permission-UI launcher, so until that lands the write
+> degrades to a silent no-op. CI is `.github/workflows/android.yml` (Phase 7). The
 > Android-SDK packaging/resource steps, the Health Connect read, and all
 > real-time BLE behaviour can only be verified on a runner/device with the full
 > Android SDK, Health Connect installed, and a real sensor — the same caveat the
@@ -214,10 +221,12 @@ HealthKit.
 - **Read** `HeartRateRecord` for the last 24 hours to warm the EWMA baseline
   through the existing `BaselineHrvTracker`, exactly as `HealthKitStore` feeds
   the iOS pipeline. This removes the cold-start calibration on first run.
-- **Write** is fast-follow: Health Connect does not have a direct equivalent of
-  HealthKit's custom "episode workout", but an `ExerciseSessionRecord` or a
-  series of `HeartRateRecord` samples can stand in. Default off, opt-in, behind
-  the same wellness-rules reasoning as iOS.
+- **Write** (Phase 8, landed): Health Connect has no direct equivalent of
+  HealthKit's custom "episode workout", so a dysregulation alert is recorded as
+  an `ExerciseSessionRecord` of type "other workout" through `InsertRecords`.
+  Default off, opt-in (`WriteEpisodesToHealthKit`), behind the same wellness-rules
+  reasoning as iOS. The write grant (`WRITE_EXERCISE`) is requested through Health
+  Connect's permission UI, the Phase 4 follow-up.
 - Health Connect ships as a system component on Android 14+ and as a Play Store
   app on older versions. The implementation must degrade gracefully when it is
   absent (no warm-start, start cold), the way the pipeline already tolerates a
@@ -588,11 +597,23 @@ the iOS equivalents were.
 - Draft the Play data-safety answers, the foreground-service justification, and
   the Health Connect data-use declaration into `docs/store-submission/`.
 
-### Phase 8 — episode write-back (fast-follow)
+### Phase 8 — episode write-back ✅ landed
 
-- Extend `HealthConnectStore.WriteEpisodeAsync` to write an
-  `ExerciseSessionRecord` (or HR-sample series), opt-in via the existing
-  `MobileSettings` write-back flag, default off.
+- `HealthConnectStore.WriteEpisodeAsync` writes an `ExerciseSessionRecord` of
+  type `ExerciseTypeOtherWorkout` (the honest wellness-annotation fit, the analog
+  of the iOS "Mind & Body" workout) via `IHealthConnectClient.InsertRecords`,
+  awaited through the same Kotlin `suspend`→`Task` bridge as the read. Opt-in via
+  the existing `MobileSettings.WriteEpisodesToHealthKit` flag (default off), gated
+  upstream by the shared `HealthKitEpisodeRecorder`, so no Android-specific wiring
+  was needed beyond the store method.
+- `AndroidManifest.xml` declares `android.permission.health.WRITE_EXERCISE`. The
+  grant is made through Health Connect's permission UI (the Phase 4 follow-up), so
+  until that launcher lands the write degrades to a silent no-op — a missing grant
+  or IPC fault returns a Kotlin `Result.Failure` that is never cast and is
+  swallowed, never escaping into the alert path.
+- Per-beat HR write-back (`WriteHrSampleAsync`) stays an intentional no-op: the
+  pipeline never calls it and streaming every beat over IPC is not worth the
+  chatter.
 
 ### Exit criteria for v1 (Phases 1–7)
 

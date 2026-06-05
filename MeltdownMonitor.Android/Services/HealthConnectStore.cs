@@ -37,8 +37,21 @@ namespace MeltdownMonitor.Android.Services;
 /// Every path degrades to a cold start when Health Connect is absent, the read
 /// permission is not granted, or the IPC read fails — the pipeline already tolerates
 /// an <see cref="IHealthStore"/> that yields nothing, and live beats then warm the
-/// baseline as usual (design doc §5.3). Writes (per-beat HR and episode records) stay
-/// no-ops until the Phase 8 write-back fast-follow.
+/// baseline as usual (design doc §5.3).
+/// </para>
+///
+/// <para>
+/// <see cref="WriteEpisodeAsync"/> implements the Phase 8 write-back: when the user
+/// opts in (the <c>WriteEpisodesToHealthKit</c> flag, gated upstream by
+/// <c>HealthKitEpisodeRecorder</c>), each dysregulation alert is recorded as an
+/// <c>ExerciseSessionRecord</c> of type "other workout" — the closest honest Health
+/// Connect fit for a wellness annotation, the analog of the iOS "Mind &amp; Body"
+/// workout. It is best-effort: a missing write grant (the write permission is declared
+/// in the manifest but granted through Health Connect's UI, the Phase 4 follow-up) or
+/// an IPC fault surfaces as a Kotlin <c>Result.Failure</c> and is swallowed, never
+/// taking down monitoring. Per-beat HR write-back (<see cref="WriteHrSampleAsync"/>)
+/// stays an intentional no-op — the pipeline never calls it, and streaming every beat
+/// over IPC is not worth the chatter.
 /// </para>
 /// </summary>
 public sealed class HealthConnectStore : IHealthStore
@@ -172,11 +185,66 @@ public sealed class HealthConnectStore : IHealthStore
 		while (!string.IsNullOrEmpty(pageToken) && ++pages < MaxPages);
 	}
 
-	// Episode write-back and per-beat HR write-back are the Phase 8 fast-follow
-	// (design doc §5.3 / §13). The read path above is the v1 deliverable.
+	// Per-beat HR write-back is an intentional no-op: nothing in the pipeline calls it
+	// (only WriteEpisodeAsync is wired, through HealthKitEpisodeRecorder), and streaming
+	// every beat over Health Connect IPC is not worth the chatter (design doc §5.3 / §8).
 	public Task WriteHrSampleAsync(HrSample sample) => Task.CompletedTask;
 
-	public Task WriteEpisodeAsync(EpisodeRecord episode) => Task.CompletedTask;
+	/// <summary>
+	/// Records a dysregulation episode as a Health Connect <c>ExerciseSessionRecord</c>
+	/// of type "other workout" — the closest honest fit for a wellness annotation, the
+	/// Android analog of the iOS "Mind &amp; Body" workout (design doc §5.3 / Phase 8).
+	/// Called only when the user opts in (gated upstream by <c>HealthKitEpisodeRecorder</c>
+	/// on the <c>WriteEpisodesToHealthKit</c> flag). Best-effort: a missing write grant or
+	/// an IPC fault is swallowed so a denied/unavailable store can never take down
+	/// monitoring — the same posture as the warm-start read above.
+	/// </summary>
+	public async Task WriteEpisodeAsync(EpisodeRecord episode)
+	{
+		var client = TryGetClient();
+		if (client is null)
+		{
+			return;
+		}
+
+		try
+		{
+			// Health Connect treats a null zone offset as "unknown", which is fine for a
+			// wellness annotation — we record the instants, not a local wall-clock claim.
+			var start = Instant.OfEpochMilli(episode.Start.ToUnixTimeMilliseconds())!;
+			var end = Instant.OfEpochMilli(episode.End.ToUnixTimeMilliseconds())!;
+
+			// Positional, not named: the binding does not guarantee the Kotlin parameter
+			// names survive. Order is (startTime, startZoneOffset, endTime, endZoneOffset,
+			// metadata, exerciseType, title, notes); the null zone offsets are "unknown".
+			var record = new ExerciseSessionRecord(
+				start, null,
+				end, null,
+				Metadata.ManualEntry(),
+				ExerciseSessionRecord.ExerciseTypeOtherWorkout,
+				episode.Label,
+				// `!` mirrors the read path: it keeps the call compiling whether or not the
+				// binding annotates `notes` nullable. Notes is genuinely optional and a null
+				// is fine at runtime — Health Connect accepts a session with no notes.
+				episode.Notes!);
+
+			// The binding's record classes extend Java.Lang.Object without surfacing the
+			// IRecord interface in managed metadata, so re-wrap the Java peer (which *is* a
+			// Record at runtime) with JavaCast to satisfy InsertRecords' IList<IRecord> —
+			// the same handle-rewrap the read path uses for the response.
+			var records = new List<IRecord> { record.JavaCast<IRecord>()! };
+
+			// InsertRecords is itself a Kotlin suspend function; await it through the same
+			// bridge as the read. We ignore the inserted-id response — a Result.Failure
+			// (no write grant, provider fault) comes back as a non-null handle we never
+			// cast, so it degrades silently rather than throwing.
+			_ = await AwaitSuspendAsync(c => client!.InsertRecords(records, c)).ConfigureAwait(false);
+		}
+		catch (Java.Lang.Exception)
+		{
+			// Best-effort: a write fault must never escape into the alert path.
+		}
+	}
 
 	private static List<HrSample> ExtractSamples(ReadRecordsResponse response)
 	{

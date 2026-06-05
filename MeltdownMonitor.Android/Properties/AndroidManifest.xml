@@ -37,6 +37,16 @@
   -->
   <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
 
+  <!--
+    Health Connect write permission for the opt-in episode write-back (design doc §5.3 /
+    Phase 8). A dysregulation alert is recorded as an "other workout" ExerciseSessionRecord
+    when the user enables WriteEpisodesToHealthKit. Default off; the grant is requested
+    through Health Connect's UI like the read above, so this declaration is only what makes
+    it requestable. Declared even though the launcher (Phase 4 follow-up) is still pending —
+    until granted the write degrades to a silent no-op.
+  -->
+  <uses-permission android:name="android.permission.health.WRITE_EXERCISE" />
+
   <!-- Local-only: no INTERNET permission, which keeps the Play data-safety form honest (§10). -->
 
   <!--
