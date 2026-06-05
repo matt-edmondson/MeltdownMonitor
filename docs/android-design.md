@@ -1,7 +1,21 @@
 # MeltdownMonitor for Android — Design Document
 
-Status: **Draft / Pre-implementation**
+Status: **Implementation underway** — Phases 1–4, 6, 7 landed; Phase 5 (Health
+Connect warm-start) and Phase 8 (episode write-back) deferred. See
+§13 for the phase map and the implementation note below.
 Author: design pass, June 2026
+
+> **Implementation note (June 2026).** The two Android projects
+> (`MeltdownMonitor.Ble.Android`, `MeltdownMonitor.Android`) are scaffolded and
+> their C# compiles against the .NET 10 `android` workload. The BLE source,
+> foreground service, composition root, the notification / chime / settings /
+> export services, and the ongoing-notification status surface are implemented
+> (Phases 1–4, 6). `HealthConnectStore` ships as a cold-start placeholder until
+> the binding decision in §11.1 is made (Phase 5), and episode write-back
+> (Phase 8) is unimplemented. CI is `.github/workflows/android.yml` (Phase 7).
+> The Android-SDK packaging/resource steps and all real-time BLE behaviour can
+> only be verified on a runner/device with the full Android SDK and a real
+> sensor — the same caveat the repo documents for every head.
 Scope: add an Android head to the existing cross-platform .NET app, reusing the
 platform-neutral `MeltdownMonitor.Mobile` and `MeltdownMonitor.Core` assemblies
 that already ship on iOS. This is a sibling-head project, not a port.

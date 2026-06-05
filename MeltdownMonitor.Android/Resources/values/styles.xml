@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <!--
+    Avalonia hosts its own rendering surface, so the activity only needs a
+    no-action-bar theme. Inheriting from the built-in framework Material theme
+    keeps the head free of an AndroidX AppCompat dependency.
+  -->
+  <style name="MyTheme.NoActionBar" parent="@android:style/Theme.Material.Light.NoActionBar">
+    <item name="android:windowBackground">@android:color/white</item>
+  </style>
+</resources>

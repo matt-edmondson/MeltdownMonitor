@@ -16,6 +16,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeltdownMonitor.Ble.Apple",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeltdownMonitor.iOS", "MeltdownMonitor.iOS\MeltdownMonitor.iOS.csproj", "{CD63251A-9DFD-453D-A9DC-70B851597783}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeltdownMonitor.Ble.Android", "MeltdownMonitor.Ble.Android\MeltdownMonitor.Ble.Android.csproj", "{FB78F536-6E25-4787-BB56-996E0D8AF5B6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeltdownMonitor.Android", "MeltdownMonitor.Android\MeltdownMonitor.Android.csproj", "{292CAC22-E71E-4977-9E72-3840B301325E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -49,5 +53,9 @@ Global
 		{173B53D2-79F2-4324-8001-FF4560F9D933}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CD63251A-9DFD-453D-A9DC-70B851597783}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{CD63251A-9DFD-453D-A9DC-70B851597783}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FB78F536-6E25-4787-BB56-996E0D8AF5B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FB78F536-6E25-4787-BB56-996E0D8AF5B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{292CAC22-E71E-4977-9E72-3840B301325E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{292CAC22-E71E-4977-9E72-3840B301325E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 	EndGlobalSection
 EndGlobal
