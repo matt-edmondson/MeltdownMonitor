@@ -182,6 +182,22 @@
                         Value="{Binding RegulationHeatmapLength, Mode=TwoWay}" />
                 <TextBlock Text="How many recent readings the dwell heatmap accumulates over (≈1 h at 720, up to ≈24 h). Default 720."
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <TextBlock Text="Blend modes" FontWeight="SemiBold" Margin="0,8,0,0" />
+                <TextBlock Text="Checked = additive glow bloom; unchecked = flat alpha compositing."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+                <CheckBox Content="LF/HF halo glows additively"
+                          IsChecked="{Binding LfHfHaloAdditive, Mode=TwoWay}" />
+                <CheckBox Content="Lobes glow additively"
+                          IsChecked="{Binding LobesAdditive, Mode=TwoWay}" />
+                <CheckBox Content="Trail glows additively"
+                          IsChecked="{Binding TrailAdditive, Mode=TwoWay}" />
+                <CheckBox Content="Heatmap glows additively"
+                          IsChecked="{Binding HeatmapAdditive, Mode=TwoWay}" />
+                <CheckBox Content="Marker halo glows additively"
+                          IsChecked="{Binding MarkerHaloAdditive, Mode=TwoWay}" />
+                <CheckBox Content="Histogram glows additively"
+                          IsChecked="{Binding HistogramAdditive, Mode=TwoWay}" />
             </StackPanel>
 
             <StackPanel Spacing="6">

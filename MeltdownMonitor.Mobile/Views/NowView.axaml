@@ -37,7 +37,13 @@
                                          HeatmapPeakOpacity="{Binding HeatmapPeakOpacity}"
                                          HeatmapRegionOpacity="{Binding HeatmapRegionOpacity}"
                                          HeatmapRegionThreshold="{Binding HeatmapRegionThreshold}"
-                                         UseLfHfCorroboration="{Binding UseLfHfCorroboration}" />
+                                         UseLfHfCorroboration="{Binding UseLfHfCorroboration}"
+                                         LfHfHaloAdditive="{Binding LfHfHaloAdditive}"
+                                         LobesAdditive="{Binding LobesAdditive}"
+                                         TrailAdditive="{Binding TrailAdditive}"
+                                         HeatmapAdditive="{Binding HeatmapAdditive}"
+                                         MarkerHaloAdditive="{Binding MarkerHaloAdditive}"
+                                         HistogramAdditive="{Binding HistogramAdditive}" />
                     <ctl:Sparkline Grid.Row="1"
                                    Height="48"
                                    Margin="0,8,0,0"

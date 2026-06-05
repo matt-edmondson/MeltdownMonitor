@@ -1175,6 +1175,25 @@ public sealed class StatusWindow : IDisposable
 		ImGui.SameLine();
 		HelpMarker("Bucket resolution of the vagal-tone (Y) axis — the number of vagal-tone histogram bars and dwell-heatmap rows. Higher = finer detail; default 16.");
 
+		// ── Regulation Field blend modes ─────────────────────────────────
+		// Each glow layer can bloom additively (overlaps add toward white — the signature look)
+		// or composite with plain alpha (overlaps layer over, no bloom). On by default.
+		ImGui.SeparatorText("Regulation Field blend modes");
+		ImGui.TextDisabled("Checked = additive glow bloom; unchecked = flat alpha compositing.");
+
+		BlendToggle("LF/HF halo (additive)", _settings.LfHfHaloAdditive, v => _settings.LfHfHaloAdditive = v,
+			"How the LF/HF balance halo blends. Additive blooms the overlapping discs into a soft glow; unchecked composites them flat.");
+		BlendToggle("Lobes (additive)", _settings.LobesAdditive, v => _settings.LobesAdditive = v,
+			"How the live-trace lobes blend. Additive blooms overlapping strokes toward white; unchecked composites them flat.");
+		BlendToggle("Trail (additive)", _settings.TrailAdditive, v => _settings.TrailAdditive = v,
+			"How the comet trail blends. Additive blooms where the tail overlaps itself and the marker; unchecked composites it flat.");
+		BlendToggle("Heatmap (additive)", _settings.HeatmapAdditive, v => _settings.HeatmapAdditive = v,
+			"How the dwell-heatmap cells blend. Additive makes the busy buckets glow; unchecked composites them as flat tiles.");
+		BlendToggle("Marker halo (additive)", _settings.MarkerHaloAdditive, v => _settings.MarkerHaloAdditive = v,
+			"How the marker halos blend. Additive blooms them toward white where they overlap the trail head; unchecked composites them flat.");
+		BlendToggle("Histogram (additive)", _settings.HistogramAdditive, v => _settings.HistogramAdditive = v,
+			"How the axis histogram bars blend. Additive makes the bars glow; unchecked composites them flat.");
+
 		// ── Detection thresholds ─────────────────────────────────────────
 		// Fraction knobs work in percent (0..100) and divide on assign so the
 		// %% formatter renders sane values; the underlying field stays a fraction.
@@ -1581,6 +1600,21 @@ public sealed class StatusWindow : IDisposable
 		}
 	}
 
+	// A labelled blend-mode checkbox with a trailing help marker. Properties can't be passed by
+	// ref, so the current value is read in and the setter is invoked on change.
+	private void BlendToggle(string label, bool current, Action<bool> set, string help)
+	{
+		bool value = current;
+		if (ImGui.Checkbox(label, ref value))
+		{
+			set(value);
+			_settingsDirty = true;
+		}
+
+		ImGui.SameLine();
+		HelpMarker(help);
+	}
+
 	// Resets every tunable to its recommended default (behind a confirmation), then
 	// persists and re-seeds the baseline. Device/alert/data-path settings are left alone.
 	private void DrawRestoreDefaultsButton()
@@ -1617,6 +1651,12 @@ public sealed class StatusWindow : IDisposable
 				_settings.HistogramOpacity = 0.6;
 				_settings.FieldIndexBuckets = 24;
 				_settings.FieldVagalBuckets = 16;
+				_settings.LfHfHaloAdditive = true;
+				_settings.LobesAdditive = true;
+				_settings.TrailAdditive = true;
+				_settings.HeatmapAdditive = true;
+				_settings.MarkerHaloAdditive = true;
+				_settings.HistogramAdditive = true;
 				_settings.Save();
 				_pipeline.ReseedBaseline();
 				ImGui.CloseCurrentPopup();
