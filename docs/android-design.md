@@ -1,9 +1,11 @@
 # MeltdownMonitor for Android — Design Document
 
-Status: **Implementation underway** — Phases 1–7 landed; Phase 8 (episode
-write-back) implemented, gated on the still-pending Phase 4 permission-UI
-launcher for the write grant. See §13 for the phase map and the implementation
-note below.
+Status: **Implementation underway** — Phases 1–8 landed, including the Phase 4
+Health Connect permission-UI launcher (read + write grants requested through
+Health Connect's own permission screen). The remaining Phase 4 item is sequencing
+the standard runtime asks (BLE, notifications) behind the first-run disclaimer;
+those are currently requested up front on launch. See §13 for the phase map and
+the implementation note below.
 Author: design pass, June 2026
 
 > **Implementation note (June 2026).** The two Android projects
@@ -16,15 +18,23 @@ Author: design pass, June 2026
 > `Xamarin.AndroidX.Health.Connect.ConnectClient` binding: `HealthConnectStore`
 > reads 24 h of `HeartRateRecord` through it, bridging the Kotlin `suspend`
 > `readRecords`/`getGrantedPermissions` to `Task` with a hand-rolled
-> `IContinuation`. Launching Health Connect's permission UI is folded into the
-> Phase 4 permission-sequencing follow-up. Episode write-back (Phase 8) is now
+> `IContinuation`. The Phase 4 Health Connect permission-UI launcher has landed:
+> `HealthConnectStore.RequestAuthorizationAsync` drives
+> `HealthConnectPermissions.Launcher` (installed by `MainActivity` while
+> foregrounded) to launch Health Connect's own permission screen for the read and
+> write grants through its `ActivityResultContract`, then re-reads the
+> authoritative grant. Avalonia's activity is a plain `Android.App.Activity`, not
+> an AndroidX `ComponentActivity`, so the launcher uses the classic
+> `StartActivityForResult`/`OnActivityResult` pair. Episode write-back (Phase 8) is
 > implemented: `HealthConnectStore.WriteEpisodeAsync` records each opt-in alert
 > as an "other workout" `ExerciseSessionRecord` through the same suspend bridge
 > (`InsertRecords`), gated upstream by `HealthKitEpisodeRecorder` on the
 > `WriteEpisodesToHealthKit` flag (default off). The write grant
-> (`android.permission.health.WRITE_EXERCISE`, declared in the manifest) still
-> depends on the Phase 4 permission-UI launcher, so until that lands the write
-> degrades to a silent no-op. CI is `.github/workflows/android.yml` (Phase 7). The
+> (`android.permission.health.WRITE_EXERCISE`, declared in the manifest) is now
+> requested alongside the read by the launcher, so once granted the write-back
+> lands rather than no-opping. The remaining Phase 4 item is sequencing the
+> standard BLE/notification runtime asks behind the first-run disclaimer. CI is
+> `.github/workflows/android.yml` (Phase 7). The
 > Android-SDK packaging/resource steps, the Health Connect read, and all
 > real-time BLE behaviour can only be verified on a runner/device with the full
 > Android SDK, Health Connect installed, and a real sensor — the same caveat the
@@ -560,7 +570,15 @@ the iOS equivalents were.
 - `Services/SharedPreferencesSettingsStore.cs` — `IMobileSettingsStore` over a
   JSON blob, reusing `MobileSettingsSerializer`. Hydrate before pipeline start.
 - `Services/IntentDatabaseExporter.cs` — `ACTION_SEND` via `FileProvider`.
-- Runtime-permission sequencing behind the first-run disclaimer.
+- `Services/HealthConnectPermissions.cs` + `MainActivity` — the Health Connect
+  permission-UI launcher: `RequestAuthorizationAsync` drives the activity to
+  launch Health Connect's permission screen (read + write) through its
+  `ActivityResultContract`, via the classic `StartActivityForResult`/
+  `OnActivityResult` pair (Avalonia's activity is not an AndroidX
+  `ComponentActivity`). ✅ landed.
+- Runtime-permission sequencing for the standard BLE/notification asks behind the
+  first-run disclaimer — still open; they are currently requested up front in
+  `MainActivity.OnCreate`.
 
 ### Phase 5 — Health Connect warm-start ✅ landed
 
@@ -577,10 +595,10 @@ the iOS equivalents were.
 - `AndroidManifest.xml` declares `android.permission.health.READ_HEART_RATE` and
   the Health Connect package-visibility `<queries>` block so the provider
   resolves on Android 13 and below.
-- Carried into Phase 4 permission sequencing: launching Health Connect's
-  `ActivityResultContract` permission request from the Activity.
-  `RequestAuthorizationAsync` currently only reports whether the grant already
-  exists.
+- Launching Health Connect's `ActivityResultContract` permission request from
+  the Activity (the Phase 4 launcher) has landed: see Phase 4 above.
+  `RequestAuthorizationAsync` now short-circuits when the grant exists, otherwise
+  launches the permission screen and re-reads the authoritative grant.
 
 ### Phase 6 — live status surface
 
@@ -607,10 +625,10 @@ the iOS equivalents were.
   upstream by the shared `HealthKitEpisodeRecorder`, so no Android-specific wiring
   was needed beyond the store method.
 - `AndroidManifest.xml` declares `android.permission.health.WRITE_EXERCISE`. The
-  grant is made through Health Connect's permission UI (the Phase 4 follow-up), so
-  until that launcher lands the write degrades to a silent no-op — a missing grant
-  or IPC fault returns a Kotlin `Result.Failure` that is never cast and is
-  swallowed, never escaping into the alert path.
+  grant is made through Health Connect's permission UI, now requested alongside the
+  read by the Phase 4 launcher, so once the user grants it the write-back lands. A
+  missing grant or IPC fault still returns a Kotlin `Result.Failure` that is never
+  cast and is swallowed, never escaping into the alert path.
 - Per-beat HR write-back (`WriteHrSampleAsync`) stays an intentional no-op: the
   pipeline never calls it and streaming every beat over IPC is not worth the
   chatter.

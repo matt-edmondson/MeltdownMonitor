@@ -58,7 +58,7 @@ public sealed class HealthConnectStore : IHealthStore
 {
 	// The string HealthPermission.getReadPermission(HeartRateRecord::class) resolves to.
 	// Declared in AndroidManifest.xml so it can be granted through Health Connect's UI.
-	private const string ReadHeartRatePermission = "android.permission.health.READ_HEART_RATE";
+	private const string ReadHeartRatePermission = HealthConnectPermissions.ReadHeartRate;
 
 	// A single read page is capped at this many records; 24 h of HR is paged through
 	// PageToken below. The ceiling bounds a pathological provider that never returns a
@@ -76,13 +76,20 @@ public sealed class HealthConnectStore : IHealthStore
 		_context = context ?? throw new ArgumentNullException(nameof(context));
 
 	/// <summary>
-	/// Reports whether the heart-rate read permission is already granted. Health Connect
-	/// grants are made through its own permission UI (an <c>ActivityResultContract</c>),
-	/// not a manifest runtime grant, and that UI can only be launched from an Activity —
-	/// wiring the request flow behind the first-run disclaimer is the Phase 4
-	/// permission-sequencing work. This check lets Settings reflect the current state
-	/// truthfully in the meantime, and the warm-start read below works as soon as the
-	/// grant exists.
+	/// Grants the heart-rate read permission by launching Health Connect's own permission
+	/// screen (design doc §5.3 / Phase 4). Health Connect grants are made through that UI
+	/// (an <c>ActivityResultContract</c>), not a manifest runtime grant, and the screen can
+	/// only be launched from a live Activity — <see cref="HealthConnectPermissions.Launcher"/>
+	/// is installed by <see cref="MainActivity"/> while it is foregrounded, and this method
+	/// drives it. Returns the authoritative grant state read back from Health Connect after
+	/// the screen is dismissed, not the launcher's advisory result.
+	///
+	/// <para>
+	/// Short-circuits when the grant already exists (no need to re-prompt), when Health
+	/// Connect is absent (nothing to grant, start cold), and when no Activity is foregrounded
+	/// to launch from (the launcher is null and the request is a no-op, leaving the grant
+	/// state unchanged) — the same graceful-degradation posture as the warm-start read.
+	/// </para>
 	/// </summary>
 	public async Task<bool> RequestAuthorizationAsync()
 	{
@@ -92,6 +99,28 @@ public sealed class HealthConnectStore : IHealthStore
 			return false;
 		}
 
+		// Already granted? Don't pop the permission screen again.
+		if (await HasReadPermissionAsync(client).ConfigureAwait(false))
+		{
+			return true;
+		}
+
+		// Launch Health Connect's permission screen through the live Activity. Request read
+		// and write together so the user grants both on one screen; the write grant sits
+		// unused until episode write-back is enabled (gated separately). With no foregrounded
+		// Activity the launcher is null and this is a no-op, so re-read the grant either way.
+		await HealthConnectPermissions.RequestAsync(HealthConnectPermissions.All).ConfigureAwait(false);
+
+		return await HasReadPermissionAsync(client).ConfigureAwait(false);
+	}
+
+	/// <summary>
+	/// Reports whether Health Connect has granted the heart-rate read permission, reading
+	/// the authoritative state through the same Kotlin <c>suspend</c>→<see cref="Task"/>
+	/// bridge as the warm-start read. Any fault (denied, IPC error) degrades to "not granted".
+	/// </summary>
+	private static async Task<bool> HasReadPermissionAsync(IHealthConnectClient client)
+	{
 		try
 		{
 			// client is non-null here, but the capture reverts to its nullable declared
