@@ -189,8 +189,11 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 		_gattCallback = new GattCallbackImpl(this);
 
 		// autoConnect: true is the Android analog of iOS state restoration —
-		// the stack reconnects on its own when the sensor returns to range.
-		_gatt = device.ConnectGatt(_context, autoConnect: true, _gattCallback, BluetoothTransport.Le);
+		// the stack reconnects on its own when the sensor returns to range. The
+		// three-argument overload (transport AUTO) is used rather than passing an
+		// explicit LE transport: the transport enum has been renamed across binding
+		// versions, and AUTO resolves to LE for a Heart Rate Service device anyway.
+		_gatt = device.ConnectGatt(_context, autoConnect: true, _gattCallback);
 	}
 
 	private void Stop()

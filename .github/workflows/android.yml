@@ -82,14 +82,18 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}.x
 
-      # Fail loudly if the workload can't be installed — a silent skip would let
-      # the rest of the workflow look green while shipping nothing (mirrors the
-      # iOS workflow's §14 posture).
-      - name: Install android workload
+      # Pin the android workload to the binding the head was developed and
+      # compiled against (Microsoft.Android 36.1.53). Without the pin, the band
+      # default can resolve a newer binding whose Android API surface has renamed
+      # types (e.g. the BLE transport enum), breaking the C# compile. Fail loudly
+      # if it can't install — a silent skip would let the rest of the workflow
+      # look green while shipping nothing (mirrors ios.yml's §14 posture).
+      - name: Install android workload 36.1.53 (fail loudly if unavailable)
         run: |
           set -e
-          if ! dotnet workload install android; then
-            echo "::error title=android workload unavailable::dotnet workload install android failed. Phase 7 (docs/android-design.md §10) requires this workload."
+          printf '{ "microsoft.net.sdk.android": "36.1.53/10.0.100" }' > /tmp/android-rollback.json
+          if ! dotnet workload install android --from-rollback-file /tmp/android-rollback.json; then
+            echo "::error title=android workload unavailable::dotnet workload install android (36.1.53) failed. Phase 7 (docs/android-design.md §10) requires this workload."
             exit 1
           fi
           dotnet workload list
@@ -172,8 +176,11 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}.x
 
-      - name: Install android workload
-        run: dotnet workload install android
+      - name: Install android workload 36.1.53
+        run: |
+          set -e
+          printf '{ "microsoft.net.sdk.android": "36.1.53/10.0.100" }' > /tmp/android-rollback.json
+          dotnet workload install android --from-rollback-file /tmp/android-rollback.json
 
       - name: Ensure Android SDK dependencies
         run: |
