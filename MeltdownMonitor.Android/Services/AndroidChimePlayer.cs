@@ -1,7 +1,6 @@
 using Android.Content;
 using Android.Media;
 using MeltdownMonitor.Mobile.Services;
-using Stream = Android.Media.Stream;
 using Uri = Android.Net.Uri;
 
 namespace MeltdownMonitor.Android.Services;
@@ -87,15 +86,11 @@ public sealed class AndroidChimePlayer : IChimePlayer
 			return;
 		}
 
-		if (OperatingSystem.IsAndroidVersionAtLeast(21) && _attributes is not null)
+		// AudioAttributes is API 21; the app's floor is API 26, so the deprecated
+		// StreamType fallback is unreachable and intentionally omitted.
+		if (_attributes is not null)
 		{
 			ringtone.AudioAttributes = _attributes;
-		}
-		else
-		{
-#pragma warning disable CA1422
-			ringtone.StreamType = Stream.Notification;
-#pragma warning restore CA1422
 		}
 
 		ringtone.Play();
