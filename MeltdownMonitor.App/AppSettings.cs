@@ -127,4 +127,27 @@ public class AppSettings : AppData<AppSettings>
 	/// vagal-tone histogram and rows in the dwell heatmap (6–64; clamped at the consumer).
 	/// Higher = finer detail, lower = chunkier. Default 16.</summary>
 	public int FieldVagalBuckets { get; set; } = 16;
+
+	// ── Per-element blend modes ──────────────────────────────────────────────
+	// Each Regulation Field glow layer can be drawn either additively (overlaps bloom toward
+	// white — the signature glow) or with plain alpha compositing (overlaps composite over,
+	// no bloom). True = additive (the tuned default look); false = alpha-over.
+
+	/// <summary>Blend the LF/HF balance halo additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool LfHfHaloAdditive { get; set; } = true;
+
+	/// <summary>Blend the live-trace lobes additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool LobesAdditive { get; set; } = true;
+
+	/// <summary>Blend the comet trail additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool TrailAdditive { get; set; } = true;
+
+	/// <summary>Blend the dwell-heatmap cells additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool HeatmapAdditive { get; set; } = true;
+
+	/// <summary>Blend the marker halos additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool MarkerHaloAdditive { get; set; } = true;
+
+	/// <summary>Blend the axis histogram bars additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool HistogramAdditive { get; set; } = true;
 }

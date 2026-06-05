@@ -119,6 +119,24 @@ public sealed class Pipeline : IDisposable
 	/// and heatmap rows (clamped 6–64), read live by the field view.</summary>
 	public int FieldVagalBuckets => Math.Clamp(_settings.FieldVagalBuckets, 6, 64);
 
+	/// <summary>Whether the LF/HF balance halo blends additively (glow) vs alpha-over, read live by the field view.</summary>
+	public bool LfHfHaloAdditive => _settings.LfHfHaloAdditive;
+
+	/// <summary>Whether the live-trace lobes blend additively (glow) vs alpha-over, read live by the field view.</summary>
+	public bool LobesAdditive => _settings.LobesAdditive;
+
+	/// <summary>Whether the comet trail blends additively (glow) vs alpha-over, read live by the field view.</summary>
+	public bool TrailAdditive => _settings.TrailAdditive;
+
+	/// <summary>Whether the dwell-heatmap cells blend additively (glow) vs alpha-over, read live by the field view.</summary>
+	public bool HeatmapAdditive => _settings.HeatmapAdditive;
+
+	/// <summary>Whether the marker halos blend additively (glow) vs alpha-over, read live by the field view.</summary>
+	public bool MarkerHaloAdditive => _settings.MarkerHaloAdditive;
+
+	/// <summary>Whether the axis histogram bars blend additively (glow) vs alpha-over, read live by the field view.</summary>
+	public bool HistogramAdditive => _settings.HistogramAdditive;
+
 	public event Action<AlertPayload>? AlertFired;
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<Beat>? BeatReceived;

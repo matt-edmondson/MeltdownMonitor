@@ -133,4 +133,27 @@ public sealed class MobileSettings
 
 	/// <summary>How much history the sparklines display (1–360 min). Default 60 min.</summary>
 	public int SparklineWindowMinutes { get; set; } = 60;
+
+	// ── Per-element blend modes ──────────────────────────────────────────────
+	// Each Regulation Field glow layer can be drawn either additively (overlaps bloom toward
+	// white — the signature glow) or with plain alpha compositing (no bloom). True = additive
+	// (the tuned default look); false = alpha-over.
+
+	/// <summary>Blend the LF/HF balance halo additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool LfHfHaloAdditive { get; set; } = true;
+
+	/// <summary>Blend the live-trace lobes additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool LobesAdditive { get; set; } = true;
+
+	/// <summary>Blend the comet trail additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool TrailAdditive { get; set; } = true;
+
+	/// <summary>Blend the dwell-heatmap cells additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool HeatmapAdditive { get; set; } = true;
+
+	/// <summary>Blend the marker halos additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool MarkerHaloAdditive { get; set; } = true;
+
+	/// <summary>Blend the axis histogram bars additively (true, glow) or with alpha (false). Default additive.</summary>
+	public bool HistogramAdditive { get; set; } = true;
 }

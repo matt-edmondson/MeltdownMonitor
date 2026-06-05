@@ -100,6 +100,26 @@ of tolerance, vagal axis, histogram baseline lines, recovery target, arrow, and 
 alpha-over. The glow look can only be confirmed from the live app + a real Polar sensor, not
 from tests.
 
+## Per-element blend toggle (both heads)
+
+Each of the six glow layers above can be switched **independently** between additive (glow
+bloom, the default) and plain alpha-over (no bloom), from the settings UI. The toggles default
+to additive so the out-of-the-box look is unchanged.
+
+- **Settings:** `AppSettings`/`MobileSettings` carry six bools — `LfHfHaloAdditive`,
+  `LobesAdditive`, `TrailAdditive`, `HeatmapAdditive`, `MarkerHaloAdditive`, `HistogramAdditive`
+  (all default `true`).
+- **Desktop:** `RegulationFieldView.BeginBlend(draw, additive)` opens each region with
+  `Additive` or `AlphaBlend` per the pipeline-exposed toggle; the region is still closed with
+  `AlphaBlend` (so when the toggle is off the open/close pair is a no-op). The Settings tab adds
+  a "Regulation Field blend modes" section of checkboxes.
+- **Mobile:** `AdditiveSkiaLayer` takes an `SKBlendMode` (default `SKBlendMode.Plus`); each glow
+  layer passes `Blend(toggle)` → `Plus` (additive) or `SrcOver` (alpha). The toggles flow from
+  `MobileSettings` through `NowViewModel` provider funcs into the control's styled properties,
+  and the Settings view exposes them as checkboxes.
+
+The alpha-over look (like the glow look) can only be confirmed on the live app + a real sensor.
+
 ## In-repo alternative (no longer required, kept for reference)
 
 A **software-additive approximation** stays entirely within MeltdownMonitor: for each

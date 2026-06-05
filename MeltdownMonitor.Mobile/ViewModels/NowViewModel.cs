@@ -51,6 +51,12 @@ public sealed class NowViewModel : ViewModelBase
 	private readonly Func<double>? _heatmapRegionOpacityProvider;
 	private readonly Func<double>? _heatmapRegionThresholdProvider;
 	private readonly Func<bool>? _useLfHfCorroborationProvider;
+	private readonly Func<bool>? _lfHfHaloAdditiveProvider;
+	private readonly Func<bool>? _lobesAdditiveProvider;
+	private readonly Func<bool>? _trailAdditiveProvider;
+	private readonly Func<bool>? _heatmapAdditiveProvider;
+	private readonly Func<bool>? _markerHaloAdditiveProvider;
+	private readonly Func<bool>? _histogramAdditiveProvider;
 	private Func<bool>? _coldCalibratedProvider;
 
 	private DetectorState _state = DetectorState.Idle;
@@ -86,6 +92,12 @@ public sealed class NowViewModel : ViewModelBase
 	private double _heatmapRegionOpacity = 0.55;
 	private double _heatmapRegionThreshold = 0.50;
 	private bool _useLfHfCorroboration = true;
+	private bool _lfHfHaloAdditive = true;
+	private bool _lobesAdditive = true;
+	private bool _trailAdditive = true;
+	private bool _heatmapAdditive = true;
+	private bool _markerHaloAdditive = true;
+	private bool _histogramAdditive = true;
 
 	public NowViewModel(
 		Func<Task>? onConnect = null,
@@ -105,7 +117,13 @@ public sealed class NowViewModel : ViewModelBase
 		Func<double>? heatmapPeakOpacityProvider = null,
 		Func<double>? heatmapRegionOpacityProvider = null,
 		Func<double>? heatmapRegionThresholdProvider = null,
-		Func<bool>? useLfHfCorroborationProvider = null)
+		Func<bool>? useLfHfCorroborationProvider = null,
+		Func<bool>? lfHfHaloAdditiveProvider = null,
+		Func<bool>? lobesAdditiveProvider = null,
+		Func<bool>? trailAdditiveProvider = null,
+		Func<bool>? heatmapAdditiveProvider = null,
+		Func<bool>? markerHaloAdditiveProvider = null,
+		Func<bool>? histogramAdditiveProvider = null)
 	{
 		_onConnect = onConnect;
 		_onDisconnect = onDisconnect;
@@ -125,6 +143,12 @@ public sealed class NowViewModel : ViewModelBase
 		_heatmapRegionOpacityProvider = heatmapRegionOpacityProvider;
 		_heatmapRegionThresholdProvider = heatmapRegionThresholdProvider;
 		_useLfHfCorroborationProvider = useLfHfCorroborationProvider;
+		_lfHfHaloAdditiveProvider = lfHfHaloAdditiveProvider;
+		_lobesAdditiveProvider = lobesAdditiveProvider;
+		_trailAdditiveProvider = trailAdditiveProvider;
+		_heatmapAdditiveProvider = heatmapAdditiveProvider;
+		_markerHaloAdditiveProvider = markerHaloAdditiveProvider;
+		_histogramAdditiveProvider = histogramAdditiveProvider;
 		ToggleConnectionCommand = new RelayCommand(ToggleConnection);
 		OpenAnnotationCommand = new RelayCommand(() => IsAnnotationSheetOpen = true);
 		CancelAnnotationCommand = new RelayCommand(CloseAnnotationSheet);
@@ -348,6 +372,48 @@ public sealed class NowViewModel : ViewModelBase
 	{
 		get => _useLfHfCorroboration;
 		private set => SetField(ref _useLfHfCorroboration, value);
+	}
+
+	/// <summary>Whether the LF/HF halo blends additively (glow) vs alpha-over. Refreshed on each reading.</summary>
+	public bool LfHfHaloAdditive
+	{
+		get => _lfHfHaloAdditive;
+		private set => SetField(ref _lfHfHaloAdditive, value);
+	}
+
+	/// <summary>Whether the live-trace lobes blend additively (glow) vs alpha-over. Refreshed on each reading.</summary>
+	public bool LobesAdditive
+	{
+		get => _lobesAdditive;
+		private set => SetField(ref _lobesAdditive, value);
+	}
+
+	/// <summary>Whether the comet trail blends additively (glow) vs alpha-over. Refreshed on each reading.</summary>
+	public bool TrailAdditive
+	{
+		get => _trailAdditive;
+		private set => SetField(ref _trailAdditive, value);
+	}
+
+	/// <summary>Whether the dwell-heatmap cells blend additively (glow) vs alpha-over. Refreshed on each reading.</summary>
+	public bool HeatmapAdditive
+	{
+		get => _heatmapAdditive;
+		private set => SetField(ref _heatmapAdditive, value);
+	}
+
+	/// <summary>Whether the marker halos blend additively (glow) vs alpha-over. Refreshed on each reading.</summary>
+	public bool MarkerHaloAdditive
+	{
+		get => _markerHaloAdditive;
+		private set => SetField(ref _markerHaloAdditive, value);
+	}
+
+	/// <summary>Whether the axis histogram bars blend additively (glow) vs alpha-over. Refreshed on each reading.</summary>
+	public bool HistogramAdditive
+	{
+		get => _histogramAdditive;
+		private set => SetField(ref _histogramAdditive, value);
 	}
 
 	/// <summary>The detector-state accent the field's marker and trail take.</summary>
@@ -779,6 +845,12 @@ public sealed class NowViewModel : ViewModelBase
 		HeatmapRegionOpacity = Math.Clamp(_heatmapRegionOpacityProvider?.Invoke() ?? 0.55, 0.0, 1.0);
 		HeatmapRegionThreshold = Math.Clamp(_heatmapRegionThresholdProvider?.Invoke() ?? 0.50, 0.0, 1.0);
 		UseLfHfCorroboration = _useLfHfCorroborationProvider?.Invoke() ?? true;
+		LfHfHaloAdditive = _lfHfHaloAdditiveProvider?.Invoke() ?? true;
+		LobesAdditive = _lobesAdditiveProvider?.Invoke() ?? true;
+		TrailAdditive = _trailAdditiveProvider?.Invoke() ?? true;
+		HeatmapAdditive = _heatmapAdditiveProvider?.Invoke() ?? true;
+		MarkerHaloAdditive = _markerHaloAdditiveProvider?.Invoke() ?? true;
+		HistogramAdditive = _histogramAdditiveProvider?.Invoke() ?? true;
 	});
 
 	/// <summary>

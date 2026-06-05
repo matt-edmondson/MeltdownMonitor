@@ -233,6 +233,13 @@ public sealed class RegulationFieldView : IDisposable
 
 	private static uint Col(Vector4 c) => ImGui.ColorConvertFloat4ToU32(c);
 
+	// Open a glow region with the user-selected blend mode for that element: additive (overlaps
+	// bloom toward white — the signature glow) or plain alpha-over (overlaps composite over, no
+	// bloom). Each region is still closed by restoring AlphaBlend below, since the blend func is
+	// global GL state for the rest of the draw pass — so when the toggle is off this is a no-op pair.
+	private static void BeginBlend(ImDrawListPtr draw, bool additive) =>
+		ImGuiApp.SetDrawBlendMode(draw, additive ? ImGuiAppBlendMode.Additive : ImGuiAppBlendMode.AlphaBlend);
+
 	// Soft, asymmetric glow biased toward the dominant autonomic pole. Gated on the LF/HF
 	// corroboration setting (on by default since the 2026-06-01 audit), and only once a real
 	// LF/HF baseline exists — LF/HF is laggy/noisy, so it is a low-commitment lean cue, not a gate.
@@ -254,9 +261,9 @@ public sealed class RegulationFieldView : IDisposable
 		float baseAlpha = MathF.Min(1f, MathF.Abs(bal)) * 0.10f * confidence;
 
 		// Three concentric discs fake a soft radial falloff (ImGui has no radial gradient). Drawn
-		// additively so the overlapping discs accumulate toward the centre into a real glow instead
-		// of flat alpha-over bands; restored to alpha-over immediately after.
-		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+		// additively (when the toggle is on) so the overlapping discs accumulate toward the centre
+		// into a real glow instead of flat alpha-over bands; restored to alpha-over immediately after.
+		BeginBlend(draw, _pipeline.LfHfHaloAdditive);
 		for (int i = 3; i >= 1; i--)
 		{
 			float radius = halfWidth * 0.30f * i;
@@ -383,7 +390,7 @@ public sealed class RegulationFieldView : IDisposable
 		Span<Vector2> right = m <= 512 ? stackalloc Vector2[m] : new Vector2[m];
 		LemniscateGeometry.StrokeClosed(spline, half, RibbonMiterLimit, left, right);
 
-		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+		BeginBlend(draw, _pipeline.LobesAdditive);
 		FillRibbon(draw, left, right, cols);
 		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 	}
@@ -465,7 +472,7 @@ public sealed class RegulationFieldView : IDisposable
 		// than darken at every join; restored to alpha-over once the comet is drawn.
 		const int sub = 8;
 		int count = pts.Length;
-		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+		BeginBlend(draw, _pipeline.TrailAdditive);
 		for (int i = 0; i < count - 1; i++)
 		{
 			Vector2 p0 = pts[Math.Max(0, i - 1)];
@@ -666,9 +673,9 @@ public sealed class RegulationFieldView : IDisposable
 		Vector4 stateCol = MacchiatoPalette.State(_pipeline.CurrentState);
 		float pulse = 1f + (0.18f * MathF.Sin(_pulsePhase));
 		// The two surrounding halos glow additively (overlap with the trail head and each other
-		// blooms toward white); the solid marker core and inner dot below stay alpha-over so they
-		// read as crisp, opaque points.
-		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+		// blooms toward white) when the toggle is on; the solid marker core and inner dot below stay
+		// alpha-over so they read as crisp, opaque points.
+		BeginBlend(draw, _pipeline.MarkerHaloAdditive);
 		draw.AddCircleFilled(p, 16f * _drawScale * pulse, Col(MacchiatoPalette.WithAlpha(stateCol, 0.18f * confidence)));
 
 		// Outer collapse halo: Slate, non-pulsing, radius grows with the collapse signal — layered
@@ -781,7 +788,7 @@ public sealed class RegulationFieldView : IDisposable
 		// tiles. Restored to alpha-over once the grid is laid down.
 		if (opacity > 0f)
 		{
-			ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+			BeginBlend(draw, _pipeline.HeatmapAdditive);
 			for (int y = 0; y < yb; y++)
 			{
 				float top = top0 + (y * cellH);
@@ -979,7 +986,7 @@ public sealed class RegulationFieldView : IDisposable
 				float slot = (halfWidth * 2f) / n;
 				float barW = MathF.Max(1f, slot - (1.5f * _drawScale));
 				draw.AddLine(new Vector2(histLeft, baseY), new Vector2(centre.X + halfWidth, baseY), axisCol, 1f * _drawScale);
-				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+				BeginBlend(draw, _pipeline.HistogramAdditive);
 				for (int b = 0; b < n; b++)
 				{
 					int c = xHist.Counts[b];
@@ -1044,7 +1051,7 @@ public sealed class RegulationFieldView : IDisposable
 				float slot = (botY - topY) / n;
 				float barH = MathF.Max(1f, slot - (1.5f * _drawScale));
 				draw.AddLine(new Vector2(axisX, topY), new Vector2(axisX, botY), axisCol, 1f * _drawScale);
-				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.Additive);
+				BeginBlend(draw, _pipeline.HistogramAdditive);
 				for (int b = 0; b < n; b++)
 				{
 					int c = yHist.Counts[b];

@@ -207,6 +207,74 @@ public sealed class RegulationField : Control
 		set => SetValue(UseLfHfCorroborationProperty, value);
 	}
 
+	// ── Per-element blend modes ──────────────────────────────────────────────
+	// Each glow layer can bloom additively (SKBlendMode.Plus — the signature glow) or composite
+	// with plain alpha (SKBlendMode.SrcOver — no bloom). True = additive (the tuned default look).
+
+	public static readonly StyledProperty<bool> LfHfHaloAdditiveProperty =
+		AvaloniaProperty.Register<RegulationField, bool>(nameof(LfHfHaloAdditive), true);
+
+	public static readonly StyledProperty<bool> LobesAdditiveProperty =
+		AvaloniaProperty.Register<RegulationField, bool>(nameof(LobesAdditive), true);
+
+	public static readonly StyledProperty<bool> TrailAdditiveProperty =
+		AvaloniaProperty.Register<RegulationField, bool>(nameof(TrailAdditive), true);
+
+	public static readonly StyledProperty<bool> HeatmapAdditiveProperty =
+		AvaloniaProperty.Register<RegulationField, bool>(nameof(HeatmapAdditive), true);
+
+	public static readonly StyledProperty<bool> MarkerHaloAdditiveProperty =
+		AvaloniaProperty.Register<RegulationField, bool>(nameof(MarkerHaloAdditive), true);
+
+	public static readonly StyledProperty<bool> HistogramAdditiveProperty =
+		AvaloniaProperty.Register<RegulationField, bool>(nameof(HistogramAdditive), true);
+
+	/// <summary>Blend the LF/HF balance halo additively (true, glow) or with alpha (false).</summary>
+	public bool LfHfHaloAdditive
+	{
+		get => GetValue(LfHfHaloAdditiveProperty);
+		set => SetValue(LfHfHaloAdditiveProperty, value);
+	}
+
+	/// <summary>Blend the live-trace lobes additively (true, glow) or with alpha (false).</summary>
+	public bool LobesAdditive
+	{
+		get => GetValue(LobesAdditiveProperty);
+		set => SetValue(LobesAdditiveProperty, value);
+	}
+
+	/// <summary>Blend the comet trail additively (true, glow) or with alpha (false).</summary>
+	public bool TrailAdditive
+	{
+		get => GetValue(TrailAdditiveProperty);
+		set => SetValue(TrailAdditiveProperty, value);
+	}
+
+	/// <summary>Blend the dwell-heatmap cells additively (true, glow) or with alpha (false).</summary>
+	public bool HeatmapAdditive
+	{
+		get => GetValue(HeatmapAdditiveProperty);
+		set => SetValue(HeatmapAdditiveProperty, value);
+	}
+
+	/// <summary>Blend the marker halos additively (true, glow) or with alpha (false).</summary>
+	public bool MarkerHaloAdditive
+	{
+		get => GetValue(MarkerHaloAdditiveProperty);
+		set => SetValue(MarkerHaloAdditiveProperty, value);
+	}
+
+	/// <summary>Blend the axis histogram bars additively (true, glow) or with alpha (false).</summary>
+	public bool HistogramAdditive
+	{
+		get => GetValue(HistogramAdditiveProperty);
+		set => SetValue(HistogramAdditiveProperty, value);
+	}
+
+	/// <summary>Map a per-element additive toggle to the Skia blend mode the layer composites with:
+	/// additive bloom (<see cref="SKBlendMode.Plus"/>) or plain alpha (<see cref="SKBlendMode.SrcOver"/>).</summary>
+	private static SKBlendMode Blend(bool additive) => additive ? SKBlendMode.Plus : SKBlendMode.SrcOver;
+
 	public static readonly StyledProperty<IReadOnlyList<double>?> RrProperty =
 		AvaloniaProperty.Register<RegulationField, IReadOnlyList<double>?>(nameof(Rr));
 
@@ -251,7 +319,7 @@ public sealed class RegulationField : Control
 	}
 
 	static RegulationField() =>
-		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, RecoveryProperty, LobeThicknessProperty, LobeSegmentsProperty, IndexBucketsProperty, VagalBucketsProperty, HypoarousalProperty, HypoarousalDynamicsProperty);
+		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, RecoveryProperty, LobeThicknessProperty, LobeSegmentsProperty, IndexBucketsProperty, VagalBucketsProperty, HypoarousalProperty, HypoarousalDynamicsProperty, LfHfHaloAdditiveProperty, LobesAdditiveProperty, TrailAdditiveProperty, HeatmapAdditiveProperty, MarkerHaloAdditiveProperty, HistogramAdditiveProperty);
 
 	/// <summary>Latest arousal-vs-baseline reading; drives the marker position,
 	/// stroke fatness and overall confidence dimming.</summary>
@@ -477,7 +545,7 @@ public sealed class RegulationField : Control
 				paint.Color = Sk(hue, baseAlpha / i);
 				canvas.DrawCircle(glowCentre, halfWidth * 0.30f * i, paint);
 			}
-		}));
+		}, Blend(LfHfHaloAdditive)));
 	}
 
 	/// <summary>Avalonia colour → SKColor with a [0,1] alpha, for the additive Skia layers.</summary>
@@ -546,7 +614,7 @@ public sealed class RegulationField : Control
 						canvas.DrawRect(left, top, cellW, cellH, paint);
 					}
 				}
-			}));
+			}, Blend(HeatmapAdditive)));
 		}
 
 		// Dashed box around the high-concentration region — drawn beneath the crosshair so
@@ -808,7 +876,7 @@ public sealed class RegulationField : Control
 				paint.StrokeWidth = widths[i];
 				canvas.DrawLine(spline[i], spline[j], paint);
 			}
-		}));
+		}, Blend(LobesAdditive)));
 	}
 
 	// Uniform Catmull-Rom interpolation between p1 and p2 (p0/p3 are the neighbouring points).
@@ -883,7 +951,7 @@ public sealed class RegulationField : Control
 						paint.Color = col;
 						canvas.DrawRect(rect, paint);
 					}
-				}));
+				}, Blend(HistogramAdditive)));
 
 				// Recovery arrows: cascade-pulsing left-pointing triangles when an alert is active.
 				// Gated by Recovery.IsActive (true during Warning/Alerting).
@@ -957,7 +1025,7 @@ public sealed class RegulationField : Control
 					{
 						canvas.DrawRect(rect, paint);
 					}
-				}));
+				}, Blend(HistogramAdditive)));
 			}
 		}
 	}
@@ -1039,7 +1107,7 @@ public sealed class RegulationField : Control
 				paint.StrokeWidth = widths[i];
 				canvas.DrawLine(linePts[i], linePts[i + 1], paint);
 			}
-		}));
+		}, Blend(TrailAdditive)));
 	}
 
 	// During an active episode, mark the warm-side warning boundary the marker must fall back
@@ -1127,7 +1195,7 @@ public sealed class RegulationField : Control
 				paint.Color = collapseCol;
 				canvas.DrawCircle(skAt, collapseRing, paint);
 			}
-		}));
+		}, Blend(MarkerHaloAdditive)));
 
 		context.DrawEllipse(Brush(StateColor, confidence), null, at, 6, 6);              // core
 		context.DrawEllipse(Brush(Base, confidence), null, at, 2.5, 2.5);                // pupil

@@ -158,6 +158,41 @@ public class MobileSettingsSerializerTests
 	}
 
 	[TestMethod]
+	public void RoundTrip_PreservesPerElementBlendModes()
+	{
+		var s = new MobileSettings
+		{
+			LfHfHaloAdditive = false,
+			LobesAdditive = false,
+			TrailAdditive = false,
+			HeatmapAdditive = false,
+			MarkerHaloAdditive = false,
+			HistogramAdditive = false,
+		};
+
+		var back = MobileSettingsSerializer.Deserialize(MobileSettingsSerializer.Serialize(s));
+
+		Assert.IsFalse(back.LfHfHaloAdditive);
+		Assert.IsFalse(back.LobesAdditive);
+		Assert.IsFalse(back.TrailAdditive);
+		Assert.IsFalse(back.HeatmapAdditive);
+		Assert.IsFalse(back.MarkerHaloAdditive);
+		Assert.IsFalse(back.HistogramAdditive);
+	}
+
+	[TestMethod]
+	public void Default_PerElementBlendModes_AreAdditive()
+	{
+		var s = new MobileSettings();
+		Assert.IsTrue(s.LfHfHaloAdditive);
+		Assert.IsTrue(s.LobesAdditive);
+		Assert.IsTrue(s.TrailAdditive);
+		Assert.IsTrue(s.HeatmapAdditive);
+		Assert.IsTrue(s.MarkerHaloAdditive);
+		Assert.IsTrue(s.HistogramAdditive);
+	}
+
+	[TestMethod]
 	public void Defaults_match_desktop_tuned_values()
 	{
 		var s = new MobileSettings();

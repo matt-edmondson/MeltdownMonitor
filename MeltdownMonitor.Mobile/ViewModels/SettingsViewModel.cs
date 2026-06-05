@@ -418,6 +418,90 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	public bool LfHfHaloAdditive
+	{
+		get => _settings.LfHfHaloAdditive;
+		set
+		{
+			if (_settings.LfHfHaloAdditive != value)
+			{
+				_settings.LfHfHaloAdditive = value;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public bool LobesAdditive
+	{
+		get => _settings.LobesAdditive;
+		set
+		{
+			if (_settings.LobesAdditive != value)
+			{
+				_settings.LobesAdditive = value;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public bool TrailAdditive
+	{
+		get => _settings.TrailAdditive;
+		set
+		{
+			if (_settings.TrailAdditive != value)
+			{
+				_settings.TrailAdditive = value;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public bool HeatmapAdditive
+	{
+		get => _settings.HeatmapAdditive;
+		set
+		{
+			if (_settings.HeatmapAdditive != value)
+			{
+				_settings.HeatmapAdditive = value;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public bool MarkerHaloAdditive
+	{
+		get => _settings.MarkerHaloAdditive;
+		set
+		{
+			if (_settings.MarkerHaloAdditive != value)
+			{
+				_settings.MarkerHaloAdditive = value;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public bool HistogramAdditive
+	{
+		get => _settings.HistogramAdditive;
+		set
+		{
+			if (_settings.HistogramAdditive != value)
+			{
+				_settings.HistogramAdditive = value;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	public int RegulationHeatmapLength
 	{
 		get => _settings.RegulationHeatmapLength;

@@ -131,7 +131,13 @@ public static class IosCompositionRoot
 			heatmapPeakOpacityProvider: () => settings.HeatmapPeakOpacity,
 			heatmapRegionOpacityProvider: () => settings.HeatmapRegionOpacity,
 			heatmapRegionThresholdProvider: () => settings.HeatmapRegionThreshold,
-			useLfHfCorroborationProvider: () => settings.Thresholds.UseLfHfCorroboration);
+			useLfHfCorroborationProvider: () => settings.Thresholds.UseLfHfCorroboration,
+			lfHfHaloAdditiveProvider: () => settings.LfHfHaloAdditive,
+			lobesAdditiveProvider: () => settings.LobesAdditive,
+			trailAdditiveProvider: () => settings.TrailAdditive,
+			heatmapAdditiveProvider: () => settings.HeatmapAdditive,
+			markerHaloAdditiveProvider: () => settings.MarkerHaloAdditive,
+			histogramAdditiveProvider: () => settings.HistogramAdditive);
 		_history = new HistoryViewModel();
 		_metrics = new MetricsViewModel(
 			windowMinutesProvider: () => settings.SparklineWindowMinutes,
