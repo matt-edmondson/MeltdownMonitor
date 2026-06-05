@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <!--
+      API 26 (Android 8) floor: notification channels are mandatory from here,
+      and it keeps the widest device reach (design doc §9 / §11.2). The legacy
+      ACCESS_FINE_LOCATION scan dance for API ≤ 30 is handled in the head's
+      manifest with maxSdkVersion="30".
+    -->
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsTrimmable>true</IsTrimmable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MeltdownMonitor.Core\MeltdownMonitor.Core.csproj" />
+  </ItemGroup>
+
+</Project>

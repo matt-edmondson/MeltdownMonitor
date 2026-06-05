@@ -8,7 +8,7 @@ MeltdownMonitor watches autonomic-nervous-system dysregulation in real time: it 
 
 ## Build & test
 
-All projects target **.NET 10** (`net10.0` / `net10.0-windows10.0.19041.0` / `net10.0-ios`). You need the **.NET 10 SDK**.
+All projects target **.NET 10** (`net10.0` / `net10.0-windows10.0.19041.0` / `net10.0-ios` / `net10.0-android`). You need the **.NET 10 SDK**.
 
 ```
 dotnet build MeltdownMonitor.Core/MeltdownMonitor.Core.csproj
@@ -20,8 +20,9 @@ Build matrix:
 - **Core / Mobile / Tests** — build & test on Linux, macOS, or Windows. This is your default loop.
 - **App / Ble.Windows** — `net10.0-windows10.0.19041.0`; build only on Windows. A plain `net10.0` project (incl. Tests) **cannot** reference them.
 - **iOS / Ble.Apple** — `net10.0-ios`; build only on macOS with Xcode + the `ios` workload.
+- **Android / Ble.Android** — `net10.0-android`; build on Linux, macOS, or Windows with the `android` workload + an Android SDK (no Mac needed). CI: `.github/workflows/android.yml`.
 
-`dotnet build` / `dotnet test` on the whole solution will try to build the iOS heads and fail without the iOS workload — target the specific project instead.
+`dotnet build` / `dotnet test` on the whole solution will try to build the iOS and Android heads and fail without their workloads — target the specific project instead.
 
 ## Layout
 
@@ -31,12 +32,16 @@ Core            net10.0   HRV math, detection state machine, EWMA baseline + his
                           Platform-neutral; the source of truth for all numbers.
 Ble.Windows     net10.0-windows   WinRT BLE → IBeatSource (+ battery/contact/device-info)
 Ble.Apple       net10.0-ios       CoreBluetooth BLE + background state restoration
+Ble.Android     net10.0-android   Android BLE (BluetoothGatt + serial op queue) → IBeatSource
 App             net10.0-windows   ImGui status window, tray, overlay. Windows entry point.
 Mobile          net10.0   Avalonia UI + view models + platform-neutral service interfaces.
                           Renders the full metric chart suite (Metrics tab) and the complete
                           Regulation Field layer set; depends on Avalonia.Skia + SkiaSharp.
 iOS             net10.0-ios       iOS head: composition root + native services (HealthKit,
                           UserNotifications, AVFoundation, ActivityKit)
+Android         net10.0-android   Android head: single-Activity Avalonia host, foreground
+                          MonitoringService, AndroidCompositionRoot, six native services.
+                          Reuses Core + Mobile byte-for-byte (see docs/android-design.md).
 Tests           net10.0   MSTest; references Core + Mobile only
 ```
 
@@ -51,7 +56,10 @@ Pipeline flow (both heads): `IBeatSource → RrArtifactFilter → ShortWindowHrv
 - **Per-region blend modes on the Desktop (ImGui) head — wired via `ktsu.ImGui.App` 2.9.0.** The OpenGL renderer used to `throw NotImplementedException` on any draw-command `UserCallback`, so the usual ImGui trick of `ImDrawList.AddCallback` to flip `glBlendFunc` (e.g. additive `SRC_ALPHA, ONE`) crashed rather than blended. The renderer now honors callbacks and exposes a GL-free `ImGuiApp.SetDrawBlendMode(drawList, ImGuiAppBlendMode.Additive/AlphaBlend)`. `RegulationFieldView` uses it to draw its glow layers (LF/HF halo, heatmap, lemniscate lobes, comet trail, marker halos) additively — each region is bracketed by `Additive` … `AlphaBlend`, since the blend func is global GL state for the rest of the draw pass. The glow look can only be verified on the live app + a real Polar sensor. See `docs/regulation-field-blend-modes.md`.
 - **Per-region blend modes on the Mobile (Avalonia) head — via a SkiaSharp custom draw op.** Avalonia's `DrawingContext` has no additive blend, so `RegulationField` pushes its glow layers (LF/HF halo, dwell heatmap cells, RR-textured trace, comet trail, marker halos, histogram bars) through `Controls/AdditiveSkiaLayer` — an `ICustomDrawOperation` that leases the Skia canvas (`ISkiaSharpApiLeaseFeature`) and draws with `SKBlendMode.Plus`. Crisp chrome (labels, axis lines, crosshair, marker core) stays in `DrawingContext`. This pulls managed `Avalonia.Skia` + `SkiaSharp` into Mobile (the iOS head already shipped the native assets). Like the desktop glow, the look is only verifiable on a live device + real Polar sensor.
 - **Both pipelines now expose `BeatReceived`** (per persisted beat, artifacts included — consumers filter `IsArtifact`). Mobile consumers: `MetricsViewModel` (RR/Poincaré charts) and `NowViewModel` (RR texture buffer + absolute beat count for the field's playhead). The mobile trail buffer holds `max(comet, heatmap)` points and publishes two views: `RegulationTrail` (comet slice) and `DwellTrail` (heatmap window).
-- **iOS SQLite** opens with `MeltdownRepositoryOptions.IosSandbox` (`journal_mode=TRUNCATE`, `fullfsync=ON`) so background BLE writes survive device lock; desktop uses the default profile.
+- **iOS SQLite** opens with `MeltdownRepositoryOptions.IosSandbox` (`journal_mode=TRUNCATE`, `fullfsync=ON`) so background BLE writes survive device lock; desktop uses the default profile. **Android** uses `MeltdownRepositoryOptions.Default` (WAL) — the iOS data-protection lock-out doesn't apply the same way and the foreground service keeps the process warm (design doc §5.7).
+- **Android heads need the `android` workload + a full Android SDK.** `Ble.Android` and `Android` target `net10.0-android`; they won't build on a plain `net10.0` box (`dotnet workload install android`), and the resource/packaging steps need a real Android SDK platform (the API level the head targets). The C# compiles against the Mono.Android binding without the platform, but `aapt2` linking and `.aab` packaging only succeed with the SDK installed — so the real build gate is `.github/workflows/android.yml` on `ubuntu-latest` (no Mac needed, unlike iOS). Like every head, real-time BLE/visual behaviour needs a device + real sensor. The two Android projects use the iOS-style sln config (ActiveCfg, no `Build.0`) so a host without the workload doesn't try to build them.
+- **Android background monitoring is a foreground service, not state restoration.** `MonitoringService` (`foregroundServiceType=connectedDevice`) keeps the process + GATT connection alive with the screen off; the pipeline is application-scoped on `AndroidCompositionRoot` so a recreated Activity rebinds rather than restarts (design doc §5.8). `OngoingNotificationActivityController` implements `ILiveActivityController` against that service's ongoing notification — its `EndAsync` resets the notification but does **not** stop the service (the service is the monitoring lifecycle; `AndroidCompositionRoot.StopAsync` stops it).
+- **`MeltdownMonitor.Android.Services.HealthConnectStore` is a cold-start placeholder.** It satisfies `IHealthStore` but reads no data until the Health Connect binding decision (design doc §11.1 / Phase 5) is made — the pipeline tolerates this and warms from live beats.
 - **Auto-generated — never hand-edit:** `VERSION.md`, `CHANGELOG.md`, `LATEST_CHANGELOG.md`, `LICENSE.md`. Versioning is via commit-message tags (`[major]`/`[minor]`/`[patch]`/`[pre]`). `docs/superpowers/plans` and `specs` are point-in-time records — don't rewrite them.
 
 ## Conventions specific to this repo

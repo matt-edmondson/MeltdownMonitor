@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools"
+          package="com.matthewedmondson.meltdownmonitor">
+
+  <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="35" />
+
+  <!--
+    BLE discovery and connection (design doc §5.2 / §9). neverForLocation lets us
+    skip the location permission on API 31+ because we only ever scan for a known
+    Heart Rate Service and derive nothing about location.
+  -->
+  <uses-permission android:name="android.permission.BLUETOOTH_SCAN"
+                   android:usesPermissionFlags="neverForLocation"
+                   tools:targetApi="s" />
+  <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+  <!-- BLE scanning on API ≤ 30 needs fine location; not requested on newer devices. -->
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+                   android:maxSdkVersion="30" />
+
+  <!-- Alerts and the ongoing status notification (API 33+ runtime grant). -->
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <!-- Foreground service that keeps the BLE connection alive with the screen off (§5.1). -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"
+                   tools:targetApi="34" />
+
+  <!-- Optional opt-in to survive Doze on aggressive OEM battery managers (§5.1). -->
+  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+  <!-- Local-only: no INTERNET permission, which keeps the Play data-safety form honest (§10). -->
+
+  <application android:label="Meltdown Monitor"
+               android:allowBackup="true"
+               android:supportsRtl="true">
+
+    <!--
+      FileProvider for the database-export share intent (§8). The authority must
+      match the runtime GetUriForFile call in IntentDatabaseExporter.
+    -->
+    <provider
+        android:name="androidx.core.content.FileProvider"
+        android:authorities="com.matthewedmondson.meltdownmonitor.fileprovider"
+        android:exported="false"
+        android:grantUriPermissions="true">
+      <meta-data
+          android:name="android.support.FILE_PROVIDER_PATHS"
+          android:resource="@xml/file_paths" />
+    </provider>
+  </application>
+
+</manifest>

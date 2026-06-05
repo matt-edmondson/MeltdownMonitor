@@ -1,0 +1,69 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>26</SupportedOSPlatformVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>MeltdownMonitor.Android</RootNamespace>
+    <ApplicationId>com.matthewedmondson.meltdownmonitor</ApplicationId>
+    <!--
+      Local/dev defaults. CI stamps the real version on android-v* tags
+      (.github/workflows/android.yml), mirroring how the iOS head stamps
+      Info.plist at archive time.
+    -->
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+
+    <!--
+      The repo-wide TreatWarningsAsErrors (Directory.Build.props) keeps C#
+      warnings fatal. The Release trim/AOT pass (ILLink) and the Android resource
+      designer can emit analysis warnings from third-party assemblies we cannot
+      fix in source (Avalonia, SkiaSharp, Microsoft.Data.Sqlite), so keep those
+      visible but non-fatal — same posture as the iOS head.
+    -->
+    <ILLinkTreatWarningsAsErrors>false</ILLinkTreatWarningsAsErrors>
+
+    <!--
+      NU1608 is a transitive version conflict inside Avalonia.Android's own
+      AndroidX graph (Lifecycle.Common.Java8 pins Lifecycle.Common < 2.9.3, while
+      another branch resolves 2.10.x). It is not something this project can fix in
+      its references, so keep it visible but non-fatal rather than letting the
+      repo-wide TreatWarningsAsErrors block the build — the same posture the iOS
+      head takes for third-party trim warnings.
+    -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1608</WarningsNotAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.0.4" />
+    <PackageReference Include="Avalonia.Android" Version="12.0.4" />
+
+    <!--
+      Android native render-backend libraries. Avalonia.Android → Avalonia.Skia
+      pulls in the managed SkiaSharp/HarfBuzzSharp assemblies but NOT the Android
+      native libraries; without these the first Skia call at launch throws
+      DllNotFoundException. Versions track Avalonia.Skia 12.0.4's managed deps
+      (SkiaSharp 3.119.4, HarfBuzzSharp 8.3.1.3) — pinned to the same versions the
+      Mobile assembly references so there is no managed/native split (design doc
+      §11.6).
+    -->
+    <PackageReference Include="SkiaSharp.NativeAssets.Android" Version="3.119.4" />
+    <PackageReference Include="HarfBuzzSharp.NativeAssets.Android" Version="8.3.1.3" />
+
+    <!--
+      FileProvider (for the database-export share intent, §8) lives in
+      Xamarin.AndroidX.Core, which Avalonia.Android already pulls in transitively
+      via AndroidX.AppCompat — so it is not referenced again here to avoid a
+      version downgrade against Avalonia's pinned graph.
+    -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MeltdownMonitor.Core\MeltdownMonitor.Core.csproj" />
+    <ProjectReference Include="..\MeltdownMonitor.Mobile\MeltdownMonitor.Mobile.csproj" />
+    <ProjectReference Include="..\MeltdownMonitor.Ble.Android\MeltdownMonitor.Ble.Android.csproj" />
+  </ItemGroup>
+
+</Project>
