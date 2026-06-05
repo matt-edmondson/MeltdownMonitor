@@ -1018,7 +1018,12 @@ public sealed class RegulationField : Control
 		if (yHist.PeakCount > 0)
 		{
 			double axisX = 4;
-			double maxW = Math.Min(20, (centre.X - halfWidth - 30) - axisX);
+			// Fit the bars into the gutter between the axis and the field's left edge. On mobile the
+			// field fills most of the width, so that gutter is narrow — a fixed clearance (as the
+			// desktop uses, where the window is far wider) left only a few pixels and the bars read as
+			// stubs. Take ~70% of the available gutter instead (keeping a proportional gap to the
+			// lobe), still capped at 20px so a wide layout doesn't run the bars into the field.
+			double maxW = Math.Min(20, (centre.X - halfWidth - axisX) * 0.7);
 			if (maxW > 1)
 			{
 				int n = yHist.BucketCount;
