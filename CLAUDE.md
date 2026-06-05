@@ -4,7 +4,7 @@ Project-specific guidance for working in this repo. Shared .NET conventions live
 
 ## What this is
 
-MeltdownMonitor watches autonomic-nervous-system dysregulation in real time: it streams RR intervals from a Polar H10 / Verity Sense over BLE, computes rolling HRV (RMSSD, pNN50, HR, plus LF/HF + Poincaré), maintains a personal EWMA baseline, runs a detection state machine, and surfaces calm alerts. It ships a Windows desktop (Dear ImGui) front-end and an iOS/mobile (Avalonia) front-end over a shared Core. See `README.md` for the domain explainer and glossary.
+MeltdownMonitor watches autonomic-nervous-system dysregulation in real time: it streams RR intervals from a Polar H10 / Verity Sense or a Garmin HRM-Dual / HRM-Pro chest strap over BLE (any standard BLE Heart Rate Service device exposing RR intervals; Garmin watches are excluded — they broadcast BPM-only over BLE, or ANT+-only), computes rolling HRV (RMSSD, pNN50, HR, plus LF/HF + Poincaré), maintains a personal EWMA baseline, runs a detection state machine, and surfaces calm alerts. It ships a Windows desktop (Dear ImGui) front-end and an iOS/mobile (Avalonia) front-end over a shared Core. See `README.md` for the domain explainer and glossary.
 
 ## Build & test
 

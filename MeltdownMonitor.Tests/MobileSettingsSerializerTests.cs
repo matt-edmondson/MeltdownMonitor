@@ -13,7 +13,7 @@ public class MobileSettingsSerializerTests
 	{
 		var original = new MobileSettings
 		{
-			DeviceType = PolarDeviceType.VeritySense,
+			DeviceType = HeartRateDeviceType.GarminHrmPro,
 			PausedUntil = new DateTimeOffset(2026, 5, 29, 14, 30, 0, TimeSpan.Zero),
 			EnableChime = false,
 			EnableNotifications = false,

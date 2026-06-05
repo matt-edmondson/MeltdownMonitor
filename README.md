@@ -1,6 +1,6 @@
 # MeltdownMonitor
 
-A real-time monitor for **autonomic nervous system (ANS)** dysregulation. It streams **RR intervals** (the time between consecutive heartbeats) from a Polar H10 or Polar Verity Sense over **Bluetooth Low Energy (BLE)**, computes rolling **heart rate variability (HRV)** metrics, maintains a personal adaptive baseline, detects stress/dysregulation events, and surfaces calm, non-jarring alerts.
+A real-time monitor for **autonomic nervous system (ANS)** dysregulation. It streams **RR intervals** (the time between consecutive heartbeats) from a Polar H10 / Verity Sense or a Garmin HRM-Dual / HRM-Pro chest strap over **Bluetooth Low Energy (BLE)**, computes rolling **heart rate variability (HRV)** metrics, maintains a personal adaptive baseline, detects stress/dysregulation events, and surfaces calm, non-jarring alerts.
 
 It ships as two front-ends over a shared, platform-neutral core:
 
@@ -45,10 +45,14 @@ In a healthy, relaxed state the two branches are constantly negotiating, so the 
 |---|---|---|
 | Polar H10 | **ECG** (electrocardiogram) chest strap | Most accurate RR source; the directly-measured electrical signal of the heart enables reliable **LF/HF** (low-frequency/high-frequency power) and Poincaré extended metrics |
 | Polar Verity Sense | **PPG** (photoplethysmography) optical arm/wrist | Same **GATT** (Generic Attribute Profile) Heart Rate Service interface; provides RR intervals derived from blood-flow optical readings rather than electrical activity |
+| Garmin HRM-Dual | **ECG** chest strap | Broadcasts over the standard BLE Heart Rate Service with RR intervals, same as the H10. Note it allows only a limited number of simultaneous BLE connections, so disconnect it from any watch or phone app first |
+| Garmin HRM-Pro / HRM-Pro Plus | **ECG** chest strap | Same standard BLE RR path; the `GarminHrmPro` setting also matches the Pro Plus |
 
-Default `Auto` mode scans for either device by BLE advertisement name. Any sensor implementing the standard Heart Rate Service (`0x180D`) with RR intervals should work.
+Default `Auto` mode scans for any device implementing the standard Heart Rate Service (`0x180D`) with RR intervals; the named settings pin the scan to a specific strap by its BLE advertisement name.
 
-> **Why a chest strap is preferred:** ECG measures the heart's electrical signal directly, picking out each R-wave cleanly. Optical sensors infer beats from changes in blood volume at the wrist, which is fine for average heart rate but introduces small timing errors that degrade short-term HRV metrics. Both work; the H10 is the research-grade option.
+> **Why a chest strap is preferred:** ECG measures the heart's electrical signal directly, picking out each R-wave cleanly. Optical sensors infer beats from changes in blood volume at the wrist, which is fine for average heart rate but introduces small timing errors that degrade short-term HRV metrics. Both work; an ECG strap (Polar H10, Garmin HRM-Dual/Pro) is the research-grade option.
+>
+> **Garmin watches are not supported.** The Forerunner 935 broadcasts heart rate over ANT+ only (this app is BLE-only), and Forerunner watches that do broadcast over BLE send a smoothed BPM with no RR-interval field — Garmin computes wrist HRV internally and never exposes it. Without RR intervals there is nothing for the HRV pipeline to work on. Use a Garmin chest strap instead.
 
 ---
 
@@ -234,7 +238,7 @@ Settings are persisted as JSON via `ktsu.AppDataStorage` (which manages the on-d
 
 | Key | Default | Description |
 |---|---|---|
-| `DeviceType` | `Auto` | BLE scan target — `Auto` \| `H10` \| `VeritySense` |
+| `DeviceType` | `Auto` | BLE scan target — `Auto` \| `H10` \| `VeritySense` \| `GarminHrmDual` \| `GarminHrmPro` |
 | `Thresholds.RmssdWarningDropFraction` | `0.30` | RMSSD drop required for Warning |
 | `Thresholds.HrWarningRiseFraction` | `0.15` | HR rise required for Warning |
 | `Thresholds.UseLfHfCorroboration` | `true` | Require an LF/HF rise to corroborate a Warning (once warm) |
