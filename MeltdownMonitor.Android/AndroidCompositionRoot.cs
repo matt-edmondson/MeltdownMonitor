@@ -77,7 +77,7 @@ public static class AndroidCompositionRoot
 		InitializeCrashReporting(settings.CrashReportingDsn);
 
 		_notifications = new AndroidNotificationDispatcher(context, settings);
-		_healthStore = new HealthConnectStore();
+		_healthStore = new HealthConnectStore(context);
 		var exporter = new IntentDatabaseExporter(context);
 
 		_now = new NowViewModel(

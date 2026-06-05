@@ -30,7 +30,27 @@
   <!-- Optional opt-in to survive Doze on aggressive OEM battery managers (§5.1). -->
   <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+  <!--
+    Health Connect read permission for the baseline warm-start (design doc §5.3).
+    The grant itself is made through Health Connect's own permission UI, not a
+    manifest runtime grant; this declaration is what makes the permission requestable.
+  -->
+  <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+
   <!-- Local-only: no INTERNET permission, which keeps the Play data-safety form honest (§10). -->
+
+  <!--
+    Package visibility so HealthConnectClient.GetSdkStatus / GetOrCreate can resolve
+    the Health Connect provider. On Android 14+ it is a system module; on 13 and below
+    it is the Play Store app (com.google.android.apps.healthdata). The rationale intent
+    is declared so Health Connect can surface this app in its permission UI (§5.3).
+  -->
+  <queries>
+    <package android:name="com.google.android.apps.healthdata" />
+    <intent>
+      <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+    </intent>
+  </queries>
 
   <application android:label="Meltdown Monitor"
                android:allowBackup="true"
