@@ -775,6 +775,9 @@ public sealed class RegulationField : Control
 	// Peak trace deflection (px) from the real RR signal at 1× exaggeration (desktop MaxJitterPx).
 	private const float MaxJitterPx = 18f;
 
+	// Cap the trace's miter extension so the self-crossing doesn't spike (desktop RibbonMiterLimit).
+	private const float RibbonMiterLimit = 4f;
+
 	private void DrawTrace(DrawingContext context, IReadOnlyList<Vector2> ghost, IReadOnlyList<Vector2> live, Vector2 centre, float halfWidth, RegulationReading r, double confidence)
 	{
 		if (ghost.Count < 2 || live.Count < 2)
@@ -799,10 +802,10 @@ public sealed class RegulationField : Control
 		float warmSwell = 1f + (MathF.Max(0f, clampedIndex) * 1.4f);
 		float coolSwell = 1f + (MathF.Max(0f, -clampedIndex) * 1.4f);
 		float quality = (float)Math.Clamp(r.VariabilityQuality, 0.0, 1.0);
-		// Deliberately thinner than the desktop's (4 + 6*quality): the mobile trace strokes
-		// overlapping segments where the desktop fills a single-pass ribbon, so additive
-		// overlap blooms brighter per pixel — the thinner stroke compensates. Tune on device.
-		float baseThick = (float)((3.0 + (4.0 * quality)) * Math.Clamp(LobeThickness, 0.5, 3.0));
+		// Matches the desktop's (4 + 6*quality): like the desktop, the mobile trace now fills a
+		// single-pass tri-strip ribbon (below) instead of stroking overlapping segments, so each
+		// ribbon pixel is rasterised once — no additive overlap bloom left to compensate for.
+		float baseThick = (float)((4.0 + (6.0 * quality)) * Math.Clamp(LobeThickness, 0.5, 3.0));
 		double lobeAlpha = confidence * Math.Clamp(LobeOpacity, 0.0, 1.0);
 
 		float[] dev = RrTexture.BuildRrDeviations(Rr ?? []);
@@ -839,12 +842,11 @@ public sealed class RegulationField : Control
 
 		// Smooth flowing undulations rather than faceted spikes: a closed Catmull-Rom centreline
 		// through the jittered vertices, each sub-point carrying its own colour (warm/cool by
-		// side, deepening with depth) and width (lobe swell). Pre-computed here; the additive
-		// layer below just strokes the segments with SKBlendMode.Plus so the lobes glow.
+		// side, deepening with depth) and half-thickness (lobe swell).
 		int m = n * TraceSub;
-		var spline = new SKPoint[m];
+		var spline = new Vector2[m];
 		var cols = new SKColor[m];
-		var widths = new float[m];
+		var half = new float[m];
 		int w = 0;
 		for (int i = 0; i < n; i++)
 		{
@@ -858,24 +860,50 @@ public sealed class RegulationField : Control
 				bool warm = cur.X >= centre.X;
 				float depth = MathF.Min(1f, MathF.Abs(cur.X - centre.X) / halfWidth);
 				Color c = warm ? Lerp(Peach, Maroon, depth) : Lerp(Sky, Sapphire, depth);
-				spline[w] = new SKPoint(cur.X, cur.Y);
+				spline[w] = cur;
 				cols[w] = Sk(c, lobeAlpha);
-				widths[w] = baseThick * (warm ? warmSwell : coolSwell);
+				half[w] = baseThick * (warm ? warmSwell : coolSwell) * 0.5f;
 				w++;
 			}
 		}
 
+		// Expand the centreline into a closed ribbon boundary (shared with the desktop via Core's
+		// LemniscateGeometry.StrokeClosed), then submit it as a single tri-strip mesh rather than
+		// stroking each segment. Interleaving the left/right boundary vertices [L0,R0,L1,R1,…] in
+		// triangle-strip order fills each ribbon pixel exactly once, so the additive
+		// (SKBlendMode.Plus) layer composites the lobes cleanly onto the dark field instead of
+		// blooming toward white wherever round-join strokes overlapped. Repeating the first pair
+		// closes the loop. Mirrors the desktop FillRibbon. The figure-8's own self-crossing at the
+		// centre is the one place the ribbon still overlaps itself, by design.
+		var left = new Vector2[m];
+		var right = new Vector2[m];
+		LemniscateGeometry.StrokeClosed(spline, half, RibbonMiterLimit, left, right);
+
+		var positions = new SKPoint[(2 * m) + 2];
+		var stripCols = new SKColor[(2 * m) + 2];
+		for (int i = 0; i < m; i++)
+		{
+			positions[2 * i] = new SKPoint(left[i].X, left[i].Y);
+			positions[(2 * i) + 1] = new SKPoint(right[i].X, right[i].Y);
+			stripCols[2 * i] = cols[i];
+			stripCols[(2 * i) + 1] = cols[i];
+		}
+
+		// Close the loop: the strip's final two triangles span back onto the first boundary pair.
+		positions[2 * m] = positions[0];
+		positions[(2 * m) + 1] = positions[1];
+		stripCols[2 * m] = stripCols[0];
+		stripCols[(2 * m) + 1] = stripCols[1];
+
 		context.Custom(new AdditiveSkiaLayer(new Rect(Bounds.Size), (canvas, paint) =>
 		{
-			paint.Style = SKPaintStyle.Stroke;
-			paint.StrokeCap = SKStrokeCap.Butt;
-			for (int i = 0; i < m; i++)
-			{
-				int j = (i + 1) % m;
-				paint.Color = cols[i];
-				paint.StrokeWidth = widths[i];
-				canvas.DrawLine(spline[i], spline[j], paint);
-			}
+			// Build the mesh inside the render callback so its native handle lives exactly as long
+			// as the draw; the captured managed arrays carry the data across the deferred render.
+			using var vertices = SKVertices.CreateCopy(SKVertexMode.TriangleStrip, positions, stripCols);
+			// The vertex colours already carry the per-point hue/alpha; Modulate against the paint's
+			// opaque white leaves them untouched, then paint.BlendMode (Plus or SrcOver) composites.
+			paint.Color = SKColors.White;
+			canvas.DrawVertices(vertices, SKBlendMode.Modulate, paint);
 		}, Blend(LobesAdditive)));
 	}
 
