@@ -7,7 +7,7 @@ namespace MeltdownMonitor.Android.Services;
 /// (design doc §5.3 / Phase 5). Health Connect (<c>androidx.health.connect</c>)
 /// is the platform successor to the deprecated Google Fit APIs and the Android
 /// analog of iOS HealthKit; reading the last 24 h of <c>HeartRateRecord</c> will
-/// warm the EWMA baseline through the existing <see cref="Pipeline.WarmStartAsync"/>.
+/// warm the EWMA baseline through the existing <see cref="MeltdownMonitor.Mobile.Pipeline.WarmStartAsync"/>.
 ///
 /// <para>
 /// The managed binding choice (<c>Xamarin.AndroidX.Health.Connect.Client</c> vs.
