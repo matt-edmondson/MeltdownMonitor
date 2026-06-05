@@ -2,10 +2,10 @@
 
 Status: **Implementation underway** — Phases 1–8 landed, including the Phase 4
 Health Connect permission-UI launcher (read + write grants requested through
-Health Connect's own permission screen). The remaining Phase 4 item is sequencing
-the standard runtime asks (BLE, notifications) behind the first-run disclaimer;
-those are currently requested up front on launch. See §13 for the phase map and
-the implementation note below.
+Health Connect's own permission screen) and the final Phase 4 item: the standard
+BLE/notification runtime asks are now sequenced behind the first-run disclaimer
+(acknowledge, then ask), matching the iOS ordering, rather than fired up front on
+launch. See §13 for the phase map and the implementation note below.
 Author: design pass, June 2026
 
 > **Implementation note (June 2026).** The two Android projects
@@ -32,8 +32,12 @@ Author: design pass, June 2026
 > `WriteEpisodesToHealthKit` flag (default off). The write grant
 > (`android.permission.health.WRITE_EXERCISE`, declared in the manifest) is now
 > requested alongside the read by the launcher, so once granted the write-back
-> lands rather than no-opping. The remaining Phase 4 item is sequencing the
-> standard BLE/notification runtime asks behind the first-run disclaimer. CI is
+> lands rather than no-opping. The final Phase 4 item has landed too: the
+> standard BLE/notification runtime asks are sequenced behind the first-run
+> disclaimer. The shared `RootViewModel` raises a `DisclaimerAccepted` event on
+> acceptance, `AndroidCompositionRoot` bridges it to a static seam, and
+> `MainActivity` defers `RequestMonitoringPermissions` until it fires (a returning
+> user, who already acknowledged, is asked on launch instead). CI is
 > `.github/workflows/android.yml` (Phase 7). The
 > Android-SDK packaging/resource steps, the Health Connect read, and all
 > real-time BLE behaviour can only be verified on a runner/device with the full
@@ -577,8 +581,14 @@ the iOS equivalents were.
   `OnActivityResult` pair (Avalonia's activity is not an AndroidX
   `ComponentActivity`). ✅ landed.
 - Runtime-permission sequencing for the standard BLE/notification asks behind the
-  first-run disclaimer — still open; they are currently requested up front in
-  `MainActivity.OnCreate`.
+  first-run disclaimer ✅ landed. The shared `RootViewModel` raises a one-shot
+  `DisclaimerAccepted` event when the user acknowledges; `AndroidCompositionRoot`
+  bridges it from the view model the factory builds out to a static seam; and
+  `MainActivity` defers `RequestMonitoringPermissions` until that fires. A returning
+  user has already acknowledged (the event won't fire again), so `OnCreate` asks on
+  launch in that case. Already-granted permissions remain a no-op. This matches the
+  iOS "acknowledge, then ask" ordering (§5.2). iOS itself ignores the new event — it
+  asks for HealthKit/notifications on demand from the Settings tab.
 
 ### Phase 5 — Health Connect warm-start ✅ landed
 
