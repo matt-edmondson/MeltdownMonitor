@@ -62,10 +62,39 @@ public sealed class MainActivity : AvaloniaMainActivity
 	{
 		base.OnCreate(savedInstanceState);
 
-		// Sequence the runtime asks behind the in-app disclaimer in a later pass
-		// (design doc §5.2); for now request the monitoring permissions up front so
-		// a fresh install can connect. Already-granted permissions are a no-op.
-		RequestMonitoringPermissions();
+		// Sequence the BLE/notification runtime asks behind the first-run disclaimer
+		// (design doc §5.2), matching the iOS "acknowledge, then ask" ordering. The
+		// shared view model the factory built during base.OnCreate has already loaded
+		// settings, so the disclaimer state is readable here. A returning user has
+		// acknowledged on a prior run, so ask on launch; a fresh install waits for the
+		// acceptance to fire DisclaimerAccepted. Already-granted permissions are a no-op.
+		if (AndroidCompositionRoot.IsDisclaimerAccepted)
+		{
+			RequestMonitoringPermissions();
+		}
+		else
+		{
+			AndroidCompositionRoot.DisclaimerAccepted += OnDisclaimerAccepted;
+		}
+	}
+
+	protected override void OnDestroy()
+	{
+		// The disclaimer event is static and outlives this Activity, so drop the
+		// subscription if it is still pending (acceptance hasn't fired yet) to avoid
+		// leaking a destroyed Activity. Unsubscribing one that already fired is a no-op.
+		AndroidCompositionRoot.DisclaimerAccepted -= OnDisclaimerAccepted;
+		base.OnDestroy();
+	}
+
+	private void OnDisclaimerAccepted()
+	{
+		// One-shot: the disclaimer is accepted once. Drop the subscription, then ask
+		// for the monitoring permissions. The event fires on the UI thread (an Avalonia
+		// command), which is where RequestPermissions must run; RunOnUiThread keeps that
+		// guarantee even if the seam is ever raised from elsewhere.
+		AndroidCompositionRoot.DisclaimerAccepted -= OnDisclaimerAccepted;
+		RunOnUiThread(RequestMonitoringPermissions);
 	}
 
 	protected override void OnResume()

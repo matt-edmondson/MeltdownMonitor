@@ -49,6 +49,24 @@ public static class AndroidCompositionRoot
 	public static Pipeline? Pipeline => _pipeline;
 
 	/// <summary>
+	/// Raised on the UI thread when the user accepts the first-run disclaimer.
+	/// <see cref="MainActivity"/> subscribes so it can defer the BLE/notification
+	/// runtime asks until the acknowledgement, matching the iOS "acknowledge, then
+	/// ask" ordering (design doc §5.2). Bridged from the shared
+	/// <see cref="RootViewModel.DisclaimerAccepted"/> so the head does not need a
+	/// reference to the view model the factory builds.
+	/// </summary>
+	public static event Action? DisclaimerAccepted;
+
+	/// <summary>
+	/// Whether the first-run disclaimer has already been accepted, readable once
+	/// <see cref="BuildRootViewModel"/> has loaded settings. A returning user has
+	/// already acknowledged, so the head asks for permissions on launch rather than
+	/// waiting for <see cref="DisclaimerAccepted"/> (which only fires on first run).
+	/// </summary>
+	public static bool IsDisclaimerAccepted => _settings?.IsDisclaimerAccepted ?? false;
+
+	/// <summary>
 	/// On-disk location of the SQLite database:
 	/// <c>FilesDir/meltdownmonitor/data.db</c> (design doc §5.7). Deterministic,
 	/// so it can be resolved before the pipeline is composed (e.g. for export).
@@ -115,7 +133,14 @@ public static class AndroidCompositionRoot
 			exportDatabase: () => exporter.ExportAsync(DatabasePath()),
 			onChanged: () => _store.Save(settings));
 
-		return new RootViewModel(settings, _now, _history, settingsTab, _metrics, _store);
+		var root = new RootViewModel(settings, _now, _history, settingsTab, _metrics, _store);
+
+		// Bridge the disclaimer acknowledgement out to the head so it can sequence
+		// the runtime permission asks behind it (design doc §5.2). Fires once, on
+		// the UI thread, only on the first run that accepts.
+		root.DisclaimerAccepted += () => DisclaimerAccepted?.Invoke();
+
+		return root;
 	}
 
 	/// <summary>

@@ -36,6 +36,15 @@ public sealed class RootViewModel : ViewModelBase
 	public MetricsViewModel Metrics { get; }
 	public DisclaimerViewModel Disclaimer { get; }
 
+	/// <summary>
+	/// Raised once, on the UI thread, when the user accepts the first-run
+	/// disclaimer. A head can use this to sequence its runtime permission asks
+	/// behind the acknowledgement, matching the iOS "acknowledge, then ask"
+	/// ordering (design doc §5.2). Not raised again on subsequent launches —
+	/// the disclaimer is already accepted then, so a head asks on launch instead.
+	/// </summary>
+	public event Action? DisclaimerAccepted;
+
 	public bool IsDisclaimerAccepted => _settings.IsDisclaimerAccepted;
 
 	public bool IsDisclaimerPending => !_settings.IsDisclaimerAccepted;
@@ -67,5 +76,6 @@ public sealed class RootViewModel : ViewModelBase
 		_store?.Save(_settings);
 		Raise(nameof(IsDisclaimerAccepted));
 		Raise(nameof(IsDisclaimerPending));
+		DisclaimerAccepted?.Invoke();
 	}
 }
