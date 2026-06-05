@@ -29,7 +29,7 @@ public static class IosCompositionRoot
 	private static NowViewModel? _now;
 	private static HistoryViewModel? _history;
 	private static MetricsViewModel? _metrics;
-	private static PolarHrSource? _source;
+	private static BleHrSource? _source;
 	private static Pipeline? _pipeline;
 
 	// Sentry SDK handle, kept alive for the app's lifetime so queued crash
@@ -176,7 +176,7 @@ public static class IosCompositionRoot
 		var repository = new MeltdownRepository(dbPath, MeltdownRepositoryOptions.IosSandbox);
 		ProtectDatabaseFile(dbPath);
 
-		_source = new PolarHrSource(settings.DeviceType);
+		_source = new BleHrSource(settings.DeviceType);
 		var pipeline = new Pipeline(settings, repository, _source);
 
 		// Warm-start must precede Start (the existing contract). Best-effort —

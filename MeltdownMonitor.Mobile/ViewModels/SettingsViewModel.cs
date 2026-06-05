@@ -46,10 +46,10 @@ public sealed class SettingsViewModel : ViewModelBase
 	/// </summary>
 	private void Persist() => _onChanged?.Invoke();
 
-	public IReadOnlyList<PolarDeviceType> DeviceTypes { get; } =
-		Enum.GetValues<PolarDeviceType>();
+	public IReadOnlyList<HeartRateDeviceType> DeviceTypes { get; } =
+		Enum.GetValues<HeartRateDeviceType>();
 
-	public PolarDeviceType DeviceType
+	public HeartRateDeviceType DeviceType
 	{
 		get => _settings.DeviceType;
 		set

@@ -8,7 +8,9 @@ using MeltdownMonitor.Core.Beats;
 namespace MeltdownMonitor.Ble.Apple;
 
 /// <summary>
-/// CoreBluetooth-backed Polar HR source. Scans for the Heart Rate Service
+/// CoreBluetooth-backed heart-rate source. Works with any device exposing RR
+/// intervals over the standard HR service — Polar H10 / Verity Sense and Garmin
+/// HRM-Dual / HRM-Pro chest straps. Scans for the Heart Rate Service
 /// (<c>0x180D</c>), subscribes to the Heart Rate Measurement characteristic
 /// (<c>0x2A37</c>), parses payloads with the shared <see cref="HrMeasurementParser"/>,
 /// rejects outliers with the shared <see cref="RrArtifactFilter"/>, and surfaces
@@ -19,7 +21,7 @@ namespace MeltdownMonitor.Ble.Apple;
 /// <see cref="WillRestoreState"/> rehydrates the connected peripheral after
 /// iOS relaunches the app.
 /// </summary>
-public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource
+public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource
 {
 	public const string DefaultRestoreIdentifier = "com.matthewedmondson.meltdownmonitor.central";
 
@@ -57,18 +59,7 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 	/// <inheritdoc />
 	public event Action<DeviceInformation>? DeviceInformationChanged;
 
-	/// <summary>
-	/// BLE advertisement name prefixes for each known device type.
-	/// Matching is case-insensitive substring search within the local name.
-	/// </summary>
-	private static readonly IReadOnlyDictionary<PolarDeviceType, string> DeviceNamePrefixes =
-		new Dictionary<PolarDeviceType, string>
-		{
-			[PolarDeviceType.H10] = "Polar H10",
-			[PolarDeviceType.VeritySense] = "Polar Sense",
-		};
-
-	private readonly PolarDeviceType _deviceType;
+	private readonly HeartRateDeviceType _deviceType;
 	private readonly BleStateRestoration _restoration;
 	private readonly RrArtifactFilter _artifactFilter = new();
 	private readonly Channel<Beat> _channel = Channel.CreateUnbounded<Beat>(
@@ -78,8 +69,8 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 	private PeripheralObserver? _peripheralObserver;
 	private CBPeripheral? _peripheral;
 
-	public PolarHrSource(
-		PolarDeviceType deviceType = PolarDeviceType.Auto,
+	public BleHrSource(
+		HeartRateDeviceType deviceType = HeartRateDeviceType.Auto,
 		BleStateRestoration? restoration = null,
 		string restoreIdentifier = DefaultRestoreIdentifier)
 	{
@@ -146,7 +137,7 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 		NSDictionary advertisementData,
 		NSNumber RSSI)
 	{
-		if (DeviceNamePrefixes.TryGetValue(_deviceType, out string? prefix))
+		if (DeviceNamePrefix.For(_deviceType) is string prefix)
 		{
 			string name = peripheral.Name ?? string.Empty;
 			if (!name.Contains(prefix, StringComparison.OrdinalIgnoreCase))
@@ -269,9 +260,9 @@ public sealed class PolarHrSource : CBCentralManagerDelegate, IBeatSource, IBatt
 
 	private sealed class PeripheralObserver : CBPeripheralDelegate
 	{
-		private PolarHrSource? _owner;
+		private BleHrSource? _owner;
 
-		public PeripheralObserver(PolarHrSource owner) => _owner = owner;
+		public PeripheralObserver(BleHrSource owner) => _owner = owner;
 
 		public void Detach() => _owner = null;
 

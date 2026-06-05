@@ -14,7 +14,7 @@ public sealed class MobileSettings
 {
 	public DetectionThresholds Thresholds { get; set; } = new();
 
-	public PolarDeviceType DeviceType { get; set; } = PolarDeviceType.Auto;
+	public HeartRateDeviceType DeviceType { get; set; } = HeartRateDeviceType.Auto;
 
 	/// <summary>When set, monitoring is paused until this UTC time.</summary>
 	public DateTimeOffset? PausedUntil { get; set; }

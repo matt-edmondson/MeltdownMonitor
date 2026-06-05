@@ -285,7 +285,7 @@ public sealed class Pipeline : IDisposable
 	{
 		// `using` releases the BluetoothLEDevice native handle deterministically when
 		// the loop unwinds — on both clean cancellation and an exception path.
-		using var source = new PolarHrSource(_settings.DeviceType);
+		using var source = new BleHrSource(_settings.DeviceType);
 
 		// Battery and contact are optional source capabilities — wire each only when supported.
 		if (source is IBatterySource batterySource)

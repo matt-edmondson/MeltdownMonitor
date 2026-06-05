@@ -27,9 +27,9 @@ public class AppSettings : AppData<AppSettings>
 		"Step away. Five minutes. Find something quiet.";
 
 	/// <summary>
-	/// Which Polar sensor to connect to. Auto connects to whichever HRS device is found first.
+	/// Which heart-rate sensor to connect to. Auto connects to whichever HRS device is found first.
 	/// </summary>
-	public PolarDeviceType DeviceType { get; set; } = PolarDeviceType.Auto;
+	public HeartRateDeviceType DeviceType { get; set; } = HeartRateDeviceType.Auto;
 
 	public bool EnableChime { get; set; } = true;
 	public string? ChimeWavPath { get; set; }

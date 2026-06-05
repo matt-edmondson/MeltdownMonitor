@@ -7,12 +7,13 @@ using Windows.Devices.Bluetooth.GenericAttributeProfile;
 namespace MeltdownMonitor.Ble.Windows;
 
 /// <summary>
-/// Connects to a Polar HR sensor via WinRT BLE and streams beats.
-/// Supports the H10 chest strap and the Verity Sense optical armband;
-/// set <see cref="PolarDeviceType.Auto"/> to connect to whichever is found first.
+/// Connects to a heart-rate sensor via WinRT BLE and streams beats. Works with any
+/// device exposing the standard Heart Rate Measurement characteristic with RR
+/// intervals — Polar H10 / Verity Sense and Garmin HRM-Dual / HRM-Pro chest straps;
+/// set <see cref="HeartRateDeviceType.Auto"/> to connect to whichever is found first.
 /// Reconnects automatically with exponential backoff on disconnect.
 /// </summary>
-public sealed class PolarHrSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IDisposable
+public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IDisposable
 {
 	private static readonly Guid HeartRateServiceUuid = new("0000180d-0000-1000-8000-00805f9b34fb");
 	private static readonly Guid HrMeasurementCharUuid = new("00002a37-0000-1000-8000-00805f9b34fb");
@@ -39,18 +40,7 @@ public sealed class PolarHrSource : IBeatSource, IBatterySource, IContactSource,
 	/// <inheritdoc />
 	public event Action<DeviceInformation>? DeviceInformationChanged;
 
-	/// <summary>
-	/// BLE advertisement name prefixes for each known device type.
-	/// Matching is case-insensitive substring search within the local name.
-	/// </summary>
-	private static readonly IReadOnlyDictionary<PolarDeviceType, string> DeviceNamePrefixes =
-		new Dictionary<PolarDeviceType, string>
-		{
-			[PolarDeviceType.H10] = "Polar H10",
-			[PolarDeviceType.VeritySense] = "Polar Sense",
-		};
-
-	private readonly PolarDeviceType _deviceType;
+	private readonly HeartRateDeviceType _deviceType;
 	private readonly RrArtifactFilter _artifactFilter = new();
 
 	private BluetoothLEDevice? _device;
@@ -65,7 +55,7 @@ public sealed class PolarHrSource : IBeatSource, IBatterySource, IContactSource,
 		TimeSpan.FromSeconds(30),
 	];
 
-	public PolarHrSource(PolarDeviceType deviceType = PolarDeviceType.Auto)
+	public BleHrSource(HeartRateDeviceType deviceType = HeartRateDeviceType.Auto)
 	{
 		_deviceType = deviceType;
 	}
@@ -101,7 +91,7 @@ public sealed class PolarHrSource : IBeatSource, IBatterySource, IContactSource,
 		using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
 		// Resolve the name prefix for the selected device type (null = accept any HRS device)
-		DeviceNamePrefixes.TryGetValue(_deviceType, out string? namePrefix);
+		string? namePrefix = DeviceNamePrefix.For(_deviceType);
 
 		var watcher = new BluetoothLEAdvertisementWatcher();
 		watcher.AdvertisementFilter.Advertisement.ServiceUuids.Add(HeartRateServiceUuid);

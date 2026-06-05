@@ -14,7 +14,7 @@ namespace MeltdownMonitor.Mobile.ViewModels;
 /// Backing view model for the Now screen — live state pill, HR/RMSSD
 /// readout, sparkline history, and the connect/disconnect button. Pipeline
 /// wiring is injected; this VM stays free of CoreBluetooth so the iOS head
-/// can compose it with the real <c>PolarHrSource</c> and any other host can
+/// can compose it with the real <c>BleHrSource</c> and any other host can
 /// stub it with a synthetic source for screenshots.
 /// </summary>
 public sealed class NowViewModel : ViewModelBase
