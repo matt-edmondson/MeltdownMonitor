@@ -30,6 +30,14 @@ public sealed class RegulationFieldView : IDisposable
 	private readonly Pipeline _pipeline;
 	private readonly object _lock = new();
 	private readonly List<RegulationTrailPoint> _trail = [];
+
+	// The dwell heatmap can span up to ~30 days of readings, so rescanning the whole buffer every
+	// frame (for the density grid and the two axis histograms) is the field's dominant cost. The
+	// cache recomputes those aggregates only when the trail changes (bumping _trailVersion) or the
+	// bucket/window settings change — at most once per new sample. Accessed under _lock.
+	private readonly RegulationFieldAggregateCache _aggregates = new();
+	private long _trailVersion;
+
 	private readonly double[] _rr = new double[RrBufferLength];
 	private int _rrCount;
 	private long _beatsAppended;   // total non-artifact beats ever appended; the absolute timeline the texture scrolls along
@@ -107,6 +115,9 @@ public sealed class RegulationFieldView : IDisposable
 			{
 				_trail.RemoveAt(0);
 			}
+
+			// Mark the aggregate cache stale: the next Draw rebuilds the density grid and histograms.
+			_trailVersion++;
 		}
 	}
 
@@ -136,24 +147,35 @@ public sealed class RegulationFieldView : IDisposable
 		}
 	}
 
-	private (RegulationReading from, RegulationReading to, DateTimeOffset segStart, double segDuration, RegulationTrailPoint[] trail, double[] rr, long beatsAppended) Snapshot()
+	private (RegulationReading from, RegulationReading to, DateTimeOffset segStart, double segDuration, RegulationTrailPoint[] comet, RegulationFieldDensity density, RegulationAxisHistogram indexHist, RegulationAxisHistogram vagalHist, double[] rr, long beatsAppended) Snapshot()
 	{
 		lock (_lock)
 		{
-			var trail = _trail.ToArray();
+			// Refresh the cached dwell density + axis histograms. The cache no-ops unless the trail
+			// or the bucket/window settings changed, so the full-buffer rescan runs at most once per
+			// new sample rather than every frame — the only way the long (up to ~30-day) heatmap
+			// window stays affordable.
+			_aggregates.Update(_trail, _trailVersion, _pipeline.FieldIndexBuckets, _pipeline.FieldVagalBuckets, _pipeline.RegulationHeatmapLength);
+
+			// The comet draws only its recent slice of the (much longer) buffer, so copy just that
+			// slice rather than the whole trail — the per-frame cost stays bounded by the comet length.
+			int cometLen = _pipeline.RegulationTrailLength;
+			int start = Math.Max(0, _trail.Count - cometLen);
+			var comet = new RegulationTrailPoint[_trail.Count - start];
+			_trail.CopyTo(start, comet, 0, comet.Length);
 
 			var rr = new double[_rrCount];
 			Array.Copy(_rr, rr, _rrCount);
 
 			// Sample the beat count under the same lock as rr so the two stay consistent — the
 			// texture maps the lobe using both, and an off-by-one between them would jolt it.
-			return (_from, _to, _segStart, _segDuration, trail, rr, _beatsAppended);
+			return (_from, _to, _segStart, _segDuration, comet, _aggregates.Density, _aggregates.IndexAxis, _aggregates.VagalToneAxis, rr, _beatsAppended);
 		}
 	}
 
 	public void Draw()
 	{
-		var (from, to, segStart, segDuration, trail, rr, beatsAppended) = Snapshot();
+		var (from, to, segStart, segDuration, comet, density, indexHist, vagalHist, rr, beatsAppended) = Snapshot();
 		float dt = ImGui.GetIO().DeltaTime;
 		_animTime += dt;
 
@@ -214,10 +236,10 @@ public sealed class RegulationFieldView : IDisposable
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
 		DrawShutdownZone(draw, centre, halfWidth, baseLobeHeight, disp, confidence);
 		DrawVagalAxis(draw, centre, halfWidth, markerYClamp, confidence);
-		DrawAxisHistograms(draw, origin, centre, halfWidth, labelClearHeight, markerYClamp, height, trail, confidence);
-		DrawDensityHeatmap(draw, centre, halfWidth, markerYClamp, trail, confidence);
+		DrawAxisHistograms(draw, origin, centre, halfWidth, labelClearHeight, markerYClamp, height, indexHist, vagalHist, confidence);
+		DrawDensityHeatmap(draw, centre, halfWidth, markerYClamp, density, confidence);
 		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, _playhead.Position, beatsAppended, confidence);
-		DrawTrail(draw, centre, halfWidth, liveLobeHeight, trail, disp, confidence);
+		DrawTrail(draw, centre, halfWidth, liveLobeHeight, comet, disp, confidence);
 		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, _recoveryDisplay, confidence);
 		DrawMarker(draw, centre, halfWidth, liveLobeHeight, disp, confidence);
 		DrawVelocityArrow(draw, centre, halfWidth, liveLobeHeight, disp, dynamics, confidence);
@@ -742,7 +764,7 @@ public sealed class RegulationFieldView : IDisposable
 	// regulation has settled most over the window — and a separately-configurable dashed box frames
 	// the wider high-concentration region of busy buckets around it. Drawn beneath the trace and
 	// comet so they read on top.
-	private void DrawDensityHeatmap(ImDrawListPtr draw, Vector2 centre, float halfWidth, float markerYClamp, RegulationTrailPoint[] trail, float confidence)
+	private void DrawDensityHeatmap(ImDrawListPtr draw, Vector2 centre, float halfWidth, float markerYClamp, RegulationFieldDensity density, float confidence)
 	{
 		float opacity = (float)_pipeline.HeatmapOpacity;
 		float peakOpacity = (float)_pipeline.HeatmapPeakOpacity;
@@ -752,28 +774,16 @@ public sealed class RegulationFieldView : IDisposable
 			return;
 		}
 
-		// The heatmap accumulates over its own window — the recent slice of the longer buffer.
-		int window = _pipeline.RegulationHeatmapLength;
-		if (trail.Length > window)
-		{
-			trail = trail[^window..];
-		}
-
-		// Need a little dwell before a density reads as anything but noise.
-		if (trail.Length < 4)
+		// The density is precomputed (cached) over the heatmap window with the configured per-axis
+		// bucket counts, so the heatmap stays a true 2D joint of the axis histograms. Need a little
+		// dwell before it reads as anything but noise.
+		if (density.TotalCount < 4 || density.PeakCount <= 0)
 		{
 			return;
 		}
 
-		// Grid resolution is the same per-axis bucket count that drives the axis histograms, so the
-		// heatmap stays a true 2D joint of them (and is user-configurable).
-		int xb = _pipeline.FieldIndexBuckets;
-		int yb = _pipeline.FieldVagalBuckets;
-		var density = RegulationFieldHistogram.FieldDensity(trail, xb, yb);
-		if (density.PeakCount <= 0)
-		{
-			return;
-		}
+		int xb = density.XBuckets;
+		int yb = density.YBuckets;
 
 		// Cell extents from the marker mapping: X is linear across ±halfWidth, Y linear across
 		// ±markerYClamp with vagal tone 0 (FRAGILE) at the top, matching VagalToneOffsetY.
@@ -956,15 +966,15 @@ public sealed class RegulationFieldView : IDisposable
 	// index it counts — left=cool/REST, right=warm/MELTDOWN, echoing the lobe colours. Y
 	// (vagal tone) is a column of horizontal bars on the left margin, each row aligned
 	// with the marker's vagal-tone height — top=FRAGILE (low tone), bottom=STEADY (high).
-	private void DrawAxisHistograms(ImDrawListPtr draw, Vector2 origin, Vector2 centre, float halfWidth, float lobeClearHeight, float markerYClamp, float height, RegulationTrailPoint[] trail, float confidence)
+	private void DrawAxisHistograms(ImDrawListPtr draw, Vector2 origin, Vector2 centre, float halfWidth, float lobeClearHeight, float markerYClamp, float height, RegulationAxisHistogram xHist, RegulationAxisHistogram yHist, float confidence)
 	{
-		if (trail.Length < 2)
+		// The histograms are precomputed (cached) over the trail buffer. Need a couple of samples
+		// before a distribution reads as anything; an unpopulated cache yields zero-count histograms.
+		if (xHist.TotalCount < 2 && yHist.TotalCount < 2)
 		{
 			return;
 		}
 
-		var xHist = RegulationFieldHistogram.IndexAxis(trail, _pipeline.FieldIndexBuckets);
-		var yHist = RegulationFieldHistogram.VagalToneAxis(trail, _pipeline.FieldVagalBuckets);
 		uint axisCol = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Overlay1, 0.22f * confidence));
 		// The bars draw additively (each bar loop is bracketed below), so scale their alpha by the
 		// user's histogram-opacity knob to keep them from saturating; the thin axis baselines stay

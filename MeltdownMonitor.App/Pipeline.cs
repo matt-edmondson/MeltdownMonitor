@@ -68,9 +68,9 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Configured comet-trail length (clamped 12–2160), read live by the field view.</summary>
 	public int RegulationTrailLength => Math.Clamp(_settings.RegulationTrailLength, 12, 2160);
 
-	/// <summary>Configured dwell-heatmap window in readings (clamped 60–17280), read live by the
+	/// <summary>Configured dwell-heatmap window in readings (clamped 60–518400), read live by the
 	/// field view. Usually longer than <see cref="RegulationTrailLength"/>.</summary>
-	public int RegulationHeatmapLength => Math.Clamp(_settings.RegulationHeatmapLength, 60, 17280);
+	public int RegulationHeatmapLength => Math.Clamp(_settings.RegulationHeatmapLength, 60, 518400);
 
 	/// <summary>Configured dwell-heatmap overall opacity (clamped 0–1), read live by the field view.</summary>
 	public double HeatmapOpacity => Math.Clamp(_settings.HeatmapOpacity, 0.0, 1.0);

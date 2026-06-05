@@ -54,6 +54,14 @@ public sealed class RegulationField : Control
 	// irregular, batched arrival of BLE beats.
 	private RrTexturePlayhead _playhead;
 
+	// The dwell heatmap can span up to ~30 days of readings; bucketing the whole DwellTrail into the
+	// density grid and the two axis histograms on every frame is the field's dominant cost. The cache
+	// recomputes those only when the data or the bucket counts change. The NowViewModel hands a fresh
+	// DwellTrail array on each new sample, so its reference identity tracks content changes.
+	private readonly RegulationFieldAggregateCache _aggregates = new();
+	private object? _aggregatesTrailRef;
+	private long _aggregatesVersion;
+
 	public static readonly StyledProperty<RegulationReading> ReadingProperty =
 		AvaloniaProperty.Register<RegulationField, RegulationReading>(
 			nameof(Reading), new RegulationReading(0.0, 1.0, 0.0, 0.5, 0.0));
@@ -552,6 +560,22 @@ public sealed class RegulationField : Control
 	private static SKColor Sk(Color c, double alpha) =>
 		new(c.R, c.G, c.B, (byte)Math.Clamp(alpha * 255.0, 0.0, 255.0));
 
+	// Refresh the cached dwell density + axis histograms from the current DwellTrail. A no-op unless
+	// the trail (a fresh array per new sample) or the bucket counts changed, so the full-buffer
+	// rescan runs at most once per sample rather than every frame — what keeps the long (up to
+	// ~30-day) heatmap window affordable. Both density and histograms span the whole DwellTrail (the
+	// VM already sizes it to the dwell window), so no sub-windowing.
+	private void EnsureAggregates(IReadOnlyList<RegulationTrailPoint> trail)
+	{
+		if (!ReferenceEquals(trail, _aggregatesTrailRef))
+		{
+			_aggregatesTrailRef = trail;
+			_aggregatesVersion++;
+		}
+
+		_aggregates.Update(trail, _aggregatesVersion, Math.Clamp(IndexBuckets, 6, 64), Math.Clamp(VagalBuckets, 6, 64), int.MaxValue);
+	}
+
 	// Dwell heatmap: a grid of buckets showing where the field has spent its time over the
 	// (configurable, usually long) dwell window — the 2D joint of the two axis histograms.
 	// Cells lay out through the same X = arousal index, Y = vagal tone mapping as the marker.
@@ -577,13 +601,15 @@ public sealed class RegulationField : Control
 
 		// Grid resolution is the same per-axis bucket count that drives the axis histograms,
 		// so the heatmap stays a true 2D joint of them.
-		int xb = Math.Clamp(IndexBuckets, 6, 64);
-		int yb = Math.Clamp(VagalBuckets, 6, 64);
-		var density = RegulationFieldHistogram.FieldDensity(trail, xb, yb);
+		EnsureAggregates(trail);
+		var density = _aggregates.Density;
 		if (density.PeakCount <= 0)
 		{
 			return;
 		}
+
+		int xb = density.XBuckets;
+		int yb = density.YBuckets;
 
 		float cellW = (halfWidth * 2f) / xb;
 		float cellH = (markerYClamp * 2f) / yb;
@@ -933,8 +959,9 @@ public sealed class RegulationField : Control
 			return;
 		}
 
-		var xHist = RegulationFieldHistogram.IndexAxis(trail, Math.Clamp(IndexBuckets, 6, 64));
-		var yHist = RegulationFieldHistogram.VagalToneAxis(trail, Math.Clamp(VagalBuckets, 6, 64));
+		EnsureAggregates(trail);
+		var xHist = _aggregates.IndexAxis;
+		var yHist = _aggregates.VagalToneAxis;
 		var axisBrush = Brush(Overlay1, 0.22 * confidence);
 		var axisPen = new Pen(axisBrush, 1);
 
