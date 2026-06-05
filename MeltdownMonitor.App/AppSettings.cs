@@ -63,9 +63,9 @@ public class AppSettings : AppData<AppSettings>
 	public int RegulationTrailLength { get; set; } = 48;
 
 	/// <summary>How many recent readings the Regulation Field dwell heatmap accumulates over
-	/// (60–17280; clamped at the consumer). Independent of — and usually much longer than — the
+	/// (60–518400; clamped at the consumer). Independent of — and usually much longer than — the
 	/// comet trail: the comet shows where you're heading, the heatmap where you tend to dwell.
-	/// Default 720 ≈ 1 h, max ≈ 24 h at the 5 s emit cadence.</summary>
+	/// Default 720 ≈ 1 h, max ≈ 30 days at the 5 s emit cadence.</summary>
 	public int RegulationHeatmapLength { get; set; } = 720;
 
 	/// <summary>Overall opacity of the Regulation Field dwell heatmap (0–1; clamped at the

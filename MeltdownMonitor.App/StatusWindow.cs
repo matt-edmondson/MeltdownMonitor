@@ -1097,13 +1097,13 @@ public sealed class StatusWindow : IDisposable
 		ImGui.SameLine();
 
 		int heatWindow = _settings.RegulationHeatmapLength;
-		if (ImGuiWidgets.Knob("Heatmap window", ref heatWindow, 60, 17280, format: "%d pts", flags: ImGuiKnobOptions.ValueTooltip))
+		if (ImGuiWidgets.Knob("Heatmap window", ref heatWindow, 60, 518400, format: "%d pts", flags: ImGuiKnobOptions.ValueTooltip))
 		{
 			_settings.RegulationHeatmapLength = heatWindow;
 			_settingsDirty = true;
 		}
 		ImGui.SameLine();
-		HelpMarker("How many recent readings the Regulation Field dwell heatmap accumulates over — where you tend to sit, distinct from the shorter comet trail. Higher = longer dwell history (≈1 h at 720, up to ≈24 h).");
+		HelpMarker("How many recent readings the Regulation Field dwell heatmap accumulates over — where you tend to sit, distinct from the shorter comet trail. Higher = longer dwell history (≈1 h at 720, up to ≈30 days).");
 		ImGui.SameLine();
 
 		float heatOpacityPct = (float)(_settings.HeatmapOpacity * 100.0);

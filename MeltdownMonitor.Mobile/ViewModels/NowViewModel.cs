@@ -869,11 +869,11 @@ public sealed class NowViewModel : ViewModelBase
 
 	public void TickTimeDisplay() => Raise(nameof(TimeSinceStateChange));
 
-	// Comet length (12–2160) and dwell-heatmap window (60–17280), clamped to the same
+	// Comet length (12–2160) and dwell-heatmap window (60–518400), clamped to the same
 	// ranges the desktop knobs expose. The trail buffer holds the longer of the two.
 	private int CometCap => Math.Clamp(_trailLengthProvider?.Invoke() ?? 48, 12, 2160);
 
-	private int HeatmapCap => Math.Clamp(_heatmapLengthProvider?.Invoke() ?? 720, 60, 17280);
+	private int HeatmapCap => Math.Clamp(_heatmapLengthProvider?.Invoke() ?? 720, 60, 518400);
 
 	private static void RunOnUi(Action apply)
 	{

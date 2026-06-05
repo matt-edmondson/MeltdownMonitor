@@ -34,9 +34,11 @@ public static class RegulationFieldHistogram
 	/// distribution behind <see cref="IndexAxis"/> and <see cref="VagalToneAxis"/>. Non-finite
 	/// readings and values outside the axis ranges are skipped; only readings within the visible
 	/// field boundaries contribute, so extreme (off-chart) values do not inflate the edge cells.
+	/// <paramref name="startIndex"/> counts only the trailing slice <c>trail[startIndex..]</c>, so
+	/// the heatmap can span a shorter dwell window than the full buffer without allocating a copy.
 	/// </summary>
 	public static RegulationFieldDensity FieldDensity(
-		IReadOnlyList<RegulationTrailPoint> trail, int xBuckets = DefaultBucketCount, int yBuckets = DefaultBucketCount)
+		IReadOnlyList<RegulationTrailPoint> trail, int xBuckets = DefaultBucketCount, int yBuckets = DefaultBucketCount, int startIndex = 0)
 	{
 		ArgumentNullException.ThrowIfNull(trail);
 		ArgumentOutOfRangeException.ThrowIfNegativeOrZero(xBuckets);
@@ -45,7 +47,7 @@ public static class RegulationFieldHistogram
 		var counts = new int[xBuckets * yBuckets];
 		double xSpan = IndexMax - IndexMin;
 		double ySpan = VagalToneMax - VagalToneMin;
-		for (int i = 0; i < trail.Count; i++)
+		for (int i = Math.Max(0, startIndex); i < trail.Count; i++)
 		{
 			RegulationReading r = trail[i].Reading;
 			if (!double.IsFinite(r.Index) || !double.IsFinite(r.VagalTone))

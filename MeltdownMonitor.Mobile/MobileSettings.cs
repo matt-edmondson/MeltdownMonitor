@@ -124,7 +124,7 @@ public sealed class MobileSettings
 	public double HistogramOpacity { get; set; } = 0.60;
 
 	/// <summary>How many recent readings the Regulation Field dwell heatmap accumulates over
-	/// (60–17280; clamped at the consumer). Default 720 ≈ 1 h at the 5 s emit cadence.</summary>
+	/// (60–518400; clamped at the consumer). Default 720 ≈ 1 h, max ≈ 30 days at the 5 s emit cadence.</summary>
 	public int RegulationHeatmapLength { get; set; } = 720;
 
 	/// <summary>Minimum gap between HRV sample emissions (0.5–30 s). Lower = smoother graphs.

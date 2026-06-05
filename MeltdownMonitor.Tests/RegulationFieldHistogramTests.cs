@@ -259,4 +259,32 @@ public class RegulationFieldHistogramTests
 		Assert.Throws<ArgumentOutOfRangeException>(() => d.Count(0, 3));
 		Assert.Throws<ArgumentOutOfRangeException>(() => d.Count(-1, 0));
 	}
+
+	[TestMethod]
+	public void FieldDensity_StartIndex_CountsOnlyTrailingSlice()
+	{
+		// startIndex lets the heatmap span the recent dwell window of a longer buffer without copying.
+		RegulationTrailPoint[] trail =
+		[
+			Point(-0.5, vagalTone: 0.2),  // (0,0) — before the window, skipped
+			Point(-0.5, vagalTone: 0.2),  // (0,0) — before the window, skipped
+			Point(0.5, vagalTone: 0.8),   // (1,1) — in window
+			Point(0.5, vagalTone: 0.8),   // (1,1) — in window
+		];
+		var d = RegulationFieldHistogram.FieldDensity(trail, xBuckets: 2, yBuckets: 2, startIndex: 2);
+
+		Assert.AreEqual(2, d.TotalCount, "only the two points from startIndex onward count");
+		Assert.AreEqual(0, d.Count(0, 0), "points before startIndex are excluded");
+		Assert.AreEqual(2, d.Count(1, 1));
+	}
+
+	[TestMethod]
+	public void FieldDensity_StartIndex_BeyondCountOrNegative_IsClampedAndSafe()
+	{
+		RegulationTrailPoint[] trail = [Point(0.5, vagalTone: 0.8)];
+		Assert.AreEqual(0, RegulationFieldHistogram.FieldDensity(trail, 2, 2, startIndex: 5).TotalCount,
+			"startIndex past the end yields an empty grid, not an exception");
+		Assert.AreEqual(1, RegulationFieldHistogram.FieldDensity(trail, 2, 2, startIndex: -3).TotalCount,
+			"negative startIndex behaves like 0");
+	}
 }

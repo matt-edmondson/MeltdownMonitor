@@ -507,7 +507,7 @@ public sealed class SettingsViewModel : ViewModelBase
 		get => _settings.RegulationHeatmapLength;
 		set
 		{
-			int clamped = Math.Clamp(value, 60, 17280);
+			int clamped = Math.Clamp(value, 60, 518400);
 			if (_settings.RegulationHeatmapLength != clamped)
 			{
 				_settings.RegulationHeatmapLength = clamped;

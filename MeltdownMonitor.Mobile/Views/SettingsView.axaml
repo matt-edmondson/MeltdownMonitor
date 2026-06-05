@@ -177,10 +177,10 @@
                     <TextBlock Grid.Column="1"
                                Text="{Binding RegulationHeatmapLength, StringFormat='{}{0} pts'}" />
                 </Grid>
-                <Slider Minimum="60" Maximum="17280"
+                <Slider Minimum="60" Maximum="518400"
                         TickFrequency="1" IsSnapToTickEnabled="True"
                         Value="{Binding RegulationHeatmapLength, Mode=TwoWay}" />
-                <TextBlock Text="How many recent readings the dwell heatmap accumulates over (≈1 h at 720, up to ≈24 h). Default 720."
+                <TextBlock Text="How many recent readings the dwell heatmap accumulates over (≈1 h at 720, up to ≈30 days). Default 720."
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
 
                 <TextBlock Text="Blend modes" FontWeight="SemiBold" Margin="0,8,0,0" />
