@@ -32,6 +32,7 @@ public static class IosCompositionRoot
 	private static HistoryViewModel? _history;
 	private static MetricsViewModel? _metrics;
 	private static BleHrSource? _source;
+	private static ImuMotionSource? _motionFallback;
 	private static Pipeline? _pipeline;
 
 	// Sentry SDK handle, kept alive for the app's lifetime so queued crash
@@ -210,8 +211,12 @@ public static class IosCompositionRoot
 		var repository = new MeltdownRepository(dbPath, MeltdownRepositoryOptions.IosSandbox);
 		ProtectDatabaseFile(dbPath);
 
-		_source = new BleHrSource(settings.DeviceType);
-		var pipeline = new Pipeline(settings, repository, _source);
+		// Motion corroboration: stream the Polar strap accelerometer (PMD) when available, and run the
+		// device IMU as a fallback for non-Polar straps. The movement monitor prefers the strap.
+		bool motionEnabled = settings.EnableMotionCorroboration;
+		_source = new BleHrSource(settings.DeviceType, enableMotion: motionEnabled);
+		_motionFallback = motionEnabled ? new ImuMotionSource() : null;
+		var pipeline = new Pipeline(settings, repository, _source, _motionFallback);
 
 		// Warm-start must precede Start (the existing contract). Best-effort —
 		// no HealthKit auth just means a cold baseline, not a failure. Reading is gated on
@@ -333,6 +338,9 @@ public static class IosCompositionRoot
 
 		var stop = _pipeline.StopAsync();
 		await Task.WhenAny(stop, Task.Delay(timeout)).ConfigureAwait(false);
+
+		_motionFallback?.Dispose();
+		_motionFallback = null;
 	}
 
 	private static void ProtectDatabaseFile(string dbPath)

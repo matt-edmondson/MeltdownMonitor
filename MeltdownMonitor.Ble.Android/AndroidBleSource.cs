@@ -6,6 +6,7 @@ using Android.Content;
 using Android.OS;
 using Java.Util;
 using MeltdownMonitor.Core.Beats;
+using MeltdownMonitor.Core.Beats.Polar;
 
 namespace MeltdownMonitor.Ble.Android;
 
@@ -26,7 +27,7 @@ namespace MeltdownMonitor.Ble.Android;
 /// carries more ceremony than the CoreBluetooth one, which hides the queue
 /// internally — see design doc §7.
 /// </summary>
-public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IDisposable
+public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IDisposable
 {
 	// Standard 16-bit GATT UUIDs, expanded against the Bluetooth base UUID.
 	private static readonly UUID HeartRateServiceUuid = ShortUuid(0x180D);
@@ -34,6 +35,11 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 	private static readonly UUID BatteryServiceUuid = ShortUuid(0x180F);
 	private static readonly UUID BatteryLevelCharUuid = ShortUuid(0x2A19);
 	private static readonly UUID DeviceInfoServiceUuid = ShortUuid(0x180A);
+
+	// Polar PMD (proprietary) service + control-point/data characteristics for the accelerometer.
+	private static readonly UUID PmdServiceUuid = UUID.FromString(PmdConstants.ServiceUuid.ToString())!;
+	private static readonly UUID PmdControlPointUuid = UUID.FromString(PmdConstants.ControlPointUuid.ToString())!;
+	private static readonly UUID PmdDataUuid = UUID.FromString(PmdConstants.DataUuid.ToString())!;
 
 	// Client Characteristic Configuration Descriptor — written explicitly to turn
 	// on notifications (CoreBluetooth does this implicitly; Android does not).
@@ -61,8 +67,12 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 	/// <inheritdoc />
 	public event Action<DeviceInformation>? DeviceInformationChanged;
 
+	/// <inheritdoc />
+	public event Action<MotionSample>? MotionSampleReceived;
+
 	private readonly Context _context;
 	private readonly HeartRateDeviceType _deviceType;
+	private readonly bool _enableMotion;
 	private readonly AndroidBleStateRestoration _restoration;
 	private readonly RrArtifactFilter _artifactFilter = new();
 	private readonly Channel<Beat> _channel = Channel.CreateUnbounded<Beat>(
@@ -85,10 +95,12 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 	public AndroidBleSource(
 		Context context,
 		HeartRateDeviceType deviceType = HeartRateDeviceType.Auto,
-		AndroidBleStateRestoration? restoration = null)
+		AndroidBleStateRestoration? restoration = null,
+		bool enableMotion = false)
 	{
 		_context = context ?? throw new ArgumentNullException(nameof(context));
 		_deviceType = deviceType;
+		_enableMotion = enableMotion;
 		_restoration = restoration ?? new AndroidBleStateRestoration(context);
 
 		_manager = context.GetSystemService(Context.BluetoothService) as BluetoothManager;
@@ -314,9 +326,24 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 				}
 			}
 		}
+
+		if (_enableMotion)
+		{
+			var pmd = gatt.GetService(PmdServiceUuid);
+			var data = pmd?.GetCharacteristic(PmdDataUuid);
+			var controlPoint = pmd?.GetCharacteristic(PmdControlPointUuid);
+			if (data is not null && controlPoint is not null)
+			{
+				// Notifications on the data stream, indications on the control point, then ask the
+				// device to start the accelerometer — each step a serialised GATT op.
+				EnqueueGattOp(() => EnableNotifications(gatt, data));
+				EnqueueGattOp(() => EnableNotifications(gatt, controlPoint, indicate: true));
+				EnqueueGattOp(() => WriteControlPoint(gatt, controlPoint, PmdControlPoint.BuildStartAcc()));
+			}
+		}
 	}
 
-	private void EnableNotifications(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic)
+	private void EnableNotifications(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, bool indicate = false)
 	{
 		gatt.SetCharacteristicNotification(characteristic, true);
 		var cccd = characteristic.GetDescriptor(CccdUuid);
@@ -329,10 +356,28 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 
 #pragma warning disable CA1422 // SetValue/WriteDescriptor(descriptor) deprecated API 33+, but the
 		// value-returning overloads are API 33-only; the deprecated path works across our API 26 floor.
-		cccd.SetValue(BluetoothGattDescriptor.EnableNotificationValue!.ToArray());
+		// The PMD control point delivers command responses as indications, not notifications.
+		var cccdValue = indicate
+			? BluetoothGattDescriptor.EnableIndicationValue!
+			: BluetoothGattDescriptor.EnableNotificationValue!;
+		cccd.SetValue(cccdValue.ToArray());
 		if (!gatt.WriteDescriptor(cccd))
 		{
 			// The write didn't dispatch, so OnDescriptorWrite won't fire — free the slot.
+			CompleteGattOp();
+		}
+#pragma warning restore CA1422
+	}
+
+	// Writes a PMD control-point command (e.g. "start accelerometer"). Completes via OnCharacteristicWrite.
+	private void WriteControlPoint(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, byte[] command)
+	{
+#pragma warning disable CA1422 // SetValue/WriteCharacteristic(characteristic) deprecated API 33+; the
+		// value-carrying overload is API 33-only and the deprecated path works across our API 26 floor.
+		characteristic.WriteType = GattWriteType.Default;
+		characteristic.SetValue(command);
+		if (!gatt.WriteCharacteristic(characteristic))
+		{
 			CompleteGattOp();
 		}
 #pragma warning restore CA1422
@@ -352,6 +397,25 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 		else if (characteristic.Uuid.Equals(BatteryLevelCharUuid))
 		{
 			OnBatteryByte(value[0]);
+		}
+		else if (characteristic.Uuid.Equals(PmdDataUuid))
+		{
+			OnPmdData(value);
+		}
+	}
+
+	// Decode a PMD data frame; only ACC frames produce motion samples.
+	private void OnPmdData(byte[] bytes)
+	{
+		if (bytes.Length < 10 || (PmdMeasurementType)bytes[0] != PmdMeasurementType.Acc)
+		{
+			return;
+		}
+
+		var now = DateTimeOffset.UtcNow;
+		foreach (PmdAccSample acc in PmdFrameParser.ParseAcc(bytes))
+		{
+			MotionSampleReceived?.Invoke(PolarMotion.ToMotionSample(acc, now));
 		}
 	}
 
@@ -470,6 +534,9 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 		}
 
 		public override void OnDescriptorWrite(BluetoothGatt? gatt, BluetoothGattDescriptor? descriptor, GattStatus status)
+			=> owner.CompleteGattOp();
+
+		public override void OnCharacteristicWrite(BluetoothGatt? gatt, BluetoothGattCharacteristic? characteristic, GattStatus status)
 			=> owner.CompleteGattOp();
 
 #pragma warning disable CA1422 // Two-arg OnCharacteristicChanged / GetValue() deprecated API 33+; the

@@ -4,6 +4,7 @@ using CoreBluetooth;
 using CoreFoundation;
 using Foundation;
 using MeltdownMonitor.Core.Beats;
+using MeltdownMonitor.Core.Beats.Polar;
 
 namespace MeltdownMonitor.Ble.Apple;
 
@@ -21,12 +22,17 @@ namespace MeltdownMonitor.Ble.Apple;
 /// <see cref="WillRestoreState"/> rehydrates the connected peripheral after
 /// iOS relaunches the app.
 /// </summary>
-public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource
+public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource
 {
 	public const string DefaultRestoreIdentifier = "com.matthewedmondson.meltdownmonitor.central";
 
 	private static readonly CBUUID HeartRateServiceUuid = CBUUID.FromString("180D");
 	private static readonly CBUUID HrMeasurementCharUuid = CBUUID.FromString("2A37");
+
+	// Polar PMD (proprietary) service + control-point/data characteristics for the accelerometer stream.
+	private static readonly CBUUID PmdServiceUuid = CBUUID.FromString(PmdConstants.ServiceUuid.ToString());
+	private static readonly CBUUID PmdControlPointUuid = CBUUID.FromString(PmdConstants.ControlPointUuid.ToString());
+	private static readonly CBUUID PmdDataUuid = CBUUID.FromString(PmdConstants.DataUuid.ToString());
 
 	// Standard GATT Battery Service / Battery Level characteristic.
 	private static readonly CBUUID BatteryServiceUuid = CBUUID.FromString("180F");
@@ -59,7 +65,12 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 	/// <inheritdoc />
 	public event Action<DeviceInformation>? DeviceInformationChanged;
 
+	/// <inheritdoc />
+	public event Action<MotionSample>? MotionSampleReceived;
+
 	private readonly HeartRateDeviceType _deviceType;
+	private readonly bool _enableMotion;
+	private readonly CBUUID[] _servicesToDiscover;
 	private readonly BleStateRestoration _restoration;
 	private readonly RrArtifactFilter _artifactFilter = new();
 	private readonly Channel<Beat> _channel = Channel.CreateUnbounded<Beat>(
@@ -72,9 +83,14 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 	public BleHrSource(
 		HeartRateDeviceType deviceType = HeartRateDeviceType.Auto,
 		BleStateRestoration? restoration = null,
-		string restoreIdentifier = DefaultRestoreIdentifier)
+		string restoreIdentifier = DefaultRestoreIdentifier,
+		bool enableMotion = false)
 	{
 		_deviceType = deviceType;
+		_enableMotion = enableMotion;
+		_servicesToDiscover = enableMotion
+			? [HeartRateServiceUuid, BatteryServiceUuid, DeviceInfoServiceUuid, PmdServiceUuid]
+			: [HeartRateServiceUuid, BatteryServiceUuid, DeviceInfoServiceUuid];
 		_restoration = restoration ?? new BleStateRestoration();
 
 		var options = new CBCentralInitOptions
@@ -94,6 +110,11 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 
 	internal bool IsDeviceInfoCharacteristic(CBUUID uuid) =>
 		Array.Exists(_deviceInfoCharacteristics, u => u.Equals(uuid));
+
+	internal bool EnableMotion => _enableMotion;
+	internal CBUUID PmdService => PmdServiceUuid;
+	internal CBUUID PmdControlPoint => PmdControlPointUuid;
+	internal CBUUID PmdData => PmdDataUuid;
 
 	public async IAsyncEnumerable<Beat> GetBeatsAsync(
 		[EnumeratorCancellation] CancellationToken cancellationToken)
@@ -159,7 +180,7 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 		}
 
 		_artifactFilter.Reset();
-		peripheral.DiscoverServices(new[] { HeartRateServiceUuid, BatteryServiceUuid, DeviceInfoServiceUuid });
+		peripheral.DiscoverServices(_servicesToDiscover);
 	}
 
 	public override void DisconnectedPeripheral(
@@ -198,7 +219,7 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 
 		if (peripheral.State == CBPeripheralState.Connected)
 		{
-			peripheral.DiscoverServices(new[] { HeartRateServiceUuid, BatteryServiceUuid, DeviceInfoServiceUuid });
+			peripheral.DiscoverServices(_servicesToDiscover);
 		}
 		else
 		{
@@ -228,6 +249,21 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 			bool isArtifact = _artifactFilter.IsArtifact(rrMs);
 			var beat = new Beat(now, rrMs, measurement.HeartRateBpm, isArtifact);
 			_channel.Writer.TryWrite(beat);
+		}
+	}
+
+	// Decode a PMD data frame; only ACC frames produce motion samples.
+	internal void OnPmdData(byte[] bytes)
+	{
+		if (bytes.Length < 10 || (PmdMeasurementType)bytes[0] != PmdMeasurementType.Acc)
+		{
+			return;
+		}
+
+		var now = DateTimeOffset.UtcNow;
+		foreach (PmdAccSample acc in PmdFrameParser.ParseAcc(bytes))
+		{
+			MotionSampleReceived?.Invoke(PolarMotion.ToMotionSample(acc, now));
 		}
 	}
 
@@ -287,6 +323,10 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 				{
 					peripheral.DiscoverCharacteristics(_owner.DeviceInfoCharacteristics, service);
 				}
+				else if (_owner.EnableMotion && service.UUID.Equals(_owner.PmdService))
+				{
+					peripheral.DiscoverCharacteristics(new[] { _owner.PmdControlPoint, _owner.PmdData }, service);
+				}
 			}
 		}
 
@@ -314,6 +354,17 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 					// Static identity — a single read, no notifications.
 					peripheral.ReadValue(characteristic);
 				}
+				else if (_owner.EnableMotion && characteristic.UUID.Equals(_owner.PmdData))
+				{
+					peripheral.SetNotifyValue(true, characteristic);
+				}
+				else if (_owner.EnableMotion && characteristic.UUID.Equals(_owner.PmdControlPoint))
+				{
+					// Enable indications, then ask the device to start streaming the accelerometer.
+					peripheral.SetNotifyValue(true, characteristic);
+					peripheral.WriteValue(NSData.FromArray(PmdControlPoint.BuildStartAcc()), characteristic,
+						CBCharacteristicWriteType.WithResponse);
+				}
 			}
 		}
 
@@ -330,7 +381,8 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 			bool isHr = characteristic.UUID.Equals(_owner.CharacteristicUuid);
 			bool isBattery = characteristic.UUID.Equals(_owner.BatteryCharacteristic);
 			bool isDeviceInfo = _owner.IsDeviceInfoCharacteristic(characteristic.UUID);
-			if (!isHr && !isBattery && !isDeviceInfo)
+			bool isPmdData = _owner.EnableMotion && characteristic.UUID.Equals(_owner.PmdData);
+			if (!isHr && !isBattery && !isDeviceInfo && !isPmdData)
 			{
 				return;
 			}
@@ -351,6 +403,10 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 			else if (isBattery)
 			{
 				_owner.OnBatteryByte(bytes[0]);
+			}
+			else if (isPmdData)
+			{
+				_owner.OnPmdData(bytes);
 			}
 			else
 			{
