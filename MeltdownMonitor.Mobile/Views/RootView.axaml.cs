@@ -1,7 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Platform;
-using Avalonia.Markup.Xaml;
 
 namespace MeltdownMonitor.Mobile.Views;
 
@@ -9,7 +8,10 @@ public partial class RootView : UserControl
 {
 	private IInsetsManager? _insets;
 
-	public RootView() => AvaloniaXamlLoader.Load(this);
+	// Must call the generated InitializeComponent() (not AvaloniaXamlLoader.Load directly):
+	// the name generator's InitializeComponent is what assigns the x:Name fields (RootLayout).
+	// Calling Load alone builds the tree but leaves RootLayout null, so ApplySafeArea would NRE.
+	public RootView() => InitializeComponent();
 
 	protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
 	{
