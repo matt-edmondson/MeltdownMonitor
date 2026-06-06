@@ -506,6 +506,7 @@ public sealed class RegulationField : Control
 			DrawDashedVertical(context, centre.X - warnOff, topY, botY, Brush(Sky, 0.28 * confidence), 1, 4, 3);
 		}
 
+		DrawRecoveryArrows(context, centre, halfWidth, markerYClamp, confidence);
 		DrawTrail(context, centreV, halfWidth, markerYClamp, confidence);
 		DrawRecoveryTarget(context, centreV, halfWidth, liveLobeHeight, confidence);
 		DrawMarker(context, centreV, halfWidth, markerYClamp, confidence);
@@ -1008,35 +1009,6 @@ public sealed class RegulationField : Control
 						canvas.DrawRect(rect, paint);
 					}
 				}, Blend(HistogramAdditive)));
-
-				// Recovery arrows: cascade-pulsing left-pointing triangles when an alert is active.
-				// Gated by Recovery.IsActive (true during Warning/Alerting).
-				if (Recovery.IsActive)
-				{
-					double warnX = centre.X + (RegulationFieldCalculator.WarningBoundaryIndex * halfWidth);
-					double zoneW = warnX - centre.X;
-					double spacing = zoneW / 4.0;
-					double arrowW = 7;
-					double arrowH = 5;
-					double arrowY = baseY + (maxH * 0.5);
-					Color stateCol = StateColor;
-					for (int i = 0; i < 3; i++)
-					{
-						double phase = (_animator.AnimTime * 3.5) - (i * 1.3);
-						double alpha = Math.Clamp(0.25 + 0.65 * Math.Sin(phase), 0.1, 1.0);
-						double ax = warnX - ((i + 1) * spacing);
-						var geom = new StreamGeometry();
-						using (var ctx = geom.Open())
-						{
-							ctx.BeginFigure(new Point(ax - (arrowW / 2), arrowY), true);
-							ctx.LineTo(new Point(ax + (arrowW / 2), arrowY - arrowH));
-							ctx.LineTo(new Point(ax + (arrowW / 2), arrowY + arrowH));
-							ctx.EndFigure(true);
-						}
-
-						context.DrawGeometry(Brush(stateCol, alpha * confidence), null, geom);
-					}
-				}
 			}
 		}
 
@@ -1199,6 +1171,45 @@ public sealed class RegulationField : Control
 		}
 
 		DrawText(context, "RECOVER", new Point(gate.X, gate.Y - (lobeHeight * 0.5) - 24), Green, 10, centred: true);
+	}
+
+	// Recovery arrows: a vertical cascade of down-pointing triangles stacked along the warm-side
+	// warning threshold line (the dashed vertical the marker must fall back across). The wave flows
+	// top→bottom — "settle" guidance down toward STEADY and back inside the regulated band. Gated by
+	// Recovery.IsActive (true during Warning/Alerting). Mirrors the desktop DrawRecoveryArrows; riding
+	// the threshold ties the cue to the line that triggers it, rather than floating over the X histogram.
+	private void DrawRecoveryArrows(DrawingContext context, Point centre, float halfWidth, float markerYClamp, double confidence)
+	{
+		if (!Recovery.IsActive)
+		{
+			return;
+		}
+
+		double warnX = centre.X + (RegulationFieldCalculator.WarningBoundaryIndex * halfWidth);
+		double topY = centre.Y + RegulationFieldGeometry.VagalToneOffsetY(0.0, markerYClamp);
+		double botY = centre.Y + RegulationFieldGeometry.VagalToneOffsetY(1.0, markerYClamp);
+		double spacing = (botY - topY) / 4.0;
+		const double arrowW = 7;
+		const double arrowH = 5;
+		Color stateCol = StateColor;
+		for (int i = 0; i < 3; i++)
+		{
+			// i=0 nearest the top (FRAGILE), i=2 nearest the bottom (STEADY); wave flows top→bottom.
+			double phase = (_animator.AnimTime * 3.5) - (i * 1.3);
+			double alpha = Math.Clamp(0.25 + (0.65 * Math.Sin(phase)), 0.1, 1.0);
+			double ay = topY + ((i + 1) * spacing);
+			var geom = new StreamGeometry();
+			using (var ctx = geom.Open())
+			{
+				// Down-pointing triangle: base on top, tip below.
+				ctx.BeginFigure(new Point(warnX - (arrowW / 2), ay - (arrowH / 2)), true);
+				ctx.LineTo(new Point(warnX + (arrowW / 2), ay - (arrowH / 2)));
+				ctx.LineTo(new Point(warnX, ay + (arrowH / 2)));
+				ctx.EndFigure(true);
+			}
+
+			context.DrawGeometry(Brush(stateCol, alpha * confidence), null, geom);
+		}
 	}
 
 	// A circular progress arc, clockwise from 12 o'clock, drawn as connected segments — matches
