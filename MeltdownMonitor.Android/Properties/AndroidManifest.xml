@@ -47,6 +47,16 @@
   -->
   <uses-permission android:name="android.permission.health.WRITE_EXERCISE" />
 
+  <!--
+    Health Connect write permissions for the opt-in continuous recording (RecordToHealth,
+    design doc §5.3 / §8). Downsampled heart rate and RMSSD are written as HeartRateRecord /
+    HeartRateVariabilityRmssdRecord so the user owns the data. Default off; the grants are
+    requested through Health Connect's UI alongside the read, so these declarations are only
+    what makes them requestable.
+  -->
+  <uses-permission android:name="android.permission.health.WRITE_HEART_RATE" />
+  <uses-permission android:name="android.permission.health.WRITE_HEART_RATE_VARIABILITY" />
+
   <!-- Local-only: no INTERNET permission, which keeps the Play data-safety form honest (§10). -->
 
   <!--

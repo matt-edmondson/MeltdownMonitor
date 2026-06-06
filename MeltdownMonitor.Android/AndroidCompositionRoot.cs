@@ -30,6 +30,7 @@ public static class AndroidCompositionRoot
 	private static MobileAlertDispatcher? _alertDispatcher;
 	private static LiveActivityPublisher? _liveActivity;
 	private static HealthKitEpisodeRecorder? _episodeRecorder;
+	private static HealthDataRecorder? _healthRecorder;
 	private static AndroidNotificationDispatcher? _notifications;
 	private static HealthConnectStore? _healthStore;
 	private static SharedPreferencesSettingsStore? _store;
@@ -131,9 +132,18 @@ public static class AndroidCompositionRoot
 			requestNotifications: () => _notifications.RequestAuthorizationAsync(),
 			requestHealthKit: () => _healthStore.RequestAuthorizationAsync(),
 			exportDatabase: () => exporter.ExportAsync(DatabasePath()),
+			onChanged: () => _store.Save(settings),
+			revokeHealthAccess: RevokeHealthAsync);
+
+		// Unintrusive one-shot prompt to enable Health Connect recording. Enabling asks for
+		// the same Health Connect grants as the Settings button, then flips the opt-ins on.
+		var healthPrompt = new HealthPromptViewModel(
+			settings,
+			requestAuthorization: () => _healthStore.RequestAuthorizationAsync(),
+			isAvailable: () => HealthConnectStore.IsAvailable(context),
 			onChanged: () => _store.Save(settings));
 
-		var root = new RootViewModel(settings, _now, _history, settingsTab, _metrics, _store);
+		var root = new RootViewModel(settings, _now, _history, settingsTab, _metrics, _store, healthPrompt);
 
 		// Bridge the disclaimer acknowledgement out to the head so it can sequence
 		// the runtime permission asks behind it (design doc §5.2). Fires once, on
@@ -170,8 +180,10 @@ public static class AndroidCompositionRoot
 		var pipeline = new Pipeline(settings, repository, _source);
 
 		// Warm-start must precede Start. Best-effort — no Health Connect data just
-		// means a cold baseline, not a failure (design doc §5.3).
-		await pipeline.WarmStartAsync(_healthStore, TimeSpan.FromHours(24)).ConfigureAwait(false);
+		// means a cold baseline, not a failure (design doc §5.3). Reading is gated on the
+		// recording opt-in so revoking access (or never enabling it) stops reads too.
+		await pipeline.WarmStartAsync(
+			settings.RecordToHealth ? _healthStore : null, TimeSpan.FromHours(24)).ConfigureAwait(false);
 		pipeline.Start();
 
 		// Keep the process — and the GATT connection — alive with the screen off.
@@ -182,6 +194,9 @@ public static class AndroidCompositionRoot
 		if (_healthStore is not null)
 		{
 			_episodeRecorder = new HealthKitEpisodeRecorder(pipeline, settings, _healthStore);
+			// Streams downsampled HR and RMSSD to Health Connect while RecordToHealth is on
+			// (the recorder honours the flag live; Health Connect has no beat-to-beat series).
+			_healthRecorder = new HealthDataRecorder(pipeline, settings, _healthStore);
 		}
 
 		// Mirror state/HR/balance to the ongoing notification, throttled to ≤ 1 Hz
@@ -204,6 +219,32 @@ public static class AndroidCompositionRoot
 			_now?.AttachPipeline(pipeline);
 			_history?.UseDatabase(dbPath);
 		});
+	}
+
+	/// <summary>
+	/// Platform half of "revoke health access". Unlike HealthKit, Health Connect lets an
+	/// app revoke its own grants programmatically, so do that and then open Health Connect's
+	/// own screen so the user can confirm. The in-app flags have already been cleared by the
+	/// view model, which stops all reading and writing immediately.
+	/// </summary>
+	private static async Task RevokeHealthAsync()
+	{
+		if (_healthStore is not null)
+		{
+			await _healthStore.RevokeAuthorizationAsync().ConfigureAwait(true);
+		}
+
+		try
+		{
+			// Health Connect's settings/permissions screen — the user-facing confirmation.
+			var intent = new global::Android.Content.Intent("androidx.health.connect.action.HEALTH_CONNECT_SETTINGS");
+			intent.AddFlags(global::Android.Content.ActivityFlags.NewTask);
+			AppContext.StartActivity(intent);
+		}
+		catch (Java.Lang.Exception)
+		{
+			// Opening the settings screen is best-effort; the revoke above has taken effect.
+		}
 	}
 
 	/// <summary>Keeps the alert dispatcher alive for the process lifetime.</summary>

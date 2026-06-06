@@ -41,6 +41,24 @@ public sealed class MobileSettings
 	public bool WriteEpisodesToHealthKit { get; set; }
 
 	/// <summary>
+	/// Master opt-in for the continuous health-store integration: when true the app
+	/// both reads recent heart rate to warm the baseline and writes its live streams
+	/// (heart rate, HRV, raw beat-to-beat RR) to Apple Health / Health Connect. Default
+	/// off — all health-store I/O is strictly opt-in, and turning this off again revokes
+	/// the app's reading and writing (the in-app half of "revoke access"). Distinct from
+	/// <see cref="WriteEpisodesToHealthKit"/>, which gates only the per-alert episode
+	/// annotation; the enable prompt flips both on together.
+	/// </summary>
+	public bool RecordToHealth { get; set; }
+
+	/// <summary>
+	/// True once the user has answered the one-shot "record to Apple Health / Health
+	/// Connect" prompt (enabled or dismissed), so it isn't shown again. Persisted like
+	/// the rest of the blob.
+	/// </summary>
+	public bool HealthPromptDismissed { get; set; }
+
+	/// <summary>
 	/// CoreBluetooth identifier of the last-connected sensor, persisted so the
 	/// app can reconnect without a fresh scan on relaunch (design doc §4.1 /
 	/// §6.4). Null until the first successful connection.

@@ -2,6 +2,18 @@ namespace MeltdownMonitor.Mobile.Services;
 
 public record HrSample(DateTimeOffset Timestamp, double HeartRateBpm);
 
+/// <summary>
+/// A heart-rate-variability reading destined for the platform health store.
+/// Carries both metrics so each platform writes the one its API exposes:
+/// HealthKit stores SDNN (<c>HeartRateVariabilitySDNN</c>), Health Connect
+/// stores RMSSD (<c>HeartRateVariabilityRmssdRecord</c>). Both are computed
+/// over the same window, so neither is fabricated from the other.
+/// </summary>
+public record HealthHrvSample(DateTimeOffset Timestamp, double RmssdMs, double SdnnMs);
+
+/// <summary>One beat's RR interval, for the iOS beat-to-beat heartbeat series.</summary>
+public record RrIntervalSample(DateTimeOffset Timestamp, double RrMs);
+
 public record EpisodeRecord(
 	DateTimeOffset Start,
 	DateTimeOffset End,
@@ -9,8 +21,11 @@ public record EpisodeRecord(
 	string? Notes);
 
 /// <summary>
-/// Platform-neutral facade over HealthKit (iOS) or an equivalent store on
-/// other platforms. The iOS implementation lives in MeltdownMonitor.iOS.
+/// Platform-neutral facade over HealthKit (iOS) or Health Connect (Android).
+/// The streaming write methods default to no-ops so a platform that lacks an
+/// equivalent data type (and the off-device test stubs) needn't implement them;
+/// each head overrides the ones it can honour. Every method is best-effort —
+/// the pipeline tolerates a store that reads/writes nothing.
 /// </summary>
 public interface IHealthStore
 {
@@ -20,5 +35,23 @@ public interface IHealthStore
 
 	Task WriteHrSampleAsync(HrSample sample);
 
+	/// <summary>Writes one HRV reading (SDNN on iOS, RMSSD on Android). No-op by default.</summary>
+	Task WriteHrvSampleAsync(HealthHrvSample sample) => Task.CompletedTask;
+
+	/// <summary>
+	/// Writes a batch of consecutive beats as a single beat-to-beat series
+	/// (HealthKit <c>HKHeartbeatSeries</c>). Health Connect has no beat-to-beat
+	/// record type, so the Android store leaves this a no-op. No-op by default.
+	/// </summary>
+	Task WriteHeartbeatSeriesAsync(IReadOnlyList<RrIntervalSample> beats) => Task.CompletedTask;
+
 	Task WriteEpisodeAsync(EpisodeRecord episode);
+
+	/// <summary>
+	/// Revokes the app's health-store grants where the platform allows it
+	/// programmatically (Health Connect does; HealthKit does not, so the iOS
+	/// store leaves this a no-op and the head deep-links to the Health app
+	/// instead). No-op by default.
+	/// </summary>
+	Task RevokeAuthorizationAsync() => Task.CompletedTask;
 }
