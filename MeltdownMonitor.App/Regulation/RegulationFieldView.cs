@@ -236,6 +236,7 @@ public sealed class RegulationFieldView : IDisposable
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
 		DrawShutdownZone(draw, centre, halfWidth, baseLobeHeight, disp, confidence);
 		DrawVagalAxis(draw, centre, halfWidth, markerYClamp, confidence);
+		DrawRecoveryArrows(draw, centre, halfWidth, markerYClamp, confidence);
 		DrawAxisHistograms(draw, origin, centre, halfWidth, labelClearHeight, markerYClamp, height, indexHist, vagalHist, confidence);
 		DrawDensityHeatmap(draw, centre, halfWidth, markerYClamp, density, confidence);
 		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, _playhead.Position, beatsAppended, confidence);
@@ -788,6 +789,42 @@ public sealed class RegulationFieldView : IDisposable
 		draw.AddText(new Vector2(centre.X - (st.X * 0.5f), botY + 2f), label, "STEADY");
 	}
 
+	// Recovery arrows: during Warning/Alerting, a vertical cascade of down-pointing triangles
+	// stacked along the warm-side warning threshold line (the dashed vertical the marker must fall
+	// back across). The wave flows top→bottom — "settle" guidance down toward STEADY and back inside
+	// the regulated band. Riding the threshold ties the cue to the line that triggers it, rather than
+	// floating over the X histogram below the field.
+	private void DrawRecoveryArrows(ImDrawListPtr draw, Vector2 centre, float halfWidth, float markerYClamp, float confidence)
+	{
+		if (_pipeline.CurrentState is not (DetectorState.Warning or DetectorState.Alerting))
+		{
+			return;
+		}
+
+		// Warm-side threshold, spanning the same FRAGILE→STEADY range as the dashed line in DrawVagalAxis.
+		float warnX = centre.X + (float)(RegulationFieldCalculator.WarningBoundaryIndex * halfWidth);
+		float topY = centre.Y + VagalToneOffsetY(0.0, markerYClamp);
+		float botY = centre.Y + VagalToneOffsetY(1.0, markerYClamp);
+		float spacing = (botY - topY) / 4f;
+		float arrowW = MathF.Max(5f, 7f * _drawScale);
+		float arrowH = MathF.Max(4f, 5f * _drawScale);
+		Vector4 stateHue = MacchiatoPalette.State(_pipeline.CurrentState);
+		for (int i = 0; i < 3; i++)
+		{
+			// i=0 nearest the top (FRAGILE), i=2 nearest the bottom (STEADY); wave flows top→bottom.
+			float phase = (_animTime * 3.5f) - (i * 1.3f);
+			float alpha = Math.Clamp(0.25f + (0.65f * MathF.Sin(phase)), 0.1f, 1.0f);
+			uint arrowCol = Col(MacchiatoPalette.WithAlpha(stateHue, alpha * confidence));
+			float ay = topY + ((i + 1) * spacing);
+			// Down-pointing triangle: base on top, tip below.
+			draw.AddTriangleFilled(
+				new Vector2(warnX - (arrowW * 0.5f), ay - (arrowH * 0.5f)),
+				new Vector2(warnX + (arrowW * 0.5f), ay - (arrowH * 0.5f)),
+				new Vector2(warnX, ay + (arrowH * 0.5f)),
+				arrowCol);
+		}
+	}
+
 	// Dwell heatmap: a grid of buckets showing where the field has spent its time over the
 	// (configurable, usually long) heatmap window — the 2D joint of the two axis histograms. Each
 	// occupied bucket is a filled cell laid out through the same X = arousal index, Y = vagal tone
@@ -1047,34 +1084,6 @@ public sealed class RegulationFieldView : IDisposable
 				}
 
 				ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
-
-				// Recovery arrows: during Warning/Alerting, cascade-pulse left-pointing triangles
-				// between the centre and the warm-side warning line. The wave flows threshold→centre
-				// (right→left) to read as "aim here" guidance toward the regulated zone.
-				if (_pipeline.CurrentState is DetectorState.Warning or DetectorState.Alerting)
-				{
-					float warnX = centre.X + (float)(RegulationFieldCalculator.WarningBoundaryIndex * halfWidth);
-					float zoneW = warnX - centre.X;
-					float spacing = zoneW / 4f;
-					float arrowW = MathF.Max(5f, 7f * _drawScale);
-					float arrowH = MathF.Max(4f, 5f * _drawScale);
-					float arrowY = baseY + (maxH * 0.5f);
-					Vector4 stateHue = MacchiatoPalette.State(_pipeline.CurrentState);
-					for (int i = 0; i < 3; i++)
-					{
-						// i=0 nearest threshold, i=2 nearest centre; wave flows right→left.
-						float phase = _animTime * 3.5f - (i * 1.3f);
-						float alpha = Math.Clamp(0.25f + 0.65f * MathF.Sin(phase), 0.1f, 1.0f);
-						uint arrowCol = Col(MacchiatoPalette.WithAlpha(stateHue, alpha * confidence));
-						float ax = warnX - ((i + 1) * spacing);
-						// Left-pointing triangle: tip left, base right.
-						draw.AddTriangleFilled(
-							new Vector2(ax - (arrowW * 0.5f), arrowY),
-							new Vector2(ax + (arrowW * 0.5f), arrowY - arrowH),
-							new Vector2(ax + (arrowW * 0.5f), arrowY + arrowH),
-							arrowCol);
-					}
-				}
 			}
 		}
 
