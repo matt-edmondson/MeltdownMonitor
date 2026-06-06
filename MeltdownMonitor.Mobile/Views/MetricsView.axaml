@@ -4,6 +4,7 @@
              xmlns:ctl="clr-namespace:MeltdownMonitor.Mobile.Controls"
              x:Class="MeltdownMonitor.Mobile.Views.MetricsView"
              x:DataType="vm:MetricsViewModel">
+    <Panel>
     <ScrollViewer>
         <StackPanel Margin="16" Spacing="14">
 
@@ -58,4 +59,25 @@
                              WindowSeconds="{Binding WindowSeconds}" YMin="0" YMax="1" />
         </StackPanel>
     </ScrollViewer>
+
+        <!-- Shown until the first sample/beat arrives, so a sensor-less tab gives
+             guidance instead of a wall of blank charts. Non-hit-testable so it never
+             intercepts scroll once data starts filling in. -->
+        <StackPanel IsVisible="{Binding IsEmpty}"
+                    IsHitTestVisible="False"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="6"
+                    Margin="32">
+            <TextBlock Text="No metrics yet"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="Connect a heart-rate sensor on the Now tab to see live HRV charts here."
+                       Foreground="#8A8F98"
+                       TextWrapping="Wrap"
+                       TextAlignment="Center"
+                       HorizontalAlignment="Center" />
+        </StackPanel>
+    </Panel>
 </UserControl>

@@ -82,6 +82,14 @@ public sealed class MetricsViewModel : ViewModelBase
 	public IReadOnlyList<double> ContactTimestamps => _contactTs;
 	public IReadOnlyList<double> RecentRr => _recentRr;
 
+	/// <summary>True once any live or backfilled metric data exists. Drives the Metrics tab's
+	/// empty state so a freshly opened, sensor-less tab shows guidance instead of a wall of
+	/// blank charts.</summary>
+	public bool HasData => _rmssd.Count > 0 || _recentRr.Count > 0;
+
+	/// <summary>Inverse of <see cref="HasData"/> — bound by the empty-state overlay.</summary>
+	public bool IsEmpty => !HasData;
+
 	/// <summary>Window width (seconds) the charts span — drives MetricChart.WindowSeconds.</summary>
 	public double WindowSeconds => Math.Max(60, _windowMinutes()) * 60.0;
 
@@ -132,6 +140,8 @@ public sealed class MetricsViewModel : ViewModelBase
 		}
 
 		Raise(nameof(RecentRr));
+		Raise(nameof(HasData));
+		Raise(nameof(IsEmpty));
 	});
 
 	public void OnBatteryUpdated(BatteryReading reading) => _dispatch(() =>
@@ -249,6 +259,8 @@ public sealed class MetricsViewModel : ViewModelBase
 		Raise(nameof(ExtendedTimestamps));
 		Raise(nameof(ContactTimestamps));
 		Raise(nameof(WindowSeconds));
+		Raise(nameof(HasData));
+		Raise(nameof(IsEmpty));
 	}
 
 	private static void RunOnUi(Action apply)
