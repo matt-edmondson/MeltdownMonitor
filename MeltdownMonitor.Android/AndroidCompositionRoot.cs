@@ -237,8 +237,8 @@ public static class AndroidCompositionRoot
 		try
 		{
 			// Health Connect's settings/permissions screen — the user-facing confirmation.
-			var intent = new Android.Content.Intent("androidx.health.connect.action.HEALTH_CONNECT_SETTINGS");
-			intent.AddFlags(Android.Content.ActivityFlags.NewTask);
+			var intent = new global::Android.Content.Intent("androidx.health.connect.action.HEALTH_CONNECT_SETTINGS");
+			intent.AddFlags(global::Android.Content.ActivityFlags.NewTask);
 			AppContext.StartActivity(intent);
 		}
 		catch (Java.Lang.Exception)
