@@ -242,6 +242,7 @@ public sealed class RegulationFieldView : IDisposable
 		DrawTrail(draw, centre, halfWidth, liveLobeHeight, comet, disp, confidence);
 		DrawRecoveryTarget(draw, centre, halfWidth, liveLobeHeight, _recoveryDisplay, confidence);
 		DrawMarker(draw, centre, halfWidth, liveLobeHeight, disp, confidence);
+		DrawOffscreenIndicator(draw, origin, width, height, MarkerScreenPos(centre, halfWidth, liveLobeHeight, disp), confidence);
 		DrawVelocityArrow(draw, centre, halfWidth, liveLobeHeight, disp, dynamics, confidence);
 		DrawCrossover(draw, centre, confidence);
 		DrawLabelsAndLock(draw, origin, centre, halfWidth, labelClearHeight);
@@ -712,6 +713,39 @@ public sealed class RegulationFieldView : IDisposable
 		ImGuiApp.SetDrawBlendMode(draw, ImGuiAppBlendMode.AlphaBlend);
 		draw.AddCircleFilled(p, 6.5f * _drawScale, Col(MacchiatoPalette.WithAlpha(stateCol, confidence)));
 		draw.AddCircleFilled(p, 2.6f * _drawScale, Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.Base, confidence)));
+	}
+
+	// When the live marker rides off the field (severe states push the arousal index past the
+	// panel edge), pin a pulsing triangle to the nearest edge pointing the way the marker went, so
+	// the user can tell where it has gone. The triangle sits at the marker's height on the edge it
+	// left through and pulses on a steady attention cadence (independent of HR), taking the
+	// confirmed-state colour like the marker itself.
+	private void DrawOffscreenIndicator(ImDrawListPtr draw, Vector2 origin, float width, float height, Vector2 markerPos, float confidence)
+	{
+		Vector2 min = origin;
+		Vector2 max = origin + new Vector2(width, height);
+		if (markerPos.X >= min.X && markerPos.X <= max.X && markerPos.Y >= min.Y && markerPos.Y <= max.Y)
+		{
+			return; // marker is on-panel — nothing to point at
+		}
+
+		// Clamp to an inset edge so the whole triangle stays on-panel; aim it from there at the marker.
+		float m = 12f * _drawScale;
+		Vector2 edge = new(
+			Math.Clamp(markerPos.X, min.X + m, max.X - m),
+			Math.Clamp(markerPos.Y, min.Y + m, max.Y - m));
+		Vector2 dir = Vector2.Normalize(markerPos - edge);
+		Vector2 perp = new(-dir.Y, dir.X);
+
+		float pulse = 0.5f + (0.5f * MathF.Sin(_animTime * 2.4f));
+		float size = (10f + (4f * pulse)) * _drawScale;
+		float alpha = (0.45f + (0.45f * pulse)) * confidence;
+		uint col = Col(MacchiatoPalette.WithAlpha(MacchiatoPalette.State(_pipeline.CurrentState), alpha));
+
+		Vector2 tip = edge + (dir * size);
+		Vector2 b1 = edge - (dir * size * 0.4f) + (perp * size * 0.7f);
+		Vector2 b2 = edge - (dir * size * 0.4f) - (perp * size * 0.7f);
+		draw.AddTriangleFilled(tip, b1, b2, col);
 	}
 
 	private void DrawCrossover(ImDrawListPtr draw, Vector2 centre, float confidence)
