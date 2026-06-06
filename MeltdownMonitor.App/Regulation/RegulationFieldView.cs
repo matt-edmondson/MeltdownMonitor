@@ -236,7 +236,7 @@ public sealed class RegulationFieldView : IDisposable
 		DrawWindowOfTolerance(draw, centre, halfWidth, baseLobeHeight, confidence);
 		DrawShutdownZone(draw, centre, halfWidth, baseLobeHeight, disp, confidence);
 		DrawVagalAxis(draw, centre, halfWidth, markerYClamp, confidence);
-		DrawRecoveryArrows(draw, centre, halfWidth, markerYClamp, confidence);
+		DrawRecoveryArrows(draw, centre, halfWidth, confidence);
 		DrawAxisHistograms(draw, origin, centre, halfWidth, labelClearHeight, markerYClamp, height, indexHist, vagalHist, confidence);
 		DrawDensityHeatmap(draw, centre, halfWidth, markerYClamp, density, confidence);
 		DrawLemniscate(draw, centre, halfWidth, baseLobeHeight, liveLobeHeight, disp, rr, _playhead.Position, beatsAppended, confidence);
@@ -789,38 +789,42 @@ public sealed class RegulationFieldView : IDisposable
 		draw.AddText(new Vector2(centre.X - (st.X * 0.5f), botY + 2f), label, "STEADY");
 	}
 
-	// Recovery arrows: during Warning/Alerting, a vertical cascade of down-pointing triangles
-	// stacked along the warm-side warning threshold line (the dashed vertical the marker must fall
-	// back across). The wave flows top→bottom — "settle" guidance down toward STEADY and back inside
-	// the regulated band. Riding the threshold ties the cue to the line that triggers it, rather than
-	// floating over the X histogram below the field.
-	private void DrawRecoveryArrows(ImDrawListPtr draw, Vector2 centre, float halfWidth, float markerYClamp, float confidence)
+	// Recovery arrows: during Warning/Alerting, a train of triangles riding the midline between the
+	// warm-side warning boundary (the dashed vertical the marker must fall back across) and the
+	// crossover centre. Every arrow points at the centre and slides inward toward it on a continuous
+	// loop — "settle" guidance pulling back to the regulated middle. The inward flow IS the pulse:
+	// each arrow fades in near the boundary, brightens mid-travel, and fades out as it reaches the
+	// centre, so the cue reads as a repeating inward beat rather than a static stack.
+	private void DrawRecoveryArrows(ImDrawListPtr draw, Vector2 centre, float halfWidth, float confidence)
 	{
 		if (_pipeline.CurrentState is not (DetectorState.Warning or DetectorState.Alerting))
 		{
 			return;
 		}
 
-		// Warm-side threshold, spanning the same FRAGILE→STEADY range as the dashed line in DrawVagalAxis.
+		// Travel from the warm-side warning boundary inward to the crossover centre, along the midline.
 		float warnX = centre.X + (float)(RegulationFieldCalculator.WarningBoundaryIndex * halfWidth);
-		float topY = centre.Y + VagalToneOffsetY(0.0, markerYClamp);
-		float botY = centre.Y + VagalToneOffsetY(1.0, markerYClamp);
-		float spacing = (botY - topY) / 4f;
+		float span = warnX - centre.X; // > 0: boundary sits right of centre
+		float y = centre.Y;
 		float arrowW = MathF.Max(5f, 7f * _drawScale);
 		float arrowH = MathF.Max(4f, 5f * _drawScale);
 		Vector4 stateHue = MacchiatoPalette.State(_pipeline.CurrentState);
-		for (int i = 0; i < 3; i++)
+		const int count = 3;
+		for (int i = 0; i < count; i++)
 		{
-			// i=0 nearest the top (FRAGILE), i=2 nearest the bottom (STEADY); wave flows top→bottom.
-			float phase = (_animTime * 3.5f) - (i * 1.3f);
-			float alpha = Math.Clamp(0.25f + (0.65f * MathF.Sin(phase)), 0.1f, 1.0f);
+			// Looping progress 0→1 from boundary to centre, staggered so the arrows form a flowing
+			// inward train rather than moving in lockstep.
+			float t = (_animTime * 0.7f) + (i / (float)count);
+			t -= MathF.Floor(t);
+			float x = warnX - (span * t);
+			// Fade in at the boundary, peak mid-travel, fade out at the centre → a smooth inward pulse.
+			float alpha = Math.Clamp(MathF.Sin(t * MathF.PI), 0.1f, 1.0f);
 			uint arrowCol = Col(MacchiatoPalette.WithAlpha(stateHue, alpha * confidence));
-			float ay = topY + ((i + 1) * spacing);
-			// Down-pointing triangle: base on top, tip below.
+			// Left-pointing triangle (toward centre): base trailing on the right, tip leading on the left.
 			draw.AddTriangleFilled(
-				new Vector2(warnX - (arrowW * 0.5f), ay - (arrowH * 0.5f)),
-				new Vector2(warnX + (arrowW * 0.5f), ay - (arrowH * 0.5f)),
-				new Vector2(warnX, ay + (arrowH * 0.5f)),
+				new Vector2(x + (arrowW * 0.5f), y - (arrowH * 0.5f)),
+				new Vector2(x + (arrowW * 0.5f), y + (arrowH * 0.5f)),
+				new Vector2(x - (arrowW * 0.5f), y),
 				arrowCol);
 		}
 	}

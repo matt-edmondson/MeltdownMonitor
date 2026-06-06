@@ -506,7 +506,7 @@ public sealed class RegulationField : Control
 			DrawDashedVertical(context, centre.X - warnOff, topY, botY, Brush(Sky, 0.28 * confidence), 1, 4, 3);
 		}
 
-		DrawRecoveryArrows(context, centre, halfWidth, markerYClamp, confidence);
+		DrawRecoveryArrows(context, centre, halfWidth, confidence);
 		DrawTrail(context, centreV, halfWidth, markerYClamp, confidence);
 		DrawRecoveryTarget(context, centreV, halfWidth, liveLobeHeight, confidence);
 		DrawMarker(context, centreV, halfWidth, markerYClamp, confidence);
@@ -1173,38 +1173,43 @@ public sealed class RegulationField : Control
 		DrawText(context, "RECOVER", new Point(gate.X, gate.Y - (lobeHeight * 0.5) - 24), Green, 10, centred: true);
 	}
 
-	// Recovery arrows: a vertical cascade of down-pointing triangles stacked along the warm-side
-	// warning threshold line (the dashed vertical the marker must fall back across). The wave flows
-	// top→bottom — "settle" guidance down toward STEADY and back inside the regulated band. Gated by
-	// Recovery.IsActive (true during Warning/Alerting). Mirrors the desktop DrawRecoveryArrows; riding
-	// the threshold ties the cue to the line that triggers it, rather than floating over the X histogram.
-	private void DrawRecoveryArrows(DrawingContext context, Point centre, float halfWidth, float markerYClamp, double confidence)
+	// Recovery arrows: a train of triangles riding the midline between the warm-side warning boundary
+	// (the dashed vertical the marker must fall back across) and the crossover centre. Every arrow
+	// points at the centre and slides inward toward it on a continuous loop — "settle" guidance pulling
+	// back to the regulated middle. The inward flow IS the pulse: each arrow fades in near the boundary,
+	// brightens mid-travel, and fades out as it reaches the centre. Gated by Recovery.IsActive (true
+	// during Warning/Alerting). Mirrors the desktop DrawRecoveryArrows.
+	private void DrawRecoveryArrows(DrawingContext context, Point centre, float halfWidth, double confidence)
 	{
 		if (!Recovery.IsActive)
 		{
 			return;
 		}
 
+		// Travel from the warm-side warning boundary inward to the crossover centre, along the midline.
 		double warnX = centre.X + (RegulationFieldCalculator.WarningBoundaryIndex * halfWidth);
-		double topY = centre.Y + RegulationFieldGeometry.VagalToneOffsetY(0.0, markerYClamp);
-		double botY = centre.Y + RegulationFieldGeometry.VagalToneOffsetY(1.0, markerYClamp);
-		double spacing = (botY - topY) / 4.0;
+		double span = warnX - centre.X; // > 0: boundary sits right of centre
+		double y = centre.Y;
 		const double arrowW = 7;
 		const double arrowH = 5;
 		Color stateCol = StateColor;
-		for (int i = 0; i < 3; i++)
+		const int count = 3;
+		for (int i = 0; i < count; i++)
 		{
-			// i=0 nearest the top (FRAGILE), i=2 nearest the bottom (STEADY); wave flows top→bottom.
-			double phase = (_animator.AnimTime * 3.5) - (i * 1.3);
-			double alpha = Math.Clamp(0.25 + (0.65 * Math.Sin(phase)), 0.1, 1.0);
-			double ay = topY + ((i + 1) * spacing);
+			// Looping progress 0→1 from boundary to centre, staggered so the arrows form a flowing
+			// inward train rather than moving in lockstep.
+			double t = (_animator.AnimTime * 0.7) + (i / (double)count);
+			t -= Math.Floor(t);
+			double x = warnX - (span * t);
+			// Fade in at the boundary, peak mid-travel, fade out at the centre → a smooth inward pulse.
+			double alpha = Math.Clamp(Math.Sin(t * Math.PI), 0.1, 1.0);
 			var geom = new StreamGeometry();
 			using (var ctx = geom.Open())
 			{
-				// Down-pointing triangle: base on top, tip below.
-				ctx.BeginFigure(new Point(warnX - (arrowW / 2), ay - (arrowH / 2)), true);
-				ctx.LineTo(new Point(warnX + (arrowW / 2), ay - (arrowH / 2)));
-				ctx.LineTo(new Point(warnX, ay + (arrowH / 2)));
+				// Left-pointing triangle (toward centre): base trailing on the right, tip leading on the left.
+				ctx.BeginFigure(new Point(x + (arrowW / 2), y - (arrowH / 2)), true);
+				ctx.LineTo(new Point(x + (arrowW / 2), y + (arrowH / 2)));
+				ctx.LineTo(new Point(x - (arrowW / 2), y));
 				ctx.EndFigure(true);
 			}
 
