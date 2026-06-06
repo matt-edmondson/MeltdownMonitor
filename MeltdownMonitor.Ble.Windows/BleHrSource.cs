@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using MeltdownMonitor.Core.Beats;
+using MeltdownMonitor.Core.Beats.Polar;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.Advertisement;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
@@ -13,7 +14,7 @@ namespace MeltdownMonitor.Ble.Windows;
 /// set <see cref="HeartRateDeviceType.Auto"/> to connect to whichever is found first.
 /// Reconnects automatically with exponential backoff on disconnect.
 /// </summary>
-public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IDisposable
+public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IDisposable
 {
 	private static readonly Guid HeartRateServiceUuid = new("0000180d-0000-1000-8000-00805f9b34fb");
 	private static readonly Guid HrMeasurementCharUuid = new("00002a37-0000-1000-8000-00805f9b34fb");
@@ -40,7 +41,11 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 	/// <inheritdoc />
 	public event Action<DeviceInformation>? DeviceInformationChanged;
 
+	/// <inheritdoc />
+	public event Action<MotionSample>? MotionSampleReceived;
+
 	private readonly HeartRateDeviceType _deviceType;
+	private readonly bool _enableMotion;
 	private readonly RrArtifactFilter _artifactFilter = new();
 
 	private BluetoothLEDevice? _device;
@@ -55,9 +60,15 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 		TimeSpan.FromSeconds(30),
 	];
 
-	public BleHrSource(HeartRateDeviceType deviceType = HeartRateDeviceType.Auto)
+	/// <param name="deviceType">Which sensor to connect to (or <see cref="HeartRateDeviceType.Auto"/>).</param>
+	/// <param name="enableMotion">
+	/// When true, also negotiate the Polar PMD accelerometer stream and raise <see cref="MotionSampleReceived"/>
+	/// (no-op on non-Polar sensors, which have no PMD service). Off by default — opt-in via settings.
+	/// </param>
+	public BleHrSource(HeartRateDeviceType deviceType = HeartRateDeviceType.Auto, bool enableMotion = false)
 	{
 		_deviceType = deviceType;
+		_enableMotion = enableMotion;
 	}
 
 	public async IAsyncEnumerable<Beat> GetBeatsAsync(
@@ -205,6 +216,10 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 		// blocking the beat stream.
 		await TrySubscribeBatteryAsync(_device).ConfigureAwait(false);
 		await TryReadDeviceInfoAsync(_device).ConfigureAwait(false);
+		if (_enableMotion)
+		{
+			await TrySubscribePmdMotionAsync(_device).ConfigureAwait(false);
+		}
 
 		try
 		{
@@ -219,6 +234,93 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 			await characteristic.WriteClientCharacteristicConfigurationDescriptorAsync(
 				GattClientCharacteristicConfigurationDescriptorValue.None);
 		}
+	}
+
+	// Negotiates the Polar PMD accelerometer stream: enable indications on the control point and
+	// notifications on the data characteristic, confirm ACC is in the feature bitmask, then write
+	// the start command. Decoded samples are converted to g and raised as motion. Entirely
+	// best-effort — a non-Polar sensor has no PMD service, and any GATT error just means no motion.
+	private async Task TrySubscribePmdMotionAsync(BluetoothLEDevice device)
+	{
+		try
+		{
+			var serviceResult = await device.GetGattServicesForUuidAsync(PmdConstants.ServiceUuid);
+			if (serviceResult.Status != GattCommunicationStatus.Success || serviceResult.Services.Count == 0)
+			{
+				return;
+			}
+
+			var service = serviceResult.Services[0];
+			var controlPoint = await GetCharacteristicAsync(service, PmdConstants.ControlPointUuid);
+			var data = await GetCharacteristicAsync(service, PmdConstants.DataUuid);
+			if (controlPoint is null || data is null)
+			{
+				return;
+			}
+
+			data.ValueChanged += OnPmdDataChanged;
+			if (await data.WriteClientCharacteristicConfigurationDescriptorAsync(
+					GattClientCharacteristicConfigurationDescriptorValue.Notify) != GattCommunicationStatus.Success)
+			{
+				data.ValueChanged -= OnPmdDataChanged;
+				return;
+			}
+
+			// The control point indicates command responses; enable it so the start write completes.
+			await controlPoint.WriteClientCharacteristicConfigurationDescriptorAsync(
+				GattClientCharacteristicConfigurationDescriptorValue.Indicate);
+
+			var features = await controlPoint.ReadValueAsync();
+			if (features.Status == GattCommunicationStatus.Success
+				&& !PmdControlPoint.ParseSupportedFeatures(ToBytes(features.Value)).Contains(PmdMeasurementType.Acc))
+			{
+				return;
+			}
+
+			await WriteControlPointAsync(controlPoint, PmdControlPoint.BuildStartAcc());
+		}
+		catch
+		{
+			// Motion streaming must never interrupt the beat stream.
+		}
+	}
+
+	private void OnPmdDataChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
+	{
+		byte[] bytes = ToBytes(args.CharacteristicValue);
+		if (bytes.Length < 10 || (PmdMeasurementType)bytes[0] != PmdMeasurementType.Acc)
+		{
+			return;
+		}
+
+		var now = DateTimeOffset.UtcNow;
+		foreach (PmdAccSample acc in PmdFrameParser.ParseAcc(bytes))
+		{
+			MotionSampleReceived?.Invoke(PolarMotion.ToMotionSample(acc, now));
+		}
+	}
+
+	private static async Task<GattCharacteristic?> GetCharacteristicAsync(GattDeviceService service, Guid uuid)
+	{
+		var result = await service.GetCharacteristicsForUuidAsync(uuid);
+		return result.Status == GattCommunicationStatus.Success && result.Characteristics.Count > 0
+			? result.Characteristics[0]
+			: null;
+	}
+
+	private static async Task WriteControlPointAsync(GattCharacteristic controlPoint, byte[] command)
+	{
+		var writer = new global::Windows.Storage.Streams.DataWriter();
+		writer.WriteBytes(command);
+		await controlPoint.WriteValueAsync(writer.DetachBuffer(), GattWriteOption.WriteWithResponse);
+	}
+
+	private static byte[] ToBytes(global::Windows.Storage.Streams.IBuffer buffer)
+	{
+		var reader = global::Windows.Storage.Streams.DataReader.FromBuffer(buffer);
+		var bytes = new byte[buffer.Length];
+		reader.ReadBytes(bytes);
+		return bytes;
 	}
 
 	// Reads the Battery Level characteristic once and, if the device supports it,

@@ -2,6 +2,7 @@ using System.Linq;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Motion;
 
 namespace MeltdownMonitor.Core.Baseline;
 
@@ -24,6 +25,10 @@ public class BaselineHrvTracker
 	public int MinWarmStartSamples { get; set; } = 12;
 	/// <summary>Guardrail: the live baseline may not drift more than this fraction from the anchor.</summary>
 	public double MaxAnchorDrift { get; set; } = 0.40;
+	/// <summary>When true, skip baseline updates at/above <see cref="MovementFreezeLevel"/>.</summary>
+	public bool FreezeOnMovement { get; set; } = true;
+	/// <summary>Movement level at/above which the baseline freezes (exercise HRV must not re-normalise it).</summary>
+	public MovementLevel MovementFreezeLevel { get; set; } = MovementLevel.Moderate;
 
 	private double _baselineRmssd;
 	private double _baselineHr;
@@ -86,7 +91,16 @@ public class BaselineHrvTracker
 	/// <see cref="SensorContactStatus.Detected"/> both proceed — sensors that don't report contact
 	/// are never gated.
 	/// </param>
-	public void Update(HrvSample sample, SensorContactStatus contact = SensorContactStatus.NotSupported)
+	/// <param name="movement">
+	/// Current movement level from a motion source. At/above <see cref="MovementFreezeLevel"/> the
+	/// update is skipped: exercise legitimately lowers HRV and raises HR, and folding that into the
+	/// baseline would desensitise the detector. The default (<see cref="MovementLevel.Unknown"/>)
+	/// never freezes, so a build with no accelerometer is unaffected.
+	/// </param>
+	public void Update(
+		HrvSample sample,
+		SensorContactStatus contact = SensorContactStatus.NotSupported,
+		MovementLevel movement = MovementLevel.Unknown)
 	{
 		// Do not update during dysregulated states — prevents baseline from
 		// chasing a sustained episode and blinding the detector.
@@ -99,6 +113,13 @@ public class BaselineHrvTracker
 		// detector uses (RR data is untrustworthy), applied to the baseline so a
 		// dropout can't quietly re-normalise it.
 		if (contact == SensorContactStatus.NotDetected)
+		{
+			return;
+		}
+
+		// Do not update while moving — exercise HRV is real but unrepresentative of the resting
+		// baseline, so folding it in would blind the detector to a later genuine episode.
+		if (FreezeOnMovement && movement != MovementLevel.Unknown && movement >= MovementFreezeLevel)
 		{
 			return;
 		}

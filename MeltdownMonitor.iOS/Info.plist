@@ -38,6 +38,9 @@
     <key>NSBluetoothPeripheralUsageDescription</key>
     <string>MeltdownMonitor connects to your Polar heart rate sensor over Bluetooth to read R-R intervals.</string>
 
+    <key>NSMotionUsageDescription</key>
+    <string>MeltdownMonitor reads device motion to tell exercise apart from stress, so brisk activity isn't mistaken for dysregulation.</string>
+
     <key>NSHealthShareUsageDescription</key>
     <string>MeltdownMonitor reads recent heart rate samples to warm-start your personal baseline so you don't have to wait for calibration on first launch.</string>
     <key>NSHealthUpdateUsageDescription</key>

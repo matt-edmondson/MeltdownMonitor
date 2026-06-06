@@ -39,6 +39,7 @@ public static class AndroidCompositionRoot
 	private static HistoryViewModel? _history;
 	private static MetricsViewModel? _metrics;
 	private static AndroidBleSource? _source;
+	private static ImuMotionSource? _motionFallback;
 	private static Pipeline? _pipeline;
 	private static IDisposable? _crashReporting;
 
@@ -178,8 +179,12 @@ public static class AndroidCompositionRoot
 		// the iOS TRUNCATE/fullfsync workaround is not needed (design doc §5.7).
 		var repository = new MeltdownRepository(dbPath, MeltdownRepositoryOptions.Default);
 
-		_source = new AndroidBleSource(context, settings.DeviceType);
-		var pipeline = new Pipeline(settings, repository, _source);
+		// Motion corroboration: stream the Polar strap accelerometer (PMD) when available, and run the
+		// device IMU as a fallback for non-Polar straps. The movement monitor prefers the strap.
+		bool motionEnabled = settings.EnableMotionCorroboration;
+		_source = new AndroidBleSource(context, settings.DeviceType, enableMotion: motionEnabled);
+		_motionFallback = motionEnabled ? new ImuMotionSource(context) : null;
+		var pipeline = new Pipeline(settings, repository, _source, _motionFallback);
 
 		// Warm-start must precede Start. Best-effort — no Health Connect data just
 		// means a cold baseline, not a failure (design doc §5.3). Reading is gated on the
@@ -299,5 +304,10 @@ public static class AndroidCompositionRoot
 
 		var stop = _pipeline.StopAsync();
 		await Task.WhenAny(stop, Task.Delay(timeout)).ConfigureAwait(false);
+
+		_source?.Dispose();
+		_source = null;
+		_motionFallback?.Dispose();
+		_motionFallback = null;
 	}
 }

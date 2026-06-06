@@ -95,6 +95,25 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	/// <summary>
+	/// Use device/strap motion to corroborate detection: defers alerts and freezes the baseline during
+	/// exertion so exercise isn't mistaken for dysregulation. Streams the Polar strap accelerometer when
+	/// available, otherwise the phone IMU. Takes effect on the next monitoring restart.
+	/// </summary>
+	public bool EnableMotionCorroboration
+	{
+		get => _settings.EnableMotionCorroboration;
+		set
+		{
+			if (_settings.EnableMotionCorroboration != value)
+			{
+				_settings.EnableMotionCorroboration = value;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	public bool EnableLiveActivity
 	{
 		get => _settings.EnableLiveActivity;

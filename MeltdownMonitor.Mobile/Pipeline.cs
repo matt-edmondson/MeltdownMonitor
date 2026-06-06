@@ -2,6 +2,7 @@ using MeltdownMonitor.Core.Baseline;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Motion;
 using MeltdownMonitor.Core.Persistence;
 using MeltdownMonitor.Core.Regulation;
 using MeltdownMonitor.Mobile.Services;
@@ -25,6 +26,7 @@ public sealed class Pipeline : IDisposable
 	private readonly HypoarousalDetector _hypoDetector;
 	private readonly RegulationVelocityTracker _velocity = new();
 	private readonly RegulationVelocityTracker _hypoVelocity = new();
+	private readonly MovementMonitor _movement = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _runTask;
@@ -45,6 +47,10 @@ public sealed class Pipeline : IDisposable
 
 	/// <summary>Latest skin / electrode contact state from the sensor.</summary>
 	public SensorContactStatus LatestContact { get; private set; } = SensorContactStatus.NotSupported;
+
+	/// <summary>Current movement level from the motion source (strap PMD, or the device-IMU fallback).
+	/// <see cref="MovementLevel.Unknown"/> when motion corroboration is off or no sensor is feeding.</summary>
+	public MovementLevel CurrentMovement => _movement.Level;
 
 	/// <summary>Sensor identity from the Device Information Service, or null until read.</summary>
 	public DeviceInformation? LatestDeviceInfo { get; private set; }
@@ -116,7 +122,14 @@ public sealed class Pipeline : IDisposable
 	/// for the current episode, derived from the same sample. Inactive outside Warning/Alerting.</summary>
 	public event Action<RecoveryProgress>? RecoveryUpdated;
 
-	public Pipeline(MobileSettings settings, MeltdownRepository repository, IBeatSource source)
+	/// <param name="motionFallback">
+	/// Optional device-IMU motion source used when the connected sensor offers no strap motion
+	/// (non-Polar, or PMD unavailable). The movement monitor prefers strap samples when both feed, so
+	/// it is safe to wire this alongside a Polar strap. Null disables the fallback. Its sensor
+	/// lifecycle is owned by the composition root, not the pipeline.
+	/// </param>
+	public Pipeline(MobileSettings settings, MeltdownRepository repository, IBeatSource source,
+		IMotionSource? motionFallback = null)
 	{
 		_settings = settings;
 		_repository = repository;
@@ -143,6 +156,21 @@ public sealed class Pipeline : IDisposable
 		if (source is IDeviceInfoSource deviceInfoSource)
 		{
 			deviceInfoSource.DeviceInformationChanged += OnDeviceInfoChanged;
+		}
+
+		// Motion corroboration: the strap accelerometer (if the source exposes PMD motion) and the
+		// device-IMU fallback both feed the monitor; it prefers the strap when both are live.
+		if (settings.EnableMotionCorroboration)
+		{
+			if (source is IMotionSource strapMotion)
+			{
+				strapMotion.MotionSampleReceived += _movement.Add;
+			}
+
+			if (motionFallback is not null)
+			{
+				motionFallback.MotionSampleReceived += _movement.Add;
+			}
 		}
 	}
 
@@ -338,12 +366,13 @@ public sealed class Pipeline : IDisposable
 			// shutdown and blind the detectors. (Hyperarousal episodes are frozen inside Update via
 			// sample.State.) Gated on the prior-sample episode state, which keeps the dysregulation
 			// detector's IsWarm timing identical; a one-sample lag is negligible for a minutes-long EWMA.
+			MovementLevel movement = _movement.Level;
 			if (!_hypoDetector.IsEpisodeActive)
 			{
-				_baseline.Update(sample, LatestContact);
+				_baseline.Update(sample, LatestContact, movement);
 			}
 
-			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact);
+			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact, movement);
 			_hypoDetector.Process(sample, _baseline.IsWarm, LatestContact);
 
 			var finalSample = sample with

@@ -1,3 +1,5 @@
+using MeltdownMonitor.Core.Motion;
+
 namespace MeltdownMonitor.Core.Detection;
 
 public record DetectionThresholds
@@ -79,6 +81,24 @@ public record DetectionThresholds
 	/// the cost of ~one sample of latency. 1 fires on the first qualifying sample (prior behaviour).
 	/// </summary>
 	public int SevereDropConfirmationCount { get; init; } = 2;
+
+	// ── Movement gating (motion corroboration; only active when a motion source feeds levels) ──
+
+	/// <summary>
+	/// When true, a movement level at/above <see cref="MovementGateLevel"/> defers Warning/Alerting
+	/// escalation the same way an off-body sensor does — exertion drops HRV and raises HR (the
+	/// dysregulation signature), so without this an exercise bout reads as a meltdown. Only ever
+	/// consulted when a motion source supplies a level other than <see cref="MovementLevel.Unknown"/>,
+	/// so a build with no accelerometer behaves exactly as before. Default on.
+	/// </summary>
+	public bool UseMovementGating { get; init; } = true;
+
+	/// <summary>
+	/// The movement level at/above which detection and the baseline are gated. Default
+	/// <see cref="MovementLevel.Moderate"/> (walking): light fidgeting must NOT suppress alerts
+	/// (agitation is part of the signal we want), but walking-and-up confounds HRV enough to gate.
+	/// </summary>
+	public MovementLevel MovementGateLevel { get; init; } = MovementLevel.Moderate;
 
 	/// <summary>
 	/// Tuning for the <see cref="HypoarousalDetector"/> — the low-arousal/shutdown edge (audit A(b)).

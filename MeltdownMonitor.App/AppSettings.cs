@@ -31,6 +31,13 @@ public class AppSettings : AppData<AppSettings>
 	/// </summary>
 	public HeartRateDeviceType DeviceType { get; set; } = HeartRateDeviceType.Auto;
 
+	/// <summary>
+	/// When true, stream the Polar strap accelerometer (PMD) and use the resulting movement level to
+	/// defer alerts and freeze the baseline during exertion — exercise mimics the dysregulation
+	/// signature, so this suppresses that false positive. No effect on non-Polar sensors. Default off.
+	/// </summary>
+	public bool EnableMotionCorroboration { get; set; }
+
 	public bool EnableChime { get; set; } = true;
 	public string? ChimeWavPath { get; set; }
 

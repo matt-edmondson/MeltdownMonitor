@@ -17,6 +17,7 @@ public class MobileSettingsSerializerTests
 			PausedUntil = new DateTimeOffset(2026, 5, 29, 14, 30, 0, TimeSpan.Zero),
 			EnableChime = false,
 			EnableNotifications = false,
+			EnableMotionCorroboration = true,
 			AlertSuggestion = "Breathe. You've got this.",
 			WriteEpisodesToHealthKit = true,
 			EnableLiveActivity = true,
@@ -41,6 +42,7 @@ public class MobileSettingsSerializerTests
 		Assert.AreEqual(original.PausedUntil, restored.PausedUntil);
 		Assert.AreEqual(original.EnableChime, restored.EnableChime);
 		Assert.AreEqual(original.EnableNotifications, restored.EnableNotifications);
+		Assert.AreEqual(original.EnableMotionCorroboration, restored.EnableMotionCorroboration);
 		Assert.AreEqual(original.AlertSuggestion, restored.AlertSuggestion);
 		Assert.AreEqual(original.WriteEpisodesToHealthKit, restored.WriteEpisodesToHealthKit);
 		Assert.AreEqual(original.EnableLiveActivity, restored.EnableLiveActivity);

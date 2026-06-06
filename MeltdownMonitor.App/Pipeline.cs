@@ -3,6 +3,7 @@ using MeltdownMonitor.Core.Baseline;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Motion;
 using MeltdownMonitor.Core.Persistence;
 using MeltdownMonitor.Core.Regulation;
 
@@ -22,6 +23,7 @@ public sealed class Pipeline : IDisposable
 	private readonly HypoarousalDetector _hypoDetector;
 	private readonly RegulationVelocityTracker _velocity = new();
 	private readonly RegulationVelocityTracker _hypoVelocity = new();
+	private readonly MovementMonitor _movement = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _pipelineTask;
@@ -44,6 +46,10 @@ public sealed class Pipeline : IDisposable
 
 	/// <summary>Latest skin / electrode contact state from the sensor.</summary>
 	public SensorContactStatus LatestContact { get; private set; } = SensorContactStatus.NotSupported;
+
+	/// <summary>Current movement level from the motion source (strap PMD or device IMU).
+	/// <see cref="MovementLevel.Unknown"/> when motion corroboration is off or no sensor is feeding.</summary>
+	public MovementLevel CurrentMovement => _movement.Level;
 
 	/// <summary>Sensor identity from the Device Information Service, or null until read.</summary>
 	public DeviceInformation? LatestDeviceInfo { get; private set; }
@@ -293,7 +299,8 @@ public sealed class Pipeline : IDisposable
 	{
 		// `using` releases the BluetoothLEDevice native handle deterministically when
 		// the loop unwinds — on both clean cancellation and an exception path.
-		using var source = new BleHrSource(_settings.DeviceType);
+		bool motionEnabled = _settings.EnableMotionCorroboration;
+		using var source = new BleHrSource(_settings.DeviceType, enableMotion: motionEnabled);
 
 		// Battery and contact are optional source capabilities — wire each only when supported.
 		if (source is IBatterySource batterySource)
@@ -309,6 +316,13 @@ public sealed class Pipeline : IDisposable
 		if (source is IDeviceInfoSource deviceInfoSource)
 		{
 			deviceInfoSource.DeviceInformationChanged += OnDeviceInfoChanged;
+		}
+
+		// Motion corroboration: feed the Polar strap accelerometer (PMD) into the movement monitor.
+		// Desktops have no built-in IMU fallback, so this is strap-only.
+		if (motionEnabled && source is IMotionSource motionSource)
+		{
+			motionSource.MotionSampleReceived += _movement.Add;
 		}
 
 		await foreach (var beat in source.GetBeatsAsync(cancellationToken))
@@ -332,12 +346,13 @@ public sealed class Pipeline : IDisposable
 			// shutdown and blind the detectors. (Hyperarousal episodes are frozen inside Update via
 			// sample.State.) Gated on the prior-sample episode state, which keeps the dysregulation
 			// detector's IsWarm timing identical; a one-sample lag is negligible for a minutes-long EWMA.
+			MovementLevel movement = _movement.Level;
 			if (!_hypoDetector.IsEpisodeActive)
 			{
-				_baseline.Update(sample, LatestContact);
+				_baseline.Update(sample, LatestContact, movement);
 			}
 
-			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact);
+			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact, movement);
 			_hypoDetector.Process(sample, _baseline.IsWarm, LatestContact);
 
 			var finalSample = sample with
