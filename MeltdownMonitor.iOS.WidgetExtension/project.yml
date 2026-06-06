@@ -1,0 +1,91 @@
+# XcodeGen spec for the iOS Live Activity native targets.
+#
+# The .NET build produces the MeltdownMonitor app (.app) via MSBuild; it cannot
+# compile Swift. ActivityKit + WidgetKit + SwiftUI must be compiled by Xcode.
+# This spec turns the manual "File ▸ New ▸ Target ▸ Widget Extension" clicking
+# (docs/live-activity.md) into a reproducible, version-controlled definition:
+#
+#     brew install xcodegen          # one-time, on a Mac
+#     ./generate.sh                  # writes MeltdownMonitorWidget.xcodeproj
+#
+# It defines two Xcode targets, both built independently of the .NET app and
+# then attached to it (see docs/live-activity.md ▸ "Reproducible Xcode wiring"):
+#
+#   1. MeltdownLiveActivityBridge  — a dynamic framework carrying the
+#      @_cdecl mm_live_activity_* entry points (LiveActivityBridge.swift) and
+#      the shared ActivityAttributes model. The .NET app links it via
+#      <NativeReference>; the managed LiveActivityController resolves the
+#      symbols at runtime with dlsym(RTLD_DEFAULT).
+#
+#   2. MeltdownMonitorWidgetExtension — the SwiftUI Live Activity presentation
+#      (Lock Screen + Dynamic Island), packaged as a WidgetKit .appex that is
+#      embedded into the .NET app's PlugIns/.
+#
+# The generated .xcodeproj and Xcode build outputs are git-ignored — only this
+# spec, the Swift sources, and the Info.plist are committed.
+
+name: MeltdownMonitorWidget
+
+options:
+  bundleIdPrefix: com.matthewedmondson.meltdownmonitor
+  # Live Activities require iOS 16.2; matches the [SupportedOSPlatform("ios16.2")]
+  # on the managed LiveActivityController and the @available guards in the Swift.
+  deploymentTarget:
+    iOS: "16.2"
+  createIntermediateGroups: true
+  # Resolve every source/Info.plist path below against the repository root, so
+  # this spec can reach the shared Swift under MeltdownMonitor.iOS/LiveActivity/.
+  minimumXcodeGenVersion: "2.18.0"
+
+# basePath anchors all relative paths at the repo root (this file lives one
+# level down, in MeltdownMonitor.iOS.WidgetExtension/).
+basePath: ..
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    # Set DEVELOPMENT_TEAM in the environment before running generate.sh, or
+    # pick the team in Xcode's Signing & Capabilities after generation.
+    DEVELOPMENT_TEAM: ${DEVELOPMENT_TEAM}
+    # iPhone only — mirrors the app's UIDeviceFamily (Info.plist).
+    TARGETED_DEVICE_FAMILY: "1"
+
+targets:
+
+  MeltdownLiveActivityBridge:
+    type: framework
+    platform: iOS
+    sources:
+      - path: MeltdownMonitor.iOS/LiveActivity/LiveActivityBridge.swift
+      - path: MeltdownMonitor.iOS/LiveActivity/MeltdownActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.matthewedmondson.meltdownmonitor.LiveActivityBridge
+        # No hand-authored Info.plist for the framework — let Xcode synthesize one.
+        GENERATE_INFOPLIST_FILE: "YES"
+        DEFINES_MODULE: "YES"
+        # The @_cdecl symbols must remain in the linked binary's exported symbol
+        # table so the .NET app's dlsym(RTLD_DEFAULT, "mm_live_activity_*") finds
+        # them. Don't dead-strip them out.
+        DEAD_CODE_STRIPPING: "NO"
+        SWIFT_INSTALL_OBJC_HEADER: "NO"
+
+  MeltdownMonitorWidgetExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: MeltdownMonitor.iOS.WidgetExtension/MeltdownLiveActivityWidget.swift
+      - path: MeltdownMonitor.iOS.WidgetExtension/MeltdownWidgetBundle.swift
+      # Shared with the bridge framework: the model the widget renders. Adding the
+      # file to this target's sources is the XcodeGen equivalent of ticking the
+      # second "Target Membership" checkbox in Xcode.
+      - path: MeltdownMonitor.iOS/LiveActivity/MeltdownActivityAttributes.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.matthewedmondson.meltdownmonitor.WidgetExtension
+        INFOPLIST_FILE: MeltdownMonitor.iOS.WidgetExtension/Info.plist
+        # The widget reads ActivityKit content delivered by the system; it starts
+        # no activity itself, so no App Group / extra entitlement is needed.
