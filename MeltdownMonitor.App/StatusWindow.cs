@@ -1174,6 +1174,26 @@ public sealed class StatusWindow : IDisposable
 		}
 		ImGui.SameLine();
 		HelpMarker("Bucket resolution of the vagal-tone (Y) axis — the number of vagal-tone histogram bars and dwell-heatmap rows. Higher = finer detail; default 16.");
+		ImGui.SameLine();
+
+		float arrowSpeed = (float)_settings.RecoveryArrowSpeed;
+		if (ImGuiWidgets.Knob("Recovery arrow speed", ref arrowSpeed, 0.1f, 3f, format: "%.1fx", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.RecoveryArrowSpeed = arrowSpeed;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How fast the recovery arrows pulse inward toward the centre during a Warning/Alert. 0.7x is the tuned default; lower drifts in slowly, higher pulses in faster.");
+		ImGui.SameLine();
+
+		int arrowCount = _settings.RecoveryArrowCount;
+		if (ImGuiWidgets.Knob("Recovery arrows", ref arrowCount, 1, 6, format: "%d", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.RecoveryArrowCount = arrowCount;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How many arrows ride the inward-pulling recovery train. Default 3.");
 
 		// ── Regulation Field blend modes ─────────────────────────────────
 		// Each glow layer can bloom additively (overlaps add toward white — the signature look)
@@ -1651,6 +1671,8 @@ public sealed class StatusWindow : IDisposable
 				_settings.HistogramOpacity = 0.6;
 				_settings.FieldIndexBuckets = 24;
 				_settings.FieldVagalBuckets = 16;
+				_settings.RecoveryArrowSpeed = 0.7;
+				_settings.RecoveryArrowCount = 3;
 				_settings.LfHfHaloAdditive = true;
 				_settings.LobesAdditive = true;
 				_settings.TrailAdditive = true;

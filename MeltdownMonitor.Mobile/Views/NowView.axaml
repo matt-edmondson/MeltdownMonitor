@@ -34,6 +34,8 @@
                                          LobeSegments="{Binding LobeSegments}"
                                          IndexBuckets="{Binding IndexBuckets}"
                                          VagalBuckets="{Binding VagalBuckets}"
+                                         RecoveryArrowSpeed="{Binding RecoveryArrowSpeed}"
+                                         RecoveryArrowCount="{Binding RecoveryArrowCount}"
                                          Hypoarousal="{Binding Reading.Hypoarousal}"
                                          HypoarousalDynamics="{Binding HypoarousalDynamics}"
                                          Rr="{Binding RecentRr}"

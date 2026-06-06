@@ -100,6 +100,12 @@ public sealed class RegulationField : Control
 		AvaloniaProperty.Register<RegulationField, int>(
 			nameof(LobeSegments), LemniscateGeometry.DefaultSegments);
 
+	public static readonly StyledProperty<double> RecoveryArrowSpeedProperty =
+		AvaloniaProperty.Register<RegulationField, double>(nameof(RecoveryArrowSpeed), 0.7);
+
+	public static readonly StyledProperty<int> RecoveryArrowCountProperty =
+		AvaloniaProperty.Register<RegulationField, int>(nameof(RecoveryArrowCount), 3);
+
 	// Catppuccin Macchiato — the field's distinctive palette, single-sourced here
 	// to match the desktop renderer's MacchiatoPalette.
 	private static readonly Color Base = Color.FromRgb(0x24, 0x27, 0x3a);
@@ -327,7 +333,7 @@ public sealed class RegulationField : Control
 	}
 
 	static RegulationField() =>
-		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, RecoveryProperty, LobeThicknessProperty, LobeSegmentsProperty, IndexBucketsProperty, VagalBucketsProperty, HypoarousalProperty, HypoarousalDynamicsProperty, LfHfHaloAdditiveProperty, LobesAdditiveProperty, TrailAdditiveProperty, HeatmapAdditiveProperty, MarkerHaloAdditiveProperty, HistogramAdditiveProperty);
+		AffectsRender<RegulationField>(ReadingProperty, TrailProperty, StateColorProperty, DynamicsProperty, RecoveryProperty, LobeThicknessProperty, LobeSegmentsProperty, IndexBucketsProperty, VagalBucketsProperty, RecoveryArrowSpeedProperty, RecoveryArrowCountProperty, HypoarousalProperty, HypoarousalDynamicsProperty, LfHfHaloAdditiveProperty, LobesAdditiveProperty, TrailAdditiveProperty, HeatmapAdditiveProperty, MarkerHaloAdditiveProperty, HistogramAdditiveProperty);
 
 	/// <summary>Latest arousal-vs-baseline reading; drives the marker position,
 	/// stroke fatness and overall confidence dimming.</summary>
@@ -414,6 +420,21 @@ public sealed class RegulationField : Control
 	{
 		get => GetValue(LobeSegmentsProperty);
 		set => SetValue(LobeSegmentsProperty, value);
+	}
+
+	/// <summary>Loop rate of the recovery arrows — how fast they pulse inward toward the centre
+	/// (clamped 0.1–3.0 at draw). 0.7 is the tuned default.</summary>
+	public double RecoveryArrowSpeed
+	{
+		get => GetValue(RecoveryArrowSpeedProperty);
+		set => SetValue(RecoveryArrowSpeedProperty, value);
+	}
+
+	/// <summary>Number of recovery arrows in the inward-pulling train (clamped 1–6 at draw). Default 3.</summary>
+	public int RecoveryArrowCount
+	{
+		get => GetValue(RecoveryArrowCountProperty);
+		set => SetValue(RecoveryArrowCountProperty, value);
 	}
 
 	protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
@@ -1193,12 +1214,13 @@ public sealed class RegulationField : Control
 		const double arrowW = 7;
 		const double arrowH = 5;
 		Color stateCol = StateColor;
-		const int count = 3;
+		int count = Math.Clamp(RecoveryArrowCount, 1, 6);
+		double speed = Math.Clamp(RecoveryArrowSpeed, 0.1, 3.0);
 		for (int i = 0; i < count; i++)
 		{
 			// Looping progress 0→1 from boundary to centre, staggered so the arrows form a flowing
 			// inward train rather than moving in lockstep.
-			double t = (_animator.AnimTime * 0.7) + (i / (double)count);
+			double t = (_animator.AnimTime * speed) + (i / (double)count);
 			t -= Math.Floor(t);
 			double x = warnX - (span * t);
 			// Fade in at the boundary, peak mid-travel, fade out at the centre → a smooth inward pulse.

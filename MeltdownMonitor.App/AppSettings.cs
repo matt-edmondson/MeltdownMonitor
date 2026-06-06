@@ -128,6 +128,15 @@ public class AppSettings : AppData<AppSettings>
 	/// Higher = finer detail, lower = chunkier. Default 16.</summary>
 	public int FieldVagalBuckets { get; set; } = 16;
 
+	/// <summary>Loop rate of the Regulation Field recovery arrows — how fast the inward-pulling
+	/// train slides toward the centre (0.1–3.0; clamped at the consumer). 0.7 is the tuned
+	/// default; lower drifts in slowly, higher pulses in faster.</summary>
+	public double RecoveryArrowSpeed { get; set; } = 0.7;
+
+	/// <summary>Number of recovery arrows in the Regulation Field's inward-pulling train
+	/// (1–6; clamped at the consumer). Default 3.</summary>
+	public int RecoveryArrowCount { get; set; } = 3;
+
 	// ── Per-element blend modes ──────────────────────────────────────────────
 	// Each Regulation Field glow layer can be drawn either additively (overlaps bloom toward
 	// white — the signature glow) or with plain alpha compositing (overlaps composite over,

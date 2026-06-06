@@ -135,6 +135,26 @@ public class MobileSettingsSerializerTests
 	}
 
 	[TestMethod]
+	public void RoundTrip_PreservesRecoveryArrowKnobs()
+	{
+		var settings = new MobileSettings { RecoveryArrowSpeed = 1.8, RecoveryArrowCount = 5 };
+
+		string json = MobileSettingsSerializer.Serialize(settings);
+		MobileSettings restored = MobileSettingsSerializer.Deserialize(json);
+
+		Assert.AreEqual(1.8, restored.RecoveryArrowSpeed, 1e-9);
+		Assert.AreEqual(5, restored.RecoveryArrowCount);
+	}
+
+	[TestMethod]
+	public void Default_RecoveryArrowKnobs_AreTunedValues()
+	{
+		var s = new MobileSettings();
+		Assert.AreEqual(0.7, s.RecoveryArrowSpeed, 1e-9);
+		Assert.AreEqual(3, s.RecoveryArrowCount);
+	}
+
+	[TestMethod]
 	public void Roundtrip_preserves_new_regulation_and_refresh_knobs()
 	{
 		var s = new MobileSettings

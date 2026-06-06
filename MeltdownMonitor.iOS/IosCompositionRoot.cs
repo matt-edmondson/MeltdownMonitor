@@ -125,6 +125,8 @@ public static class IosCompositionRoot
 			indexBucketsProvider: () => settings.FieldIndexBuckets,
 			vagalBucketsProvider: () => settings.FieldVagalBuckets,
 			lobeSegmentsProvider: () => settings.LobeSegments,
+			recoveryArrowSpeedProvider: () => settings.RecoveryArrowSpeed,
+			recoveryArrowCountProvider: () => settings.RecoveryArrowCount,
 			heatmapLengthProvider: () => settings.RegulationHeatmapLength,
 			lobeOpacityProvider: () => settings.LobeOpacity,
 			trailOpacityProvider: () => settings.TrailOpacity,

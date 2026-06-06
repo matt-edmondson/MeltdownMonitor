@@ -161,4 +161,68 @@ public class SettingsViewModelTests
 		vm.LobeSegments = 120; // changed → one persist
 		Assert.AreEqual(1, saves);
 	}
+
+	[TestMethod]
+	public void RecoveryArrowSpeed_RoundTripsOntoSettings()
+	{
+		var settings = new MobileSettings();
+		var vm = new SettingsViewModel(settings);
+
+		vm.RecoveryArrowSpeed = 1.5;
+
+		Assert.AreEqual(1.5, settings.RecoveryArrowSpeed, 1e-9);
+		Assert.AreEqual(1.5, vm.RecoveryArrowSpeed, 1e-9);
+	}
+
+	[TestMethod]
+	public void RecoveryArrowSpeed_ClampsToRange()
+	{
+		var settings = new MobileSettings();
+		var vm = new SettingsViewModel(settings);
+
+		vm.RecoveryArrowSpeed = 0.0;
+		Assert.AreEqual(0.1, settings.RecoveryArrowSpeed, 1e-9, "below floor clamps to 0.1");
+
+		vm.RecoveryArrowSpeed = 99.0;
+		Assert.AreEqual(3.0, settings.RecoveryArrowSpeed, 1e-9, "above ceiling clamps to 3");
+	}
+
+	[TestMethod]
+	public void RecoveryArrowCount_RoundTripsOntoSettings()
+	{
+		var settings = new MobileSettings();
+		var vm = new SettingsViewModel(settings);
+
+		vm.RecoveryArrowCount = 5;
+
+		Assert.AreEqual(5, settings.RecoveryArrowCount);
+		Assert.AreEqual(5, vm.RecoveryArrowCount);
+	}
+
+	[TestMethod]
+	public void RecoveryArrowCount_ClampsToRange()
+	{
+		var settings = new MobileSettings();
+		var vm = new SettingsViewModel(settings);
+
+		vm.RecoveryArrowCount = 0;
+		Assert.AreEqual(1, settings.RecoveryArrowCount, "below floor clamps to 1");
+
+		vm.RecoveryArrowCount = 99;
+		Assert.AreEqual(6, settings.RecoveryArrowCount, "above ceiling clamps to 6");
+	}
+
+	[TestMethod]
+	public void RecoveryArrowCount_PersistsOnlyOnChange()
+	{
+		var settings = new MobileSettings { RecoveryArrowCount = 3 };
+		int saves = 0;
+		var vm = new SettingsViewModel(settings, onChanged: () => saves++);
+
+		vm.RecoveryArrowCount = 3; // unchanged → no persist
+		Assert.AreEqual(0, saves);
+
+		vm.RecoveryArrowCount = 4; // changed → one persist
+		Assert.AreEqual(1, saves);
+	}
 }

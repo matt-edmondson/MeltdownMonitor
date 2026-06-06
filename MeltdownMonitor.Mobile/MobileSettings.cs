@@ -107,6 +107,15 @@ public sealed class MobileSettings
 	/// vagal-tone histogram (6–64; clamped at the consumer). Higher = finer detail. Default 16.</summary>
 	public int FieldVagalBuckets { get; set; } = 16;
 
+	/// <summary>Loop rate of the Regulation Field recovery arrows — how fast the inward-pulling
+	/// train slides toward the centre (0.1–3.0; clamped at the consumer). 0.7 is the tuned
+	/// default; lower drifts in slowly, higher pulses in faster.</summary>
+	public double RecoveryArrowSpeed { get; set; } = 0.7;
+
+	/// <summary>Number of recovery arrows in the Regulation Field's inward-pulling train
+	/// (1–6; clamped at the consumer). Default 3.</summary>
+	public int RecoveryArrowCount { get; set; } = 3;
+
 	/// <summary>Overall opacity of the Regulation Field's live-trace lobes (0–1; clamped at the
 	/// consumer). The lobes are drawn with additive blending so densely overlapping segments bloom
 	/// toward white; this knob pulls the stroke alpha down to compensate. Default 0.6.</summary>
