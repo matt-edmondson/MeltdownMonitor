@@ -98,28 +98,45 @@ export DEVELOPMENT_TEAM=ABCDE12345                       # your signing team
 (set `SDK=iphonesimulator` / `CONFIG=Debug` to vary). The `.csproj` then picks
 them up automatically on the next `dotnet build -f net10.0-ios`:
 
-- a `<NativeReference Kind="Framework">` links the bridge framework, so the
-  `@_cdecl` symbols (`mm_live_activity_start` / `_update` / `_end`) land in the
-  app binary where the controller's `dlsym(RTLD_DEFAULT, …)` lookup resolves
-  them at runtime;
-- an `EmbedLiveActivityWidget` target copies the `.appex` into
-  `…/MeltdownMonitor.app/PlugIns/`.
+- a `<NativeReference Kind="Framework">` links + embeds the bridge framework, so
+  the `@_cdecl` symbols (`mm_live_activity_start` / `_update` / `_end`) are loaded
+  and resolvable by the controller's `dlsym(RTLD_DEFAULT, …)` lookup at runtime;
+- an `<AdditionalAppExtensions>` item (the supported .NET-for-iOS mechanism for a
+  prebuilt native extension) copies the `.appex` into
+  `…/MeltdownMonitor.app/PlugIns/` and signs it with the app.
 
 Both are guarded by `Exists(...)` against `$(MMLiveActivityArtifacts)` (default
-`MeltdownMonitor.iOS.WidgetExtension/build/Release-iphoneos`). On Linux/CI — or
-any box where the Xcode artifacts haven't been built — they don't apply: the
-app links cleanly and the managed `LiveActivityController` degrades to a no-op,
-exactly the "bridge absent" behaviour described above. No managed rebuild is
-needed beyond re-running `dotnet build` after the artifacts exist.
+`MeltdownMonitor.iOS.WidgetExtension/build/Release-iphoneos`; pass a different
+value for the simulator build). On Linux/CI — or any box where the Xcode
+artifacts haven't been built — they don't apply: the app links cleanly and the
+managed `LiveActivityController` degrades to a no-op, exactly the "bridge absent"
+behaviour described above. No managed rebuild is needed beyond re-running
+`dotnet build` after the artifacts exist.
 
 `NSSupportsLiveActivities` is already `true` in the app `Info.plist`, and the
 widget extension's bundle id (`com.matthewedmondson.meltdownmonitor.WidgetExtension`)
 matches the committed `Info.plist`.
 
-> **Verification is Mac-only.** None of the XcodeGen / xcodebuild / linking /
-> embedding steps can be exercised off a Mac with Xcode — the spec and the
-> `.csproj` wiring are validated by inspection here and must be confirmed on a
-> device (a real Lock Screen / Dynamic Island) before shipping.
+## What CI verifies (and what it can't)
+
+The iOS workflow (`.github/workflows/ios.yml`, `build-test` job) runs the full
+chain on every PR — `brew install xcodegen` → `generate.sh --build` (both SDKs,
+unsigned) → `dotnet build` for simulator and device — and then asserts the
+device `.app` actually contains `Frameworks/MeltdownLiveActivityBridge.framework`
+and `PlugIns/MeltdownMonitorWidgetExtension.appex`. That gates the spec, the
+Swift compile, and the framework/`.appex` **link + embed** against regressions.
+
+Two things CI does **not** cover:
+
+- **On-device presentation.** Whether the Lock Screen banner / Dynamic Island
+  actually render, and the `dlsym` symbols resolve at runtime, still needs a real
+  device (a simulator/headless build can't show a Live Activity).
+- **The signed TestFlight path.** The `testflight` job is left untouched, so
+  release builds do **not** yet ship the widget. Shipping a *signed* extension
+  needs a dedicated App ID + provisioning profile for
+  `com.matthewedmondson.meltdownmonitor.WidgetExtension` (App Store Connect
+  setup), after which the release job can build the artifacts signed and embed
+  them the same way.
 
 ## Throttling & lifecycle
 

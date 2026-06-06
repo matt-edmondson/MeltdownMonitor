@@ -33,13 +33,12 @@ options:
   deploymentTarget:
     iOS: "16.2"
   createIntermediateGroups: true
-  # Resolve every source/Info.plist path below against the repository root, so
-  # this spec can reach the shared Swift under MeltdownMonitor.iOS/LiveActivity/.
   minimumXcodeGenVersion: "2.18.0"
 
-# basePath anchors all relative paths at the repo root (this file lives one
-# level down, in MeltdownMonitor.iOS.WidgetExtension/).
-basePath: ..
+# Paths below are relative to this spec's directory (the default basePath), which
+# is also where the .xcodeproj is generated — so SRCROOT-relative build settings
+# like INFOPLIST_FILE stay simple, and the shared Swift one level up is reached
+# with "../".
 
 settings:
   base:
@@ -59,8 +58,8 @@ targets:
     type: framework
     platform: iOS
     sources:
-      - path: MeltdownMonitor.iOS/LiveActivity/LiveActivityBridge.swift
-      - path: MeltdownMonitor.iOS/LiveActivity/MeltdownActivityAttributes.swift
+      - path: ../MeltdownMonitor.iOS/LiveActivity/LiveActivityBridge.swift
+      - path: ../MeltdownMonitor.iOS/LiveActivity/MeltdownActivityAttributes.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.matthewedmondson.meltdownmonitor.LiveActivityBridge
@@ -77,15 +76,15 @@ targets:
     type: app-extension
     platform: iOS
     sources:
-      - path: MeltdownMonitor.iOS.WidgetExtension/MeltdownLiveActivityWidget.swift
-      - path: MeltdownMonitor.iOS.WidgetExtension/MeltdownWidgetBundle.swift
+      - path: MeltdownLiveActivityWidget.swift
+      - path: MeltdownWidgetBundle.swift
       # Shared with the bridge framework: the model the widget renders. Adding the
       # file to this target's sources is the XcodeGen equivalent of ticking the
       # second "Target Membership" checkbox in Xcode.
-      - path: MeltdownMonitor.iOS/LiveActivity/MeltdownActivityAttributes.swift
+      - path: ../MeltdownMonitor.iOS/LiveActivity/MeltdownActivityAttributes.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.matthewedmondson.meltdownmonitor.WidgetExtension
-        INFOPLIST_FILE: MeltdownMonitor.iOS.WidgetExtension/Info.plist
+        INFOPLIST_FILE: Info.plist
         # The widget reads ActivityKit content delivered by the system; it starts
         # no activity itself, so no App Group / extra entitlement is needed.

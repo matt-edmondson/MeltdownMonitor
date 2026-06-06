@@ -41,6 +41,16 @@ CONFIG="${CONFIG:-Release}"
 OUT="build/${CONFIG}-${SDK}"
 mkdir -p "$OUT"
 
+# When no signing team is configured (CI, or a quick local check), build
+# unsigned — the artifacts are linked/embedded into the .NET app, which does its
+# own signing. With DEVELOPMENT_TEAM set, sign normally so the result can run on
+# a device straight from Xcode.
+SIGN_ARGS=()
+if [[ -z "${DEVELOPMENT_TEAM:-}" ]]; then
+  echo "==> DEVELOPMENT_TEAM unset — building unsigned"
+  SIGN_ARGS=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= CODE_SIGN_ENTITLEMENTS=)
+fi
+
 for target in MeltdownLiveActivityBridge MeltdownMonitorWidgetExtension; do
   echo "==> xcodebuild $target ($CONFIG / $SDK)"
   xcodebuild \
@@ -49,6 +59,7 @@ for target in MeltdownLiveActivityBridge MeltdownMonitorWidgetExtension; do
     -configuration "$CONFIG" \
     -sdk "$SDK" \
     CONFIGURATION_BUILD_DIR="$(pwd)/$OUT" \
+    "${SIGN_ARGS[@]}" \
     build
 done
 

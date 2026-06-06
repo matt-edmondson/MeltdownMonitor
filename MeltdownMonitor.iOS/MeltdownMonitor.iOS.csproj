@@ -60,46 +60,45 @@
 
   <!--
     Live Activity native targets (Swift). These are built by Xcode from
-    MeltdownMonitor.iOS.WidgetExtension/project.yml (via generate.sh on a Mac);
-    the .NET build never compiles Swift. Everything below is guarded by
-    Exists(), so on Linux/CI — or any box that hasn't built the Xcode artifacts —
-    these items simply don't apply: the app links cleanly and the managed
-    LiveActivityController degrades to a no-op (its dlsym lookups return null),
-    exactly the documented "bridge absent" behaviour. Build the artifacts and
-    they light up with no source change. See docs/live-activity.md.
+    MeltdownMonitor.iOS.WidgetExtension/project.yml (via generate.sh on a Mac, or
+    in iOS CI); the .NET build never compiles Swift. Everything below is guarded
+    by Exists(), so on Linux/CI without the prebuilt artifacts these items don't
+    apply: the app links cleanly and the managed LiveActivityController degrades
+    to a no-op (its dlsym lookups return null), exactly the documented "bridge
+    absent" behaviour. Build the artifacts and they light up with no source
+    change. See docs/live-activity.md.
 
-    Point MMLiveActivityArtifacts at the generate.sh output dir; default is the
-    device Release build it writes.
+    Point MMLiveActivityArtifacts at the generate.sh output dir for the SDK being
+    built (default: the device Release build). The iOS workflow builds both the
+    simulator and device artifacts and overrides this per dotnet invocation.
+    Forward slashes so Exists() resolves on macOS.
   -->
   <PropertyGroup>
-    <MMLiveActivityArtifacts Condition="'$(MMLiveActivityArtifacts)' == ''">$(MSBuildThisFileDirectory)..\MeltdownMonitor.iOS.WidgetExtension\build\Release-iphoneos</MMLiveActivityArtifacts>
-    <_MMBridgeFramework>$(MMLiveActivityArtifacts)\MeltdownLiveActivityBridge.framework</_MMBridgeFramework>
-    <_MMWidgetAppex>$(MMLiveActivityArtifacts)\MeltdownMonitorWidgetExtension.appex</_MMWidgetAppex>
+    <MMLiveActivityArtifacts Condition="'$(MMLiveActivityArtifacts)' == ''">$(MSBuildThisFileDirectory)../MeltdownMonitor.iOS.WidgetExtension/build/Release-iphoneos</MMLiveActivityArtifacts>
+    <_MMBridgeFramework>$(MMLiveActivityArtifacts)/MeltdownLiveActivityBridge.framework</_MMBridgeFramework>
+    <_MMWidgetAppex>$(MMLiveActivityArtifacts)/MeltdownMonitorWidgetExtension.appex</_MMWidgetAppex>
   </PropertyGroup>
 
   <ItemGroup Condition="Exists('$(_MMBridgeFramework)')">
-    <!-- Links the framework into the app so the @_cdecl mm_live_activity_*
-         symbols are present for dlsym to resolve at runtime. -->
+    <!-- Links + embeds the framework so the @_cdecl mm_live_activity_* symbols
+         are loaded and resolvable by the controller's dlsym at runtime. -->
     <NativeReference Include="$(_MMBridgeFramework)">
       <Kind>Framework</Kind>
     </NativeReference>
   </ItemGroup>
 
-  <!-- Embed the prebuilt widget .appex under the app bundle's PlugIns/ so iOS
-       loads it as the Live Activity presentation. -->
-  <Target Name="EmbedLiveActivityWidget"
-          AfterTargets="_CreateAppBundle"
-          Condition="Exists('$(_MMWidgetAppex)')">
-    <PropertyGroup>
-      <_MMPlugInsDir>$(AppBundleDir)PlugIns\MeltdownMonitorWidgetExtension.appex</_MMPlugInsDir>
-    </PropertyGroup>
-    <ItemGroup>
-      <_MMWidgetFiles Include="$(_MMWidgetAppex)\**\*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_MMWidgetFiles)"
-          DestinationFiles="@(_MMWidgetFiles->'$(_MMPlugInsDir)\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-    <Message Importance="high" Text="Embedded Live Activity widget extension into $(_MMPlugInsDir)" />
-  </Target>
+  <ItemGroup Condition="Exists('$(_MMWidgetAppex)')">
+    <!-- Supported .NET-for-iOS mechanism for embedding a prebuilt native app
+         extension: copies it into the app bundle's PlugIns/ and signs it with the
+         app. BuildOutput is appended to Include to locate the .appex, which lets
+         the same entry serve simulator and device builds (here MMLiveActivityArtifacts
+         already encodes the SDK). The widget needs no entitlements, so silence the
+         no-entitlements warning. -->
+    <AdditionalAppExtensions Include="$(MMLiveActivityArtifacts)">
+      <Name>MeltdownMonitorWidgetExtension</Name>
+      <BuildOutput>MeltdownMonitorWidgetExtension.appex</BuildOutput>
+      <CodesignWarnIfNoEntitlements>false</CodesignWarnIfNoEntitlements>
+    </AdditionalAppExtensions>
+  </ItemGroup>
 
 </Project>

@@ -155,6 +155,28 @@ jobs:
           # net9 fallback that crashes at launch.
           xcodebuild -showsdks | grep -i iphoneos || true
 
+      # Build the Live Activity native targets (Swift) — a dynamic framework
+      # carrying the @_cdecl bridge symbols and the SwiftUI widget .appex —
+      # straight from the committed XcodeGen spec. The .NET build can't compile
+      # Swift, so this is the only place the spec, the Swift, and the
+      # framework/.appex link+embed into the app are actually verified (the
+      # on-device Lock Screen still needs a real device). Unsigned: DEVELOPMENT_TEAM
+      # is unset, so generate.sh builds with CODE_SIGNING_ALLOWED=NO, matching the
+      # unsigned .NET builds below. Both SDKs are built so each dotnet build
+      # (simulator + device) gets an arch-matched artifact. See docs/live-activity.md.
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Build Live Activity native targets (framework + widget .appex)
+        run: |
+          set -e
+          pushd MeltdownMonitor.iOS.WidgetExtension
+          SDK=iphonesimulator CONFIG=Release ./generate.sh --build
+          SDK=iphoneos        CONFIG=Release ./generate.sh --build
+          popd
+          echo "Simulator artifacts:"; ls -1 MeltdownMonitor.iOS.WidgetExtension/build/Release-iphonesimulator
+          echo "Device artifacts:";    ls -1 MeltdownMonitor.iOS.WidgetExtension/build/Release-iphoneos
+
       # Restore only the iOS-relevant projects. The solution also contains
       # `MeltdownMonitor.App` and `MeltdownMonitor.Ble.Windows`, both of
       # which target `net10.0-windows*` and refuse to restore on macOS
@@ -193,7 +215,8 @@ jobs:
             -p:BuildIpa=false \
             -p:EnableCodeSigning=false \
             -p:CodesignKey= \
-            -p:CodesignProvision=
+            -p:CodesignProvision= \
+            -p:MMLiveActivityArtifacts="$GITHUB_WORKSPACE/MeltdownMonitor.iOS.WidgetExtension/build/Release-iphonesimulator"
           APP_PATH=$(find MeltdownMonitor.iOS/bin/Release -type d -name '*.app' | head -n 1)
           if [ -z "$APP_PATH" ]; then
             echo "::error::Simulator .app not produced under MeltdownMonitor.iOS/bin/Release"
@@ -227,7 +250,8 @@ jobs:
             -p:BuildIpa=false \
             -p:EnableCodeSigning=false \
             -p:CodesignKey= \
-            -p:CodesignProvision=
+            -p:CodesignProvision= \
+            -p:MMLiveActivityArtifacts="$GITHUB_WORKSPACE/MeltdownMonitor.iOS.WidgetExtension/build/Release-iphoneos"
           APP=$(find MeltdownMonitor.iOS/bin/Release -type d -name '*.app' -path '*ios-arm64*' | head -n 1)
           [ -z "$APP" ] && APP=$(find MeltdownMonitor.iOS/bin/Release -type d -name '*.app' | head -n 1)
           echo "device-app=$APP" >> "$GITHUB_OUTPUT"
@@ -254,6 +278,32 @@ jobs:
             echo "Frameworks dir contents:"; ls -la "$APP/Frameworks" 2>/dev/null || echo "  (no Frameworks dir)"
             exit 1
           fi
+
+      # Confirms the Live Activity native targets actually link + embed into the
+      # app (the build/link/embed half of docs/live-activity.md, which the .NET
+      # build alone can't exercise). The bridge framework must land in Frameworks/
+      # (so its @_cdecl symbols are loaded for dlsym), and the widget extension in
+      # PlugIns/ (so iOS can present the activity). On-device rendering still needs
+      # a real device.
+      - name: Verify Live Activity targets embedded (device)
+        run: |
+          set -e
+          APP="${{ steps.build-device.outputs.device-app }}"
+          BRIDGE="$APP/Frameworks/MeltdownLiveActivityBridge.framework"
+          APPEX="$APP/PlugIns/MeltdownMonitorWidgetExtension.appex"
+          if [ ! -d "$BRIDGE" ]; then
+            echo "::error title=Live Activity bridge not embedded::Expected $BRIDGE. The <NativeReference> to MeltdownLiveActivityBridge.framework did not embed — check MMLiveActivityArtifacts and that generate.sh --build produced the device framework."
+            echo "Frameworks dir:"; ls -la "$APP/Frameworks" 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
+          if [ ! -d "$APPEX" ]; then
+            echo "::error title=Live Activity widget not embedded::Expected $APPEX. AdditionalAppExtensions did not copy the widget .appex into PlugIns/ — check the item metadata and MMLiveActivityArtifacts."
+            echo "PlugIns dir:"; ls -la "$APP/PlugIns" 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
+          echo "Live Activity bridge framework + widget .appex embedded:"
+          echo "  $BRIDGE"
+          echo "  $APPEX"
 
   testflight:
     name: Archive & upload to TestFlight
