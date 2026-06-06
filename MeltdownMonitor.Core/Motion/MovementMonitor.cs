@@ -42,9 +42,18 @@ public class MovementMonitor
 	private readonly Queue<(DateTimeOffset Time, double Magnitude)> _window = new();
 	private double _sum;
 	private double _sumSquares;
+	private DateTimeOffset? _lastStrapTime;
 
 	/// <summary>Rolling window length over which intensity is computed.</summary>
 	public TimeSpan Window { get; set; } = TimeSpan.FromSeconds(5);
+
+	/// <summary>
+	/// How recently a strap sample must have arrived for device-IMU samples to be ignored. The
+	/// strap sits on the torso and tracks the body directly, so when both sources feed (e.g. a Polar
+	/// strap plus the phone IMU fallback running together), the strap wins and the coarser device
+	/// IMU is suppressed until the strap goes quiet for this long.
+	/// </summary>
+	public TimeSpan StrapPreferenceWindow { get; set; } = TimeSpan.FromSeconds(3);
 
 	/// <summary>Dynamic-acceleration RMS (g) at/above which movement counts as <see cref="MovementLevel.Light"/>.</summary>
 	public double LightThresholdG { get; set; } = 0.02;
@@ -70,6 +79,16 @@ public class MovementMonitor
 	/// <summary>Adds an accelerometer sample and refreshes <see cref="IntensityG"/> / <see cref="Level"/>.</summary>
 	public void Add(MotionSample sample)
 	{
+		if (sample.Source == MotionSourceKind.PolarStrap)
+		{
+			_lastStrapTime = sample.Timestamp;
+		}
+		else if (_lastStrapTime is { } strap && (sample.Timestamp - strap) < StrapPreferenceWindow)
+		{
+			// A strap is actively feeding; ignore the coarser device-IMU fallback sample.
+			return;
+		}
+
 		LatestSource = sample.Source;
 		double magnitude = sample.Magnitude;
 
@@ -128,6 +147,7 @@ public class MovementMonitor
 		_window.Clear();
 		_sum = 0;
 		_sumSquares = 0;
+		_lastStrapTime = null;
 		IntensityG = 0;
 		Level = MovementLevel.Unknown;
 		LatestSource = null;

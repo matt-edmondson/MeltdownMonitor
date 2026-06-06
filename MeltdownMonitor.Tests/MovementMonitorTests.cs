@@ -105,6 +105,36 @@ public class MovementMonitorTests
 	}
 
 	[TestMethod]
+	public void StrapSamplesSuppressDeviceImuWhileActive()
+	{
+		var monitor = new MovementMonitor();
+		// Strap reports vigorous movement...
+		for (int i = 0; i < 10; i++)
+		{
+			double m = (i % 2 == 0) ? 1.0 : 1.7;
+			monitor.Add(new MotionSample(Start.AddSeconds(i * 0.1), 0, 0, m, MotionSourceKind.PolarStrap));
+		}
+
+		// ...while the phone IMU (on a desk) simultaneously reports stillness. The strap wins.
+		for (int i = 0; i < 10; i++)
+		{
+			monitor.Add(new MotionSample(Start.AddSeconds(1.0 + (i * 0.1)), 0, 0, 1.0, MotionSourceKind.DeviceImu));
+		}
+
+		Assert.AreEqual(MovementLevel.Vigorous, monitor.Level);
+		Assert.AreEqual(MotionSourceKind.PolarStrap, monitor.LatestSource);
+	}
+
+	[TestMethod]
+	public void DeviceImuUsedWhenNoStrap()
+	{
+		var monitor = new MovementMonitor();
+		Feed(monitor, Alternating(1.00, 1.30, 20), source: MotionSourceKind.DeviceImu);
+		Assert.AreEqual(MovementLevel.Moderate, monitor.Level);
+		Assert.AreEqual(MotionSourceKind.DeviceImu, monitor.LatestSource);
+	}
+
+	[TestMethod]
 	public void TracksLatestSourceAndReset()
 	{
 		var monitor = new MovementMonitor();

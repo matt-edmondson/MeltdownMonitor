@@ -16,6 +16,14 @@ public sealed class MobileSettings
 
 	public HeartRateDeviceType DeviceType { get; set; } = HeartRateDeviceType.Auto;
 
+	/// <summary>
+	/// When true, corroborate detection with motion: stream the Polar strap accelerometer (PMD) when
+	/// available, otherwise fall back to the device IMU, and use the movement level to defer alerts and
+	/// freeze the baseline during exertion. Exercise mimics the dysregulation signature, so this
+	/// suppresses that false positive. Default off.
+	/// </summary>
+	public bool EnableMotionCorroboration { get; set; }
+
 	/// <summary>When set, monitoring is paused until this UTC time.</summary>
 	public DateTimeOffset? PausedUntil { get; set; }
 
