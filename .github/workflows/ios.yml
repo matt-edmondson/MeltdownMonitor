@@ -25,9 +25,13 @@ on:
       - '.github/workflows/ios.yml'
   workflow_dispatch:
 
+# cancel-in-progress is false so a new push never aborts an in-flight
+# TestFlight upload (an interrupted altool run can leave a half-delivered
+# build in App Store Connect). PR build-test runs aren't cancelled either —
+# a small extra runner cost in exchange for never killing a release upload.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
