@@ -1337,6 +1337,30 @@ public sealed class StatusWindow : IDisposable
 			HelpMarker("How much LF/HF must rise to corroborate a Warning. Lower = easier to corroborate; higher = stricter.");
 		}
 
+		// ── Motion corroboration ────────────────────────────────────────
+		ImGui.SeparatorText("Motion corroboration (optional)");
+
+		bool enableMotion = _settings.EnableMotionCorroboration;
+		if (ImGui.Checkbox("Use Polar strap motion to corroborate (applies on next start)", ref enableMotion))
+		{
+			_settings.EnableMotionCorroboration = enableMotion;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Streams the Polar strap accelerometer and defers alerts / freezes the baseline while you're moving, so exercise isn't mistaken for dysregulation. No effect on non-Polar sensors. Takes effect when monitoring next starts.");
+
+		using (new ScopedDisable(!enableMotion))
+		{
+			bool useGate = t.UseMovementGating;
+			if (ImGui.Checkbox("Gate detection on movement", ref useGate))
+			{
+				t = t with { UseMovementGating = useGate };
+				_settingsDirty = true;
+			}
+			ImGui.SameLine();
+			HelpMarker("When on, movement at or above the chosen level defers Warning/Alerting and freezes the baseline. When off, motion is streamed but never gates.");
+		}
+
 		_settings.Thresholds = t;
 
 		// ── Baseline seeding ─────────────────────────────────────────────

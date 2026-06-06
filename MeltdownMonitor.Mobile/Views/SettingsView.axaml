@@ -16,6 +16,14 @@
             </StackPanel>
 
             <StackPanel Spacing="6">
+                <TextBlock Text="Detection" FontWeight="SemiBold" />
+                <CheckBox Content="Use motion to corroborate detection"
+                          IsChecked="{Binding EnableMotionCorroboration, Mode=TwoWay}" />
+                <TextBlock Text="Defers alerts and pauses baseline learning while you're moving, so exercise isn't mistaken for dysregulation. Uses the Polar strap accelerometer when available, otherwise the phone's motion sensor. Applies on next start."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
                 <TextBlock Text="Alerts" FontWeight="SemiBold" />
                 <CheckBox Content="Sound chime when alerting"
                           IsChecked="{Binding EnableChime, Mode=TwoWay}" />

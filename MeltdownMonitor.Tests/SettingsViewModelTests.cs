@@ -7,6 +7,21 @@ namespace MeltdownMonitor.Tests;
 public class SettingsViewModelTests
 {
 	[TestMethod]
+	public void EnableMotionCorroboration_RoundTripsAndPersistsOnlyOnChange()
+	{
+		var settings = new MobileSettings { EnableMotionCorroboration = false };
+		int saves = 0;
+		var vm = new SettingsViewModel(settings, onChanged: () => saves++);
+
+		vm.EnableMotionCorroboration = false; // unchanged → no persist
+		Assert.AreEqual(0, saves);
+
+		vm.EnableMotionCorroboration = true; // changed → persists onto settings
+		Assert.IsTrue(settings.EnableMotionCorroboration);
+		Assert.AreEqual(1, saves);
+	}
+
+	[TestMethod]
 	public void RegulationTrailLength_RoundTripsOntoSettings()
 	{
 		var settings = new MobileSettings();
