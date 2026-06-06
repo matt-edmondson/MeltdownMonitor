@@ -6,15 +6,23 @@
              x:Class="MeltdownMonitor.Mobile.Views.NowView"
              x:DataType="vm:NowViewModel">
     <Grid>
-        <Grid RowDefinitions="*,Auto,Auto,Auto,Auto" Margin="20">
+        <!-- Card / pill / metrics group sits at the top; a flexible spacer
+             absorbs the remaining height so the field card sizes to its
+             content (no ballooning + dead band) and the action buttons settle
+             at the bottom of the screen regardless of phone height. -->
+        <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" Margin="20">
 
             <Border Grid.Row="0"
                     CornerRadius="12"
                     Background="#101418"
                     Padding="12">
-                <Grid RowDefinitions="*,Auto,Auto">
+                <Grid RowDefinitions="Auto,Auto,Auto">
+                    <!-- The figure-8 is size-capped relative to its width, so a tall
+                         star-sized slot just pads it with dead space. A definite,
+                         phone-tuned height keeps the lobes filling the card with the
+                         axis histograms and caption tucked right beneath them. -->
                     <ctl:RegulationField Grid.Row="0"
-                                         MinHeight="200"
+                                         Height="280"
                                          Reading="{Binding Reading}"
                                          Trail="{Binding RegulationTrail}"
                                          HeartRate="{Binding HeartRate}"
@@ -159,7 +167,7 @@
                            HorizontalAlignment="Center" />
             </StackPanel>
 
-            <Button Grid.Row="3"
+            <Button Grid.Row="4"
                     Margin="0,16,0,0"
                     HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Center"
@@ -167,7 +175,7 @@
                     Content="How are you feeling?"
                     Command="{Binding OpenAnnotationCommand}" />
 
-            <Button Grid.Row="4"
+            <Button Grid.Row="5"
                     Margin="0,8,0,0"
                     HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Center"
