@@ -90,13 +90,13 @@
   <ItemGroup Condition="Exists('$(_MMWidgetAppex)')">
     <!-- Supported .NET-for-iOS mechanism for embedding a prebuilt native app
          extension: copies it into the app bundle's PlugIns/ and signs it with the
-         app. BuildOutput is appended to Include to locate the .appex, which lets
-         the same entry serve simulator and device builds (here MMLiveActivityArtifacts
-         already encodes the SDK). The widget needs no entitlements, so silence the
-         no-entitlements warning. -->
+         app. The target resolves the .appex as Include/BuildOutput/<Name>.appex,
+         so since the .appex sits directly in MMLiveActivityArtifacts (which already
+         encodes the SDK), BuildOutput is empty. The widget needs no entitlements,
+         so silence the no-entitlements warning. -->
     <AdditionalAppExtensions Include="$(MMLiveActivityArtifacts)">
       <Name>MeltdownMonitorWidgetExtension</Name>
-      <BuildOutput>MeltdownMonitorWidgetExtension.appex</BuildOutput>
+      <BuildOutput></BuildOutput>
       <CodesignWarnIfNoEntitlements>false</CodesignWarnIfNoEntitlements>
     </AdditionalAppExtensions>
   </ItemGroup>
