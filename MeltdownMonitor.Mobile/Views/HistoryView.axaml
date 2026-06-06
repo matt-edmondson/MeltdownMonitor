@@ -22,11 +22,18 @@
                        VerticalAlignment="Center"
                        IsVisible="{Binding IsEmpty}" />
 
+            <TextBlock Text="Loading…"
+                       Foreground="#8A8F98"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       IsVisible="{Binding IsLoading}" />
+
             <TextBlock Text="{Binding Error}"
                        Foreground="#E04A3F"
                        HorizontalAlignment="Center"
                        VerticalAlignment="Center"
-                       TextWrapping="Wrap" />
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding Error, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
             <ListBox ItemsSource="{Binding Events}">
                 <ListBox.ItemTemplate>

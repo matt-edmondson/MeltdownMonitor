@@ -189,7 +189,29 @@
              optional note. Tapping a label records it and dismisses. -->
         <Border Background="#CC000000"
                 IsVisible="{Binding IsAnnotationSheetOpen}">
-            <Border VerticalAlignment="Bottom"
+            <Panel>
+                <!-- Tap the dimmed scrim outside the sheet to dismiss it — the
+                     standard bottom-sheet gesture. The sheet Border below is opaque
+                     and sits on top, so taps on it don't reach this catcher. The
+                     pointer-state setters keep the catcher fully transparent (no
+                     button chrome flashing over the scrim on tap). -->
+                <Button Command="{Binding CancelAnnotationCommand}"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        CornerRadius="0">
+                    <Button.Styles>
+                        <Style Selector="Button:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+                            <Setter Property="Background" Value="Transparent" />
+                        </Style>
+                        <Style Selector="Button:pressed /template/ ContentPresenter#PART_ContentPresenter">
+                            <Setter Property="Background" Value="Transparent" />
+                        </Style>
+                    </Button.Styles>
+                </Button>
+
+                <Border VerticalAlignment="Bottom"
                     Background="#1A1F25"
                     CornerRadius="16,16,0,0"
                     Padding="20,24">
@@ -227,7 +249,8 @@
                             HorizontalAlignment="Center"
                             Command="{Binding CancelAnnotationCommand}" />
                 </StackPanel>
-            </Border>
+                </Border>
+            </Panel>
         </Border>
     </Grid>
 </UserControl>
