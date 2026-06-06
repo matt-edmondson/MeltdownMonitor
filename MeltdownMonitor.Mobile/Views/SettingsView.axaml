@@ -37,8 +37,8 @@
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
             </StackPanel>
 
-            <StackPanel Spacing="6">
-                <TextBlock Text="Regulation field" FontWeight="SemiBold" />
+            <Expander Header="Regulation field" HorizontalAlignment="Stretch">
+              <StackPanel Spacing="6">
                 <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Grid.Column="0" Text="Comet trail length" />
                     <TextBlock Grid.Column="1"
@@ -219,7 +219,8 @@
                           IsChecked="{Binding MarkerHaloAdditive, Mode=TwoWay}" />
                 <CheckBox Content="Histogram glows additively"
                           IsChecked="{Binding HistogramAdditive, Mode=TwoWay}" />
-            </StackPanel>
+              </StackPanel>
+            </Expander>
 
             <StackPanel Spacing="6">
                 <TextBlock Text="Refresh" FontWeight="SemiBold" />
@@ -245,8 +246,8 @@
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
             </StackPanel>
 
-            <StackPanel Spacing="6">
-                <TextBlock Text="Sensitivity" FontWeight="SemiBold" />
+            <Expander Header="Sensitivity" HorizontalAlignment="Stretch">
+              <StackPanel Spacing="6">
                 <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Grid.Column="0" Text="RMSSD drop to warn" />
                     <TextBlock Grid.Column="1"
@@ -306,7 +307,8 @@
                         Value="{Binding CooldownMinutes, Mode=TwoWay}" />
                 <TextBlock Text="Quiet period after an alert before another can fire. Default 10 min."
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
-            </StackPanel>
+              </StackPanel>
+            </Expander>
 
             <StackPanel Spacing="6">
                 <TextBlock Text="Pause" FontWeight="SemiBold" />

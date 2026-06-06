@@ -4,7 +4,10 @@
              xmlns:views="clr-namespace:MeltdownMonitor.Mobile.Views"
              x:Class="MeltdownMonitor.Mobile.Views.RootView"
              x:DataType="vm:RootViewModel">
-    <Grid>
+    <!-- RootLayout is inset by the device safe area (notch / Dynamic Island / home
+         indicator) in code-behind so the app can draw edge-to-edge without occluding
+         the tab bar or top content. -->
+    <Grid x:Name="RootLayout">
         <Panel IsVisible="{Binding IsDisclaimerPending}">
             <views:DisclaimerView DataContext="{Binding Disclaimer}" />
         </Panel>
