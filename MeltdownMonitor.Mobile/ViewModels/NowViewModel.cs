@@ -43,6 +43,8 @@ public sealed class NowViewModel : ViewModelBase
 	private readonly Func<int>? _indexBucketsProvider;
 	private readonly Func<int>? _vagalBucketsProvider;
 	private readonly Func<int>? _lobeSegmentsProvider;
+	private readonly Func<double>? _recoveryArrowSpeedProvider;
+	private readonly Func<int>? _recoveryArrowCountProvider;
 	private readonly Func<double>? _lobeOpacityProvider;
 	private readonly Func<double>? _trailOpacityProvider;
 	private readonly Func<double>? _histogramOpacityProvider;
@@ -84,6 +86,8 @@ public sealed class NowViewModel : ViewModelBase
 	private int _indexBuckets = 24;
 	private int _vagalBuckets = 16;
 	private int _lobeSegments = LemniscateGeometry.DefaultSegments;
+	private double _recoveryArrowSpeed = 0.7;
+	private int _recoveryArrowCount = 3;
 	private double _lobeOpacity = 0.60;
 	private double _trailOpacity = 0.70;
 	private double _histogramOpacity = 0.60;
@@ -109,6 +113,8 @@ public sealed class NowViewModel : ViewModelBase
 		Func<int>? indexBucketsProvider = null,
 		Func<int>? vagalBucketsProvider = null,
 		Func<int>? lobeSegmentsProvider = null,
+		Func<double>? recoveryArrowSpeedProvider = null,
+		Func<int>? recoveryArrowCountProvider = null,
 		Func<int>? heatmapLengthProvider = null,
 		Func<double>? lobeOpacityProvider = null,
 		Func<double>? trailOpacityProvider = null,
@@ -135,6 +141,8 @@ public sealed class NowViewModel : ViewModelBase
 		_indexBucketsProvider = indexBucketsProvider;
 		_vagalBucketsProvider = vagalBucketsProvider;
 		_lobeSegmentsProvider = lobeSegmentsProvider;
+		_recoveryArrowSpeedProvider = recoveryArrowSpeedProvider;
+		_recoveryArrowCountProvider = recoveryArrowCountProvider;
 		_lobeOpacityProvider = lobeOpacityProvider;
 		_trailOpacityProvider = trailOpacityProvider;
 		_histogramOpacityProvider = histogramOpacityProvider;
@@ -314,6 +322,24 @@ public sealed class NowViewModel : ViewModelBase
 	{
 		get => _lobeSegments;
 		private set => SetField(ref _lobeSegments, value);
+	}
+
+	/// <summary>Configured loop rate of the recovery arrows — how fast they pulse inward toward the
+	/// centre (clamped 0.1–3.0). Refreshed on each reading so a setting change applies live. Bound by
+	/// the control's <c>RecoveryArrowSpeed</c> styled property.</summary>
+	public double RecoveryArrowSpeed
+	{
+		get => _recoveryArrowSpeed;
+		private set => SetField(ref _recoveryArrowSpeed, value);
+	}
+
+	/// <summary>Configured number of recovery arrows in the inward-pulling train (clamped 1–6).
+	/// Refreshed on each reading so a setting change applies live. Bound by the control's
+	/// <c>RecoveryArrowCount</c> styled property.</summary>
+	public int RecoveryArrowCount
+	{
+		get => _recoveryArrowCount;
+		private set => SetField(ref _recoveryArrowCount, value);
 	}
 
 	/// <summary>Configured opacity of the live-trace lobes (0–1, additive). Refreshed on each
@@ -837,6 +863,8 @@ public sealed class NowViewModel : ViewModelBase
 		LobeSegments = Math.Clamp(
 			_lobeSegmentsProvider?.Invoke() ?? LemniscateGeometry.DefaultSegments,
 			LemniscateGeometry.MinSegments, LemniscateGeometry.MaxSegments);
+		RecoveryArrowSpeed = Math.Clamp(_recoveryArrowSpeedProvider?.Invoke() ?? 0.7, 0.1, 3.0);
+		RecoveryArrowCount = Math.Clamp(_recoveryArrowCountProvider?.Invoke() ?? 3, 1, 6);
 		LobeOpacity = Math.Clamp(_lobeOpacityProvider?.Invoke() ?? 0.60, 0.0, 1.0);
 		TrailOpacity = Math.Clamp(_trailOpacityProvider?.Invoke() ?? 0.70, 0.0, 1.0);
 		HistogramOpacity = Math.Clamp(_histogramOpacityProvider?.Invoke() ?? 0.60, 0.0, 1.0);

@@ -119,6 +119,14 @@ public sealed class Pipeline : IDisposable
 	/// and heatmap rows (clamped 6–64), read live by the field view.</summary>
 	public int FieldVagalBuckets => Math.Clamp(_settings.FieldVagalBuckets, 6, 64);
 
+	/// <summary>Configured loop rate of the Regulation Field recovery arrows — how fast they slide
+	/// inward toward the centre (clamped 0.1–3.0), read live by the field view.</summary>
+	public double RecoveryArrowSpeed => Math.Clamp(_settings.RecoveryArrowSpeed, 0.1, 3.0);
+
+	/// <summary>Configured number of Regulation Field recovery arrows in the inward train
+	/// (clamped 1–6), read live by the field view.</summary>
+	public int RecoveryArrowCount => Math.Clamp(_settings.RecoveryArrowCount, 1, 6);
+
 	/// <summary>Whether the LF/HF balance halo blends additively (glow) vs alpha-over, read live by the field view.</summary>
 	public bool LfHfHaloAdditive => _settings.LfHfHaloAdditive;
 

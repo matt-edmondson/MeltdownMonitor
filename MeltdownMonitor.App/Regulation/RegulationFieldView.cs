@@ -809,12 +809,13 @@ public sealed class RegulationFieldView : IDisposable
 		float arrowW = MathF.Max(5f, 7f * _drawScale);
 		float arrowH = MathF.Max(4f, 5f * _drawScale);
 		Vector4 stateHue = MacchiatoPalette.State(_pipeline.CurrentState);
-		const int count = 3;
+		int count = _pipeline.RecoveryArrowCount;
+		float speed = (float)_pipeline.RecoveryArrowSpeed;
 		for (int i = 0; i < count; i++)
 		{
 			// Looping progress 0→1 from boundary to centre, staggered so the arrows form a flowing
 			// inward train rather than moving in lockstep.
-			float t = (_animTime * 0.7f) + (i / (float)count);
+			float t = (_animTime * speed) + (i / (float)count);
 			t -= MathF.Floor(t);
 			float x = warnX - (span * t);
 			// Fade in at the boundary, peak mid-travel, fade out at the centre → a smooth inward pulse.

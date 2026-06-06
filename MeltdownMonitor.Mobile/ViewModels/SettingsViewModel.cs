@@ -277,6 +277,36 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	public double RecoveryArrowSpeed
+	{
+		get => _settings.RecoveryArrowSpeed;
+		set
+		{
+			double clamped = Math.Clamp(value, 0.1, 3.0);
+			if (Math.Abs(_settings.RecoveryArrowSpeed - clamped) > 1e-6)
+			{
+				_settings.RecoveryArrowSpeed = clamped;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	public int RecoveryArrowCount
+	{
+		get => _settings.RecoveryArrowCount;
+		set
+		{
+			int clamped = Math.Clamp(value, 1, 6);
+			if (_settings.RecoveryArrowCount != clamped)
+			{
+				_settings.RecoveryArrowCount = clamped;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	public double RmssdAlertingDropPercent
 	{
 		get => _settings.Thresholds.RmssdAlertingDropFraction * 100;

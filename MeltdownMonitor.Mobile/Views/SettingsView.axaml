@@ -103,6 +103,27 @@
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
 
                 <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Recovery arrow speed" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding RecoveryArrowSpeed, StringFormat='{}{0:F1}x'}" />
+                </Grid>
+                <Slider Minimum="0.1" Maximum="3"
+                        Value="{Binding RecoveryArrowSpeed, Mode=TwoWay}" />
+                <TextBlock Text="How fast the recovery arrows pulse inward toward the centre during a Warning/Alert. 0.7x is the default; lower drifts in slowly, higher pulses in faster."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Recovery arrows" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding RecoveryArrowCount, StringFormat='{}{0}'}" />
+                </Grid>
+                <Slider Minimum="1" Maximum="6"
+                        TickFrequency="1" IsSnapToTickEnabled="True"
+                        Value="{Binding RecoveryArrowCount, Mode=TwoWay}" />
+                <TextBlock Text="How many arrows ride the inward-pulling recovery train. Default 3."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+
+                <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Grid.Column="0" Text="Lobe opacity" />
                     <TextBlock Grid.Column="1"
                                Text="{Binding LobeOpacityPercent, StringFormat='{}{0:F0}%'}" />

@@ -467,6 +467,40 @@ public class NowViewModelTests
 	}
 
 	[TestMethod]
+	public void RecoveryArrowKnobs_FlowFromProviders()
+	{
+		var vm = new NowViewModel(recoveryArrowSpeedProvider: () => 1.6, recoveryArrowCountProvider: () => 5);
+		vm.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+
+		Assert.AreEqual(1.6, vm.RecoveryArrowSpeed, 1e-9);
+		Assert.AreEqual(5, vm.RecoveryArrowCount);
+	}
+
+	[TestMethod]
+	public void RecoveryArrowKnobs_NullProviders_DefaultToTunedValues()
+	{
+		var vm = new NowViewModel();
+		vm.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+
+		Assert.AreEqual(0.7, vm.RecoveryArrowSpeed, 1e-9);
+		Assert.AreEqual(3, vm.RecoveryArrowCount);
+	}
+
+	[TestMethod]
+	public void RecoveryArrowKnobs_ClampProvidersToValidRange()
+	{
+		var low = new NowViewModel(recoveryArrowSpeedProvider: () => 0.0, recoveryArrowCountProvider: () => 0);
+		low.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+		Assert.AreEqual(0.1, low.RecoveryArrowSpeed, 1e-9, "speed below-floor clamps to 0.1");
+		Assert.AreEqual(1, low.RecoveryArrowCount, "count below-floor clamps to 1");
+
+		var high = new NowViewModel(recoveryArrowSpeedProvider: () => 99.0, recoveryArrowCountProvider: () => 99);
+		high.OnReadingUpdated(new RegulationReading(0.0, 1.0, 1.0, 0.5, 0.0));
+		Assert.AreEqual(3.0, high.RecoveryArrowSpeed, 1e-9, "speed above-ceiling clamps to 3");
+		Assert.AreEqual(6, high.RecoveryArrowCount, "count above-ceiling clamps to 6");
+	}
+
+	[TestMethod]
 	public void OnSampleUpdated_RecordsOneTimestampPerValue()
 	{
 		var vm = new NowViewModel();
