@@ -509,6 +509,7 @@ public sealed class RegulationField : Control
 		DrawTrail(context, centreV, halfWidth, markerYClamp, confidence);
 		DrawRecoveryTarget(context, centreV, halfWidth, liveLobeHeight, confidence);
 		DrawMarker(context, centreV, halfWidth, markerYClamp, confidence);
+		DrawOffscreenIndicator(context, centreV, w, h, halfWidth, markerYClamp, confidence);
 
 		// Crossover node at the centre of the figure-8.
 		context.DrawEllipse(Brush(Lavender, confidence), null, centre, 6, 6);
@@ -1260,6 +1261,62 @@ public sealed class RegulationField : Control
 		context.DrawEllipse(Brush(StateColor, confidence), null, at, 6, 6);              // core
 		context.DrawEllipse(Brush(Base, confidence), null, at, 2.5, 2.5);                // pupil
 		DrawVelocityArrow(context, at, confidence);
+	}
+
+	// When the live marker rides off the field (severe states push the arousal index past the
+	// panel edge), pin a pulsing triangle to the nearest edge pointing the way the marker went, so
+	// the user can tell where it has gone. Mirrors the desktop DrawOffscreenIndicator: the triangle
+	// sits at the marker's height on the edge it left through and pulses on a steady attention
+	// cadence (independent of HR), taking the confirmed-state colour like the marker itself.
+	private void DrawOffscreenIndicator(DrawingContext context, Vector2 centre, double w, double h, float halfWidth, float markerYClamp, double confidence)
+	{
+		Vector2 p = LemniscateGeometry.MarkerPoint((float)_animator.MarkerPos, centre, halfWidth);
+		p.Y += RegulationFieldGeometry.VagalToneOffsetY(Reading.VagalTone, markerYClamp);
+
+		if (p.X >= 0 && p.X <= w && p.Y >= 0 && p.Y <= h)
+		{
+			return; // marker is on-panel — nothing to point at
+		}
+
+		// Clamp to an inset edge so the whole triangle stays on-panel; aim it from there at the marker.
+		const double m = 12.0;
+		double ex = Math.Clamp(p.X, m, w - m);
+		double ey = Math.Clamp(p.Y, m, h - m);
+		double dx = p.X - ex;
+		double dy = p.Y - ey;
+		double dist = Math.Sqrt((dx * dx) + (dy * dy));
+		if (dist < 1e-3)
+		{
+			return;
+		}
+
+		double dirX = dx / dist;
+		double dirY = dy / dist;
+		double perpX = -dirY;
+		double perpY = dirX;
+
+		double pulse = 0.5 + (0.5 * Math.Sin(_animator.AnimTime * 2.4));
+		double size = 10.0 + (4.0 * pulse);
+		double alpha = (0.45 + (0.45 * pulse)) * confidence;
+
+		var tip = new Point(ex + (dirX * size), ey + (dirY * size));
+		var b1 = new Point(
+			ex - (dirX * size * 0.4) + (perpX * size * 0.7),
+			ey - (dirY * size * 0.4) + (perpY * size * 0.7));
+		var b2 = new Point(
+			ex - (dirX * size * 0.4) - (perpX * size * 0.7),
+			ey - (dirY * size * 0.4) - (perpY * size * 0.7));
+
+		var geo = new StreamGeometry();
+		using (var g = geo.Open())
+		{
+			g.BeginFigure(tip, isFilled: true);
+			g.LineTo(b1);
+			g.LineTo(b2);
+			g.EndFigure(isClosed: true);
+		}
+
+		context.DrawGeometry(Brush(StateColor, alpha), null, geo);
 	}
 
 	private void DrawVelocityArrow(DrawingContext context, Point markerAt, double confidence)
