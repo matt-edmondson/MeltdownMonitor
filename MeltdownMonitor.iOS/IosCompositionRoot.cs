@@ -1,5 +1,6 @@
 using Avalonia.Threading;
 using Foundation;
+using HealthKit;
 using MeltdownMonitor.Ble.Apple;
 using MeltdownMonitor.Core.Diagnostics;
 using MeltdownMonitor.Core.Persistence;
@@ -22,6 +23,7 @@ public static class IosCompositionRoot
 	private static MobileAlertDispatcher? _alertDispatcher;
 	private static LiveActivityPublisher? _liveActivity;
 	private static HealthKitEpisodeRecorder? _episodeRecorder;
+	private static HealthDataRecorder? _healthRecorder;
 	private static NotificationDispatcher? _notifications;
 	private static HealthKitStore? _healthStore;
 	private static NSUserDefaultsSettingsStore? _store;
@@ -148,9 +150,39 @@ public static class IosCompositionRoot
 			requestNotifications: () => _notifications.RequestAuthorizationAsync(),
 			requestHealthKit: () => _healthStore.RequestAuthorizationAsync(),
 			exportDatabase: () => exporter.ExportAsync(DatabasePath()),
+			onChanged: () => _store.Save(settings),
+			revokeHealthAccess: RevokeHealthAsync);
+
+		// Unintrusive one-shot prompt to enable Health recording. Enabling asks for the
+		// same HealthKit authorization as the Settings button, then flips the opt-ins on.
+		var healthPrompt = new HealthPromptViewModel(
+			settings,
+			requestAuthorization: () => _healthStore.RequestAuthorizationAsync(),
+			isAvailable: () => HKHealthStore.IsHealthDataAvailable,
 			onChanged: () => _store.Save(settings));
 
-		return new RootViewModel(settings, _now, _history, settingsTab, _metrics, _store);
+		return new RootViewModel(settings, _now, _history, settingsTab, _metrics, _store, healthPrompt);
+	}
+
+	/// <summary>
+	/// Platform half of "revoke health access". HealthKit does not let an app revoke its
+	/// own authorization (only the user can, in the Health app), so we deep-link into
+	/// Health; the in-app flags have already been cleared by the view model, which stops
+	/// all reading and writing immediately.
+	/// </summary>
+	private static Task RevokeHealthAsync()
+	{
+		try
+		{
+			var url = new NSUrl("x-apple-health://");
+			UIKit.UIApplication.SharedApplication.OpenUrl(url, new UIKit.UIApplicationOpenUrlOptions(), null);
+		}
+		catch
+		{
+			// Opening Health is best-effort; the in-app revoke has already taken effect.
+		}
+
+		return Task.CompletedTask;
 	}
 
 	/// <summary>
@@ -180,14 +212,19 @@ public static class IosCompositionRoot
 		var pipeline = new Pipeline(settings, repository, _source);
 
 		// Warm-start must precede Start (the existing contract). Best-effort —
-		// no HealthKit auth just means a cold baseline, not a failure.
-		await pipeline.WarmStartAsync(_healthStore, TimeSpan.FromHours(24)).ConfigureAwait(false);
+		// no HealthKit auth just means a cold baseline, not a failure. Reading is gated on
+		// the recording opt-in so revoking access (or never enabling it) stops reads too.
+		await pipeline.WarmStartAsync(
+			settings.RecordToHealth ? _healthStore : null, TimeSpan.FromHours(24)).ConfigureAwait(false);
 		pipeline.Start();
 
 		AttachAlertDispatcher(pipeline, settings, new AudioChimePlayer());
 		if (_healthStore is not null)
 		{
 			_episodeRecorder = new HealthKitEpisodeRecorder(pipeline, settings, _healthStore);
+			// Streams downsampled HR, HRV (SDNN), and the raw beat-to-beat series to
+			// HealthKit while RecordToHealth is on (the recorder honours the flag live).
+			_healthRecorder = new HealthDataRecorder(pipeline, settings, _healthStore);
 		}
 
 		// Mirror state/HR/balance to the Lock Screen and Dynamic Island, throttled

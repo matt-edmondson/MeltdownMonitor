@@ -34,12 +34,27 @@ public static class HealthConnectPermissions
 	public const string WriteExercise = "android.permission.health.WRITE_EXERCISE";
 
 	/// <summary>
-	/// Every Health Connect permission the app uses. Requested together so the
-	/// user grants read and write on a single Health Connect screen; the write
-	/// grant simply sits unused until the user enables episode write-back (the
-	/// feature is gated independently by <c>WriteEpisodesToHealthKit</c>).
+	/// Write permission for <c>HeartRateRecord</c> — the opt-in continuous heart-rate
+	/// write-back (<c>RecordToHealth</c>). Declared in the manifest; granted through
+	/// Health Connect's UI.
 	/// </summary>
-	public static IReadOnlyList<string> All { get; } = [ReadHeartRate, WriteExercise];
+	public const string WriteHeartRate = "android.permission.health.WRITE_HEART_RATE";
+
+	/// <summary>
+	/// Write permission for <c>HeartRateVariabilityRmssdRecord</c> — the opt-in HRV
+	/// write-back (<c>RecordToHealth</c>). Declared in the manifest; granted through
+	/// Health Connect's UI.
+	/// </summary>
+	public const string WriteHeartRateVariability = "android.permission.health.WRITE_HEART_RATE_VARIABILITY";
+
+	/// <summary>
+	/// Every Health Connect permission the app uses. Requested together so the user
+	/// grants read and the writes on a single Health Connect screen; each write grant
+	/// sits unused until the user enables the matching opt-in
+	/// (<c>WriteEpisodesToHealthKit</c> / <c>RecordToHealth</c>).
+	/// </summary>
+	public static IReadOnlyList<string> All { get; } =
+		[ReadHeartRate, WriteExercise, WriteHeartRate, WriteHeartRateVariability];
 
 	/// <summary>
 	/// Installed by <see cref="MainActivity"/> while it is foregrounded; launches

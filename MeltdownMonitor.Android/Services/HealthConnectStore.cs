@@ -49,9 +49,18 @@ namespace MeltdownMonitor.Android.Services;
 /// workout. It is best-effort: a missing write grant (the write permission is declared
 /// in the manifest but granted through Health Connect's UI, the Phase 4 follow-up) or
 /// an IPC fault surfaces as a Kotlin <c>Result.Failure</c> and is swallowed, never
-/// taking down monitoring. Per-beat HR write-back (<see cref="WriteHrSampleAsync"/>)
-/// stays an intentional no-op — the pipeline never calls it, and streaming every beat
-/// over IPC is not worth the chatter.
+/// taking down monitoring.
+/// </para>
+///
+/// <para>
+/// When the user opts into continuous recording (<c>RecordToHealth</c>, driven through
+/// <c>HealthDataRecorder</c>), <see cref="WriteHrSampleAsync"/> and
+/// <see cref="WriteHrvSampleAsync"/> persist downsampled heart rate and RMSSD as
+/// <c>HeartRateRecord</c> / <c>HeartRateVariabilityRmssdRecord</c>. Health Connect has no
+/// beat-to-beat record type, so <see cref="WriteHeartbeatSeriesAsync"/> stays a no-op
+/// (the iOS <c>HKHeartbeatSeries</c> has no analog here).
+/// <see cref="RevokeAuthorizationAsync"/> revokes the app's grants — something Health
+/// Connect permits but HealthKit does not.
 /// </para>
 /// </summary>
 public sealed class HealthConnectStore : IHealthStore
@@ -70,10 +79,31 @@ public sealed class HealthConnectStore : IHealthStore
 	// wedged provider must never hang launch — the suspend bridge is bounded by this.
 	private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(20);
 
+	// Health Connect rejects RMSSD outside this range (its documented valid bounds);
+	// a value outside it is skipped rather than clamped, so we never fabricate a reading.
+	private const double MinRmssdMs = 1.0;
+	private const double MaxRmssdMs = 200.0;
+
 	private readonly AndroidContext _context;
 
 	public HealthConnectStore(AndroidContext context) =>
 		_context = context ?? throw new ArgumentNullException(nameof(context));
+
+	/// <summary>
+	/// Whether Health Connect is installed and usable on this device — drives the
+	/// "record to Health Connect" prompt so it isn't offered where it can't succeed.
+	/// </summary>
+	public static bool IsAvailable(AndroidContext context)
+	{
+		try
+		{
+			return HealthConnectClient.GetSdkStatus(context) == HealthConnectClient.SdkAvailable;
+		}
+		catch (Java.Lang.Exception)
+		{
+			return false;
+		}
+	}
 
 	/// <summary>
 	/// Grants the heart-rate read permission by launching Health Connect's own permission
@@ -214,10 +244,96 @@ public sealed class HealthConnectStore : IHealthStore
 		while (!string.IsNullOrEmpty(pageToken) && ++pages < MaxPages);
 	}
 
-	// Per-beat HR write-back is an intentional no-op: nothing in the pipeline calls it
-	// (only WriteEpisodeAsync is wired, through HealthKitEpisodeRecorder), and streaming
-	// every beat over Health Connect IPC is not worth the chatter (design doc §5.3 / §8).
-	public Task WriteHrSampleAsync(HrSample sample) => Task.CompletedTask;
+	/// <summary>
+	/// Writes one downsampled heart-rate sample as a single-sample
+	/// <c>HeartRateRecord</c> (gated upstream by <c>HealthDataRecorder</c> on the
+	/// <c>RecordToHealth</c> flag, which downsamples to ~1/min so this isn't per-beat
+	/// chatter). Best-effort: a missing write grant or IPC fault is swallowed, the same
+	/// posture as the episode write.
+	/// </summary>
+	public async Task WriteHrSampleAsync(HrSample sample)
+	{
+		var client = TryGetClient();
+		if (client is null || sample.HeartRateBpm <= 0)
+		{
+			return;
+		}
+
+		try
+		{
+			var time = Instant.OfEpochMilli(sample.Timestamp.ToUnixTimeMilliseconds())!;
+			var beat = new HeartRateRecord.Sample(time, (long)Math.Round(sample.HeartRateBpm));
+			var samples = new List<HeartRateRecord.Sample> { beat };
+
+			// Positional: (startTime, startZoneOffset, endTime, endZoneOffset, samples, metadata).
+			// An instantaneous sample spans a single instant; null zone offsets are "unknown".
+			var record = new HeartRateRecord(time, null, time, null, samples, Metadata.ManualEntry());
+			var records = new List<IRecord> { record.JavaCast<IRecord>()! };
+			_ = await AwaitSuspendAsync(c => client!.InsertRecords(records, c)).ConfigureAwait(false);
+		}
+		catch (Java.Lang.Exception)
+		{
+			// Best-effort.
+		}
+	}
+
+	/// <summary>
+	/// Writes one HRV reading as a <c>HeartRateVariabilityRmssdRecord</c> — RMSSD is the
+	/// HRV metric Health Connect exposes (the iOS store writes SDNN instead). Values
+	/// outside Health Connect's valid RMSSD range are skipped rather than clamped.
+	/// Best-effort, like the HR write.
+	/// </summary>
+	public async Task WriteHrvSampleAsync(HealthHrvSample sample)
+	{
+		var client = TryGetClient();
+		if (client is null || sample.RmssdMs < MinRmssdMs || sample.RmssdMs > MaxRmssdMs)
+		{
+			return;
+		}
+
+		try
+		{
+			var time = Instant.OfEpochMilli(sample.Timestamp.ToUnixTimeMilliseconds())!;
+			// Positional: (time, zoneOffset, heartRateVariabilityMillis, metadata).
+			var record = new HeartRateVariabilityRmssdRecord(time, null, sample.RmssdMs, Metadata.ManualEntry());
+			var records = new List<IRecord> { record.JavaCast<IRecord>()! };
+			_ = await AwaitSuspendAsync(c => client!.InsertRecords(records, c)).ConfigureAwait(false);
+		}
+		catch (Java.Lang.Exception)
+		{
+			// Best-effort.
+		}
+	}
+
+	// Health Connect has no beat-to-beat / RR-interval record type (the iOS HKHeartbeatSeries
+	// has no analog), so the raw beat stream isn't written here — HR + RMSSD above are the
+	// closest honest mapping. Left an explicit no-op for discoverability (design doc §5.3 / §8).
+	public Task WriteHeartbeatSeriesAsync(IReadOnlyList<RrIntervalSample> beats) => Task.CompletedTask;
+
+	/// <summary>
+	/// Revokes every Health Connect grant the app holds (read + writes) through Health
+	/// Connect's programmatic revoke — the platform-level half of "revoke access" (the
+	/// in-app half is clearing the opt-in flags). Health Connect <em>does</em> allow an
+	/// app to revoke its own grants, unlike HealthKit. Best-effort and bounded by the
+	/// same suspend bridge as the reads.
+	/// </summary>
+	public async Task RevokeAuthorizationAsync()
+	{
+		var client = TryGetClient();
+		if (client is null)
+		{
+			return;
+		}
+
+		try
+		{
+			_ = await AwaitSuspendAsync(c => client!.PermissionController.RevokeAllPermissions(c)).ConfigureAwait(false);
+		}
+		catch (Java.Lang.Exception)
+		{
+			// Best-effort.
+		}
+	}
 
 	/// <summary>
 	/// Records a dysregulation episode as a Health Connect <c>ExerciseSessionRecord</c>

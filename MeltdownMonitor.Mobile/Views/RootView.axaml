@@ -9,20 +9,49 @@
             <views:DisclaimerView DataContext="{Binding Disclaimer}" />
         </Panel>
 
-        <TabControl TabStripPlacement="Bottom"
-                    IsVisible="{Binding IsDisclaimerAccepted}">
-            <TabItem Header="Now">
-                <views:NowView DataContext="{Binding Now}" />
-            </TabItem>
-            <TabItem Header="Metrics">
-                <views:MetricsView DataContext="{Binding Metrics}" />
-            </TabItem>
-            <TabItem Header="History">
-                <views:HistoryView DataContext="{Binding History}" />
-            </TabItem>
-            <TabItem Header="Settings">
-                <views:SettingsView DataContext="{Binding Settings}" />
-            </TabItem>
-        </TabControl>
+        <DockPanel IsVisible="{Binding IsDisclaimerAccepted}">
+
+            <!-- Unintrusive, dismissible prompt to enable Apple Health / Health Connect
+                 recording. Collapses once answered (enabled or dismissed). -->
+            <Border DockPanel.Dock="Top"
+                    IsVisible="{Binding HealthPrompt.IsVisible}"
+                    Background="#1E2A38"
+                    BorderBrush="#2F4054"
+                    BorderThickness="0,0,0,1"
+                    Padding="16,12">
+                <Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
+                               Text="{Binding HealthPrompt.Title}"
+                               FontWeight="SemiBold" />
+                    <TextBlock Grid.Row="1" Grid.Column="0"
+                               Text="{Binding HealthPrompt.Body}"
+                               FontSize="12" Foreground="#A8B0BA"
+                               TextWrapping="Wrap" VerticalAlignment="Center" />
+                    <Button Grid.Row="1" Grid.Column="1"
+                            Content="Not now"
+                            VerticalAlignment="Center"
+                            Command="{Binding HealthPrompt.DismissCommand}" />
+                    <Button Grid.Row="1" Grid.Column="2"
+                            Content="Enable"
+                            VerticalAlignment="Center"
+                            Command="{Binding HealthPrompt.EnableCommand}" />
+                </Grid>
+            </Border>
+
+            <TabControl TabStripPlacement="Bottom">
+                <TabItem Header="Now">
+                    <views:NowView DataContext="{Binding Now}" />
+                </TabItem>
+                <TabItem Header="Metrics">
+                    <views:MetricsView DataContext="{Binding Metrics}" />
+                </TabItem>
+                <TabItem Header="History">
+                    <views:HistoryView DataContext="{Binding History}" />
+                </TabItem>
+                <TabItem Header="Settings">
+                    <views:SettingsView DataContext="{Binding Settings}" />
+                </TabItem>
+            </TabControl>
+        </DockPanel>
     </Grid>
 </UserControl>

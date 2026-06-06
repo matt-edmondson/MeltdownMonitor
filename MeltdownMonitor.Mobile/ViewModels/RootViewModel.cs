@@ -19,7 +19,8 @@ public sealed class RootViewModel : ViewModelBase
 		HistoryViewModel history,
 		SettingsViewModel settings_tab,
 		MetricsViewModel metrics,
-		IMobileSettingsStore? store = null)
+		IMobileSettingsStore? store = null,
+		HealthPromptViewModel? healthPrompt = null)
 	{
 		_settings = settings;
 		_store = store;
@@ -27,6 +28,8 @@ public sealed class RootViewModel : ViewModelBase
 		History = history;
 		Settings = settings_tab;
 		Metrics = metrics;
+		// A null prompt (design-time / desktop hosts) collapses to a never-shown banner.
+		HealthPrompt = healthPrompt ?? new HealthPromptViewModel(settings, isAvailable: () => false);
 		Disclaimer = new DisclaimerViewModel(AcceptDisclaimer);
 	}
 
@@ -35,6 +38,9 @@ public sealed class RootViewModel : ViewModelBase
 	public SettingsViewModel Settings { get; }
 	public MetricsViewModel Metrics { get; }
 	public DisclaimerViewModel Disclaimer { get; }
+
+	/// <summary>The one-shot, dismissible "record to Apple Health / Health Connect" prompt.</summary>
+	public HealthPromptViewModel HealthPrompt { get; }
 
 	/// <summary>
 	/// Raised once, on the UI thread, when the user accepts the first-run

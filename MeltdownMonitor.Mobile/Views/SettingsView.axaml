@@ -293,14 +293,22 @@
             </StackPanel>
 
             <StackPanel Spacing="6">
-                <TextBlock Text="HealthKit" FontWeight="SemiBold" />
-                <TextBlock Text="Optional — warms the baseline from past 24 h of HR."
+                <TextBlock Text="Apple Health" FontWeight="SemiBold" />
+                <TextBlock Text="Optional — warms the baseline from your past 24 h of heart rate, and saves your data so you own it and can share it with a clinician."
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
-                <Button Content="Request HealthKit access"
+                <Button Content="Connect Apple Health"
                         Command="{Binding RequestHealthKitCommand}" />
+                <CheckBox Content="Record heart rate, HRV &amp; beat-to-beat data"
+                          IsChecked="{Binding RecordToHealth, Mode=TwoWay}" />
+                <TextBlock Text="Writes downsampled heart rate, HRV, and the raw beat-to-beat series while monitoring."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
                 <CheckBox Content="Save episodes to Apple Health"
                           IsChecked="{Binding WriteEpisodesToHealthKit, Mode=TwoWay}" />
                 <TextBlock Text="Records each episode as a Mind &amp; Body entry you can review or share."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+                <Button Content="Revoke health access"
+                        Command="{Binding RevokeHealthCommand}" />
+                <TextBlock Text="Stops all reading and writing, and opens Health so you can revoke the system permission."
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
             </StackPanel>
 

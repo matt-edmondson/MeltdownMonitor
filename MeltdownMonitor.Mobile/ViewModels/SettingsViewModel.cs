@@ -15,6 +15,7 @@ public sealed class SettingsViewModel : ViewModelBase
 	private readonly MobileSettings _settings;
 	private readonly Func<Task<bool>>? _requestNotifications;
 	private readonly Func<Task<bool>>? _requestHealthKit;
+	private readonly Func<Task>? _revokeHealthAccess;
 	private readonly Func<Task>? _exportDatabase;
 	private readonly Action? _onChanged;
 
@@ -23,11 +24,13 @@ public sealed class SettingsViewModel : ViewModelBase
 		Func<Task<bool>>? requestNotifications = null,
 		Func<Task<bool>>? requestHealthKit = null,
 		Func<Task>? exportDatabase = null,
-		Action? onChanged = null)
+		Action? onChanged = null,
+		Func<Task>? revokeHealthAccess = null)
 	{
 		_settings = settings;
 		_requestNotifications = requestNotifications;
 		_requestHealthKit = requestHealthKit;
+		_revokeHealthAccess = revokeHealthAccess;
 		_exportDatabase = exportDatabase;
 		_onChanged = onChanged;
 
@@ -35,6 +38,7 @@ public sealed class SettingsViewModel : ViewModelBase
 		ResumeCommand = new RelayCommand(Resume, () => _settings.PausedUntil is not null);
 		RequestNotificationsCommand = new RelayCommand(() => _ = RequestNotificationsAsync());
 		RequestHealthKitCommand = new RelayCommand(() => _ = RequestHealthKitAsync());
+		RevokeHealthCommand = new RelayCommand(() => _ = RevokeHealthAsync());
 		ExportDatabaseCommand = new RelayCommand(
 			() => _ = ExportDatabaseAsync(),
 			() => _exportDatabase is not null);
@@ -113,6 +117,26 @@ public sealed class SettingsViewModel : ViewModelBase
 			if (_settings.WriteEpisodesToHealthKit != value)
 			{
 				_settings.WriteEpisodesToHealthKit = value;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	/// <summary>
+	/// Master switch for the continuous health-store integration (read for warm-start +
+	/// write HR/HRV/RR). Turning it off is the in-app half of revoking access: all
+	/// reading and writing stops immediately. <see cref="RevokeHealthCommand"/> additionally
+	/// drives the platform-level revoke / Health settings deep link.
+	/// </summary>
+	public bool RecordToHealth
+	{
+		get => _settings.RecordToHealth;
+		set
+		{
+			if (_settings.RecordToHealth != value)
+			{
+				_settings.RecordToHealth = value;
 				Raise();
 				Persist();
 			}
@@ -556,6 +580,7 @@ public sealed class SettingsViewModel : ViewModelBase
 	public ICommand ResumeCommand { get; }
 	public ICommand RequestNotificationsCommand { get; }
 	public ICommand RequestHealthKitCommand { get; }
+	public ICommand RevokeHealthCommand { get; }
 	public ICommand ExportDatabaseCommand { get; }
 
 	private void PauseOneHour()
@@ -594,6 +619,28 @@ public sealed class SettingsViewModel : ViewModelBase
 	private async Task RequestHealthKitAsync()
 	{
 		if (_requestHealthKit is null) return;
-		_ = await _requestHealthKit().ConfigureAwait(true);
+		bool granted = await _requestHealthKit().ConfigureAwait(true);
+		if (granted && !_settings.RecordToHealth)
+		{
+			RecordToHealth = true;
+		}
+	}
+
+	/// <summary>
+	/// Revokes the health-store integration. Stops all in-app reading/writing
+	/// immediately by clearing the opt-in flags, then drives the platform revoke:
+	/// on Android, Health Connect's programmatic revoke + its settings screen; on
+	/// iOS, a deep link into the Health app (HealthKit grants can't be revoked by an
+	/// app — only the user can, in Health).
+	/// </summary>
+	private async Task RevokeHealthAsync()
+	{
+		RecordToHealth = false;
+		WriteEpisodesToHealthKit = false;
+
+		if (_revokeHealthAccess is not null)
+		{
+			await _revokeHealthAccess().ConfigureAwait(true);
+		}
 	}
 }
