@@ -16,13 +16,6 @@ on:
     paths-ignore:
       ["**.md", ".github/ISSUE_TEMPLATE/**", ".github/pull_request_template.md"]
   pull_request:
-    paths:
-      - 'MeltdownMonitor.iOS/**'
-      - 'MeltdownMonitor.Mobile/**'
-      - 'MeltdownMonitor.Ble.Apple/**'
-      - 'MeltdownMonitor.Core/**'
-      - 'MeltdownMonitor.Tests/**'
-      - '.github/workflows/ios.yml'
   workflow_dispatch:
 
 # cancel-in-progress is false so a new push never aborts an in-flight
