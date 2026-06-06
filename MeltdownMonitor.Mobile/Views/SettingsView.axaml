@@ -247,13 +247,15 @@
 
             <StackPanel Spacing="6">
                 <TextBlock Text="Sensitivity" FontWeight="SemiBold" />
-                <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="RMSSD drop to warn" />
-                    <TextBlock Grid.Row="0" Grid.Column="1"
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="RMSSD drop to warn" />
+                    <TextBlock Grid.Column="1"
                                Text="{Binding RmssdWarningDropPercent, StringFormat='{}{0:F0}%'}" />
                 </Grid>
                 <Slider Minimum="10" Maximum="70"
                         Value="{Binding RmssdWarningDropPercent, Mode=TwoWay}" />
+                <TextBlock Text="RMSSD drop below baseline that raises a Warning. Lower = warns more readily. Default 30%."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
 
                 <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Grid.Column="0" Text="HR rise to warn" />
@@ -262,6 +264,8 @@
                 </Grid>
                 <Slider Minimum="5" Maximum="50"
                         Value="{Binding HrWarningRisePercent, Mode=TwoWay}" />
+                <TextBlock Text="HR rise above baseline that raises a Warning. Lower = warns more readily. Default 15%."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
 
                 <Grid ColumnDefinitions="*,Auto">
                     <TextBlock Grid.Column="0" Text="RMSSD drop to alert" />
