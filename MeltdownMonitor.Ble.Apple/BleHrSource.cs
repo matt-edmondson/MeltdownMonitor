@@ -113,7 +113,7 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 
 	internal bool EnableMotion => _enableMotion;
 	internal CBUUID PmdService => PmdServiceUuid;
-	internal CBUUID PmdControlPoint => PmdControlPointUuid;
+	internal CBUUID PmdControlPointCharacteristic => PmdControlPointUuid;
 	internal CBUUID PmdData => PmdDataUuid;
 
 	public async IAsyncEnumerable<Beat> GetBeatsAsync(
@@ -325,7 +325,7 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 				}
 				else if (_owner.EnableMotion && service.UUID.Equals(_owner.PmdService))
 				{
-					peripheral.DiscoverCharacteristics(new[] { _owner.PmdControlPoint, _owner.PmdData }, service);
+					peripheral.DiscoverCharacteristics(new[] { _owner.PmdControlPointCharacteristic, _owner.PmdData }, service);
 				}
 			}
 		}
@@ -358,7 +358,7 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 				{
 					peripheral.SetNotifyValue(true, characteristic);
 				}
-				else if (_owner.EnableMotion && characteristic.UUID.Equals(_owner.PmdControlPoint))
+				else if (_owner.EnableMotion && characteristic.UUID.Equals(_owner.PmdControlPointCharacteristic))
 				{
 					// Enable indications, then ask the device to start streaming the accelerometer.
 					peripheral.SetNotifyValue(true, characteristic);
