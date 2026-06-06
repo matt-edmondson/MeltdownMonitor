@@ -2,8 +2,12 @@ name: iOS Workflow
 
 # Phase 7 of the iOS port (docs/ios-design.md §12). Builds the iOS head on
 # a Mac runner, runs the Core + Mobile test suite, uploads the simulator
-# `.app`, and — when signing secrets are available and the commit is
-# tagged `ios-v*` — archives an `.ipa` and ships it to TestFlight.
+# `.app`, and — when signing secrets are available and the build is either
+# a push to `main` or an `ios-v*` tag — archives an `.ipa` and ships it to
+# TestFlight. Tag builds take their marketing version from the tag name;
+# untagged `main` builds reuse the most recent `ios-v*` tag's version (the
+# monotonic CFBundleVersion from github.run_number still makes each upload
+# unique).
 
 on:
   push:
@@ -67,7 +71,7 @@ jobs:
         run: |
           if [ "$IOS_SIGNING_AVAILABLE" = "true" ]; then
             echo "available=yes" >> "$GITHUB_OUTPUT"
-            echo "Signing secrets present — TestFlight upload enabled on ios-v* tags."
+            echo "Signing secrets present — TestFlight upload enabled on main pushes and ios-v* tags."
           else
             echo "available=no" >> "$GITHUB_OUTPUT"
             echo "Signing secrets absent — running build & test only (design doc §12 phase 7)."
@@ -257,7 +261,7 @@ jobs:
   testflight:
     name: Archive & upload to TestFlight
     needs: [build-test, check-secrets]
-    if: ${{ needs.check-secrets.outputs.signing_available == 'yes' && startsWith(github.ref, 'refs/tags/ios-v') }}
+    if: ${{ needs.check-secrets.outputs.signing_available == 'yes' && (startsWith(github.ref, 'refs/tags/ios-v') || github.ref == 'refs/heads/main') }}
     runs-on: macos-latest
     timeout-minutes: 45
     environment: ios-release
@@ -386,9 +390,17 @@ jobs:
       # App Store Connect rejects any upload whose CFBundleVersion already
       # exists for a given CFBundleShortVersionString, so the build number must
       # increase on every release. github.run_number is monotonic per workflow,
-      # never repeats, and needs no committed bump. The marketing version
-      # (CFBundleShortVersionString) comes from the ios-v* tag that triggered
-      # this run: e.g. `ios-v1.1.0` -> 1.1.0.
+      # never repeats, and needs no committed bump.
+      #
+      # The marketing version (CFBundleShortVersionString) is resolved two ways:
+      #  - On an ios-v* tag build, it comes from the tag name: e.g.
+      #    `ios-v1.1.0` -> 1.1.0.
+      #  - On an untagged `main` build, there is no triggering tag, so we reuse
+      #    the most recent ios-v* tag reachable from HEAD (git describe). Every
+      #    main push then ships under the last released marketing version with a
+      #    fresh, monotonic CFBundleVersion — App Store Connect accepts it as a
+      #    new build of that version. (Requires the full history + tags fetched
+      #    in the checkout step above.)
       #
       # We stamp these straight into Info.plist with PlistBuddy rather than via
       # the -p:ApplicationVersion / -p:ApplicationDisplayVersion MSBuild
@@ -403,9 +415,20 @@ jobs:
         id: version
         run: |
           set -e
-          DISPLAY_VERSION="${GITHUB_REF_NAME#ios-v}"
-          if [ -z "$DISPLAY_VERSION" ] || [ "$DISPLAY_VERSION" = "$GITHUB_REF_NAME" ]; then
-            echo "::error title=Unexpected release ref::Expected an ios-v* tag, got '$GITHUB_REF_NAME'."
+          if [[ "$GITHUB_REF" == refs/tags/ios-v* ]]; then
+            DISPLAY_VERSION="${GITHUB_REF_NAME#ios-v}"
+          else
+            # Untagged main build: reuse the most recent ios-v* tag's version.
+            LATEST_TAG=$(git describe --tags --abbrev=0 --match 'ios-v*' 2>/dev/null || true)
+            if [ -z "$LATEST_TAG" ]; then
+              echo "::error title=No ios-v* tag to reuse::This main build has no reachable ios-v* tag for its marketing version. Cut an ios-v* tag once before relying on main-build TestFlight uploads."
+              exit 1
+            fi
+            echo "Reusing marketing version from last tag: $LATEST_TAG"
+            DISPLAY_VERSION="${LATEST_TAG#ios-v}"
+          fi
+          if [ -z "$DISPLAY_VERSION" ]; then
+            echo "::error title=Unexpected release ref::Could not resolve a marketing version from ref '$GITHUB_REF_NAME'."
             exit 1
           fi
           BUILD="${{ github.run_number }}"
