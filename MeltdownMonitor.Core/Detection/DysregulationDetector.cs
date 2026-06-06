@@ -1,5 +1,6 @@
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Motion;
 
 namespace MeltdownMonitor.Core.Detection;
 
@@ -57,16 +58,28 @@ public class DysregulationDetector
 	/// (<see cref="SensorContactStatus.NotSupported"/>) and <see cref="SensorContactStatus.Detected"/>
 	/// are both treated as reliable — sensors that don't report contact are never gated.
 	/// </param>
+	/// <param name="movement">
+	/// The current movement level from a motion source. When it reaches the configured
+	/// <see cref="DetectionThresholds.MovementGateLevel"/> the sample is treated like an off-body
+	/// reading: the state is held and streaks cleared, so exertion can neither raise an alert nor
+	/// count as recovery. The default (<see cref="MovementLevel.Unknown"/>) never gates, so a build
+	/// with no accelerometer is unaffected.
+	/// </param>
 	public DetectorState Process(
 		HrvSample sample,
 		bool baselineIsWarm,
-		SensorContactStatus contact = SensorContactStatus.NotSupported)
+		SensorContactStatus contact = SensorContactStatus.NotSupported,
+		MovementLevel movement = MovementLevel.Unknown)
 	{
-		// Sensor off-body: RR data is unreliable, so don't let this sample drive the
-		// state machine. Hold the current state and clear any in-progress warning or
-		// recovery streak, so a contact blip neither triggers an alert nor counts as
-		// recovery — the streak must re-accumulate from clean data once contact returns.
-		if (contact == SensorContactStatus.NotDetected)
+		// Sensor off-body, or the body is moving enough to confound HRV: RR data is unreliable for
+		// the state machine, so don't let this sample drive it. Hold the current state and clear any
+		// in-progress warning or recovery streak, so a blip neither triggers an alert nor counts as
+		// recovery — the streak must re-accumulate from clean data once the gate clears.
+		bool movementGated = _thresholds.UseMovementGating
+			&& movement != MovementLevel.Unknown
+			&& movement >= _thresholds.MovementGateLevel;
+
+		if (contact == SensorContactStatus.NotDetected || movementGated)
 		{
 			_warningConditionsActive = false;
 			_recoveryActive = false;
