@@ -48,6 +48,9 @@
                 <TabItem Header="Metrics">
                     <views:MetricsView DataContext="{Binding Metrics}" />
                 </TabItem>
+                <TabItem Header="ECG">
+                    <views:EcgView DataContext="{Binding Ecg}" />
+                </TabItem>
                 <TabItem Header="History">
                     <views:HistoryView DataContext="{Binding History}" />
                 </TabItem>

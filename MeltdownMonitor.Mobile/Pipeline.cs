@@ -27,6 +27,7 @@ public sealed class Pipeline : IDisposable
 	private readonly RegulationVelocityTracker _velocity = new();
 	private readonly RegulationVelocityTracker _hypoVelocity = new();
 	private readonly MovementMonitor _movement = new();
+	private readonly EcgWaveformBuffer _ecg = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _runTask;
@@ -54,6 +55,10 @@ public sealed class Pipeline : IDisposable
 
 	/// <summary>Current dynamic-acceleration intensity (g RMS) from the motion source, for tuning display.</summary>
 	public double CurrentMovementIntensity => _movement.IntensityG;
+
+	/// <summary>Snapshot of the recent raw ECG window for the live waveform view. Empty unless the
+	/// Polar ECG interval source is streaming.</summary>
+	public EcgWaveformSnapshot EcgWaveform => _ecg.Snapshot();
 
 	/// <summary>Sensor identity from the Device Information Service, or null until read.</summary>
 	public DeviceInformation? LatestDeviceInfo { get; private set; }
@@ -102,6 +107,10 @@ public sealed class Pipeline : IDisposable
 	/// show when motion gating is active. Carries <see cref="MovementLevel.Unknown"/> when no motion
 	/// source is feeding.</summary>
 	public event Action<MovementSnapshot>? MovementUpdated;
+
+	/// <summary>Fires for each decoded ECG frame with the refreshed waveform snapshot, so the ECG view
+	/// can render the live trace. Only raised when the Polar ECG interval source is streaming.</summary>
+	public event Action<EcgWaveformSnapshot>? EcgUpdated;
 
 	/// <summary>Fires when the sensor's Device Information is read (typically once on
 	/// connect). Only ever raised when the injected source implements <see cref="IDeviceInfoSource"/>.</summary>
@@ -180,6 +189,18 @@ public sealed class Pipeline : IDisposable
 				motionFallback.MotionSampleReceived += _movement.Add;
 			}
 		}
+
+		// Surface the raw ECG trace when the Polar ECG interval source is selected.
+		if (source is IEcgSource ecgSource)
+		{
+			ecgSource.EcgSamplesReceived += OnEcgSamples;
+		}
+	}
+
+	private void OnEcgSamples(EcgSamples samples)
+	{
+		_ecg.Append(samples);
+		EcgUpdated?.Invoke(_ecg.Snapshot());
 	}
 
 	/// <summary>

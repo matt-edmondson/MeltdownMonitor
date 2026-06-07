@@ -83,6 +83,31 @@ public class EcgRPeakDetectorTests
 	}
 
 	[TestMethod]
+	public void LastSampleWasRPeak_FlagsEveryPeakIncludingTheFirst()
+	{
+		// 6 beats ⇒ 6 peaks (the first yields no RR but is still flagged), 5 intervals.
+		var detector = new EcgRPeakDetector(Fs);
+		int peakFlags = 0;
+		int intervals = 0;
+		foreach (double s in SyntheticEcg(beats: 6, periodSamples: 100))
+		{
+			double? rr = detector.AddSample(s);
+			if (detector.LastSampleWasRPeak)
+			{
+				peakFlags++;
+			}
+
+			if (rr is not null)
+			{
+				intervals++;
+			}
+		}
+
+		Assert.AreEqual(peakFlags - 1, intervals, "Every peak but the first completes an interval.");
+		Assert.IsTrue(peakFlags >= 5, $"Expected ~6 peak flags, got {peakFlags}.");
+	}
+
+	[TestMethod]
 	public void FlatSignal_ProducesNoIntervals()
 	{
 		var detector = new EcgRPeakDetector(Fs);

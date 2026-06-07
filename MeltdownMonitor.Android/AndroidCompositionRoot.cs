@@ -38,6 +38,7 @@ public static class AndroidCompositionRoot
 	private static NowViewModel? _now;
 	private static HistoryViewModel? _history;
 	private static MetricsViewModel? _metrics;
+	private static EcgViewModel? _ecg;
 	private static AndroidBleSource? _source;
 	private static ImuMotionSource? _motionFallback;
 	private static Pipeline? _pipeline;
@@ -146,7 +147,8 @@ public static class AndroidCompositionRoot
 			isAvailable: () => HealthConnectStore.IsAvailable(context),
 			onChanged: () => _store.Save(settings));
 
-		var root = new RootViewModel(settings, _now, _history, settingsTab, _metrics, _store, healthPrompt);
+		_ecg = new EcgViewModel();
+		var root = new RootViewModel(settings, _now, _history, settingsTab, _metrics, _ecg, _store, healthPrompt);
 
 		// Bridge the disclaimer acknowledgement out to the head so it can sequence
 		// the runtime permission asks behind it (design doc §5.2). Fires once, on
@@ -224,6 +226,7 @@ public static class AndroidCompositionRoot
 		await Dispatcher.UIThread.InvokeAsync(() =>
 		{
 			_now?.AttachPipeline(pipeline);
+			_ecg?.AttachPipeline(pipeline);
 			_history?.UseDatabase(dbPath);
 		});
 	}

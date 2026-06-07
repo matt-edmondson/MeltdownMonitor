@@ -947,7 +947,9 @@ public sealed class NowViewModel : ViewModelBase
 
 	private static void RunOnUi(Action apply)
 	{
-		if (Dispatcher.UIThread.CheckAccess())
+		// With no Avalonia Application (unit tests / design-time) there is no UI thread to marshal to,
+		// so run inline. Checked first so we never touch Dispatcher.UIThread in that context.
+		if (Avalonia.Application.Current is null || Dispatcher.UIThread.CheckAccess())
 		{
 			apply();
 		}

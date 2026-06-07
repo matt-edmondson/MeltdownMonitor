@@ -28,7 +28,7 @@ namespace MeltdownMonitor.Ble.Android;
 /// carries more ceremony than the CoreBluetooth one, which hides the queue
 /// internally — see design doc §7.
 /// </summary>
-public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IDisposable
+public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IEcgSource, IDisposable
 {
 	// Standard 16-bit GATT UUIDs, expanded against the Bluetooth base UUID.
 	private static readonly UUID HeartRateServiceUuid = ShortUuid(0x180D);
@@ -70,6 +70,11 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 
 	/// <inheritdoc />
 	public event Action<MotionSample>? MotionSampleReceived;
+
+	/// <inheritdoc />
+	public event Action<EcgSamples>? EcgSamplesReceived;
+
+	private const double EcgSampleRateHz = 130.0;
 
 	private readonly Context _context;
 	private readonly HeartRateDeviceType _deviceType;
@@ -461,17 +466,30 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 				break;
 
 			case PmdMeasurementType.Ecg:
-				foreach (PmdEcgSample ecg in PmdFrameParser.ParseEcg(bytes))
+			{
+				var ecgSamples = PmdFrameParser.ParseEcg(bytes);
+				var microVolts = new int[ecgSamples.Count];
+				var peaks = new List<int>();
+				for (int i = 0; i < ecgSamples.Count; i++)
 				{
-					if (_rpeak.AddSample(ecg.MicroVolts) is { } rrMs)
+					microVolts[i] = ecgSamples[i].MicroVolts;
+					double? rrMs = _rpeak.AddSample(microVolts[i]);
+					if (_rpeak.LastSampleWasRPeak)
 					{
-						bool isArtifact = _artifactFilter.IsArtifact(rrMs);
+						peaks.Add(i);
+					}
+
+					if (rrMs is { } rr)
+					{
+						bool isArtifact = _artifactFilter.IsArtifact(rr);
 						_polarIntervalsActive = true;
-						_channel.Writer.TryWrite(new Beat(now, rrMs, (int)Math.Round(60000.0 / rrMs), isArtifact));
+						_channel.Writer.TryWrite(new Beat(now, rr, (int)Math.Round(60000.0 / rr), isArtifact));
 					}
 				}
 
+				EcgSamplesReceived?.Invoke(new EcgSamples(now, microVolts, EcgSampleRateHz, peaks));
 				break;
+			}
 		}
 	}
 

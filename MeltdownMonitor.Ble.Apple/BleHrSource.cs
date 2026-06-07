@@ -23,7 +23,7 @@ namespace MeltdownMonitor.Ble.Apple;
 /// <see cref="WillRestoreState"/> rehydrates the connected peripheral after
 /// iOS relaunches the app.
 /// </summary>
-public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource
+public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IEcgSource
 {
 	public const string DefaultRestoreIdentifier = "com.matthewedmondson.meltdownmonitor.central";
 
@@ -68,6 +68,11 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 
 	/// <inheritdoc />
 	public event Action<MotionSample>? MotionSampleReceived;
+
+	/// <inheritdoc />
+	public event Action<EcgSamples>? EcgSamplesReceived;
+
+	private const double EcgSampleRateHz = 130.0;
 
 	private readonly HeartRateDeviceType _deviceType;
 	private readonly bool _enableMotion;
@@ -318,17 +323,30 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 				break;
 
 			case PmdMeasurementType.Ecg:
-				foreach (PmdEcgSample ecg in PmdFrameParser.ParseEcg(bytes))
+			{
+				var ecgSamples = PmdFrameParser.ParseEcg(bytes);
+				var microVolts = new int[ecgSamples.Count];
+				var peaks = new List<int>();
+				for (int i = 0; i < ecgSamples.Count; i++)
 				{
-					if (_rpeak.AddSample(ecg.MicroVolts) is { } rrMs)
+					microVolts[i] = ecgSamples[i].MicroVolts;
+					double? rrMs = _rpeak.AddSample(microVolts[i]);
+					if (_rpeak.LastSampleWasRPeak)
 					{
-						bool isArtifact = _artifactFilter.IsArtifact(rrMs);
+						peaks.Add(i);
+					}
+
+					if (rrMs is { } rr)
+					{
+						bool isArtifact = _artifactFilter.IsArtifact(rr);
 						_polarIntervalsActive = true;
-						_channel.Writer.TryWrite(new Beat(now, rrMs, (int)Math.Round(60000.0 / rrMs), isArtifact));
+						_channel.Writer.TryWrite(new Beat(now, rr, (int)Math.Round(60000.0 / rr), isArtifact));
 					}
 				}
 
+				EcgSamplesReceived?.Invoke(new EcgSamples(now, microVolts, EcgSampleRateHz, peaks));
 				break;
+			}
 		}
 	}
 

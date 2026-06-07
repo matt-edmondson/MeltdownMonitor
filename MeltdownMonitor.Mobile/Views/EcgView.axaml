@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:MeltdownMonitor.Mobile.ViewModels"
+             xmlns:ctl="clr-namespace:MeltdownMonitor.Mobile.Controls"
+             x:Class="MeltdownMonitor.Mobile.Views.EcgView"
+             x:DataType="vm:EcgViewModel">
+    <Grid Margin="16" RowDefinitions="Auto,*,Auto">
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="16" Margin="0,0,0,8">
+            <TextBlock Text="ECG" FontWeight="SemiBold" FontSize="16" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding HeartRateText}" Foreground="#3DD68C" FontSize="16"
+                       FontWeight="SemiBold" VerticalAlignment="Center" />
+            <TextBlock Text="{Binding QualityText}" Foreground="#8A8F98" FontSize="12"
+                       VerticalAlignment="Center" />
+        </StackPanel>
+
+        <Border Grid.Row="1" Background="#11141A" CornerRadius="6">
+            <Panel>
+                <ctl:EcgStrip Samples="{Binding Samples}"
+                              RPeakIndices="{Binding RPeakIndices}"
+                              IsVisible="{Binding IsStreaming}"
+                              Margin="6" />
+                <TextBlock Text="Select &quot;Polar ECG&quot; as the interval source in Settings, with a Polar H10, to see the live trace."
+                           IsVisible="{Binding IsIdle}"
+                           Foreground="#8A8F98" FontSize="13"
+                           TextWrapping="Wrap" TextAlignment="Center"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           MaxWidth="320" />
+            </Panel>
+        </Border>
+
+        <TextBlock Grid.Row="2" Margin="0,8,0,0"
+                   Text="Signal view only — not a diagnostic ECG."
+                   Foreground="#6B7280" FontSize="11" HorizontalAlignment="Center" />
+    </Grid>
+</UserControl>
