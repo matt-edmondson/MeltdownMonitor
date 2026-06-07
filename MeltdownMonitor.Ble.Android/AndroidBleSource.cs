@@ -7,6 +7,7 @@ using Android.OS;
 using Java.Util;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Beats.Polar;
+using MeltdownMonitor.Core.Hrv;
 
 namespace MeltdownMonitor.Ble.Android;
 
@@ -73,7 +74,14 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 	private readonly Context _context;
 	private readonly HeartRateDeviceType _deviceType;
 	private readonly bool _enableMotion;
+	private readonly IntervalSource _intervalSource;
+	private readonly EcgRPeakDetector _rpeak = new();
 	private readonly AndroidBleStateRestoration _restoration;
+
+	// Once a preferred Polar interval stream (PPI/ECG) is producing intervals, HRS beats are
+	// suppressed so the two sources can't double-count. Until then HRS keeps the pipeline fed.
+	private bool _polarIntervalsActive;
+	private bool PmdEnabled => _enableMotion || _intervalSource != IntervalSource.HeartRateService;
 	private readonly RrArtifactFilter _artifactFilter = new();
 	private readonly Channel<Beat> _channel = Channel.CreateUnbounded<Beat>(
 		new UnboundedChannelOptions { SingleWriter = true });
@@ -96,11 +104,13 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 		Context context,
 		HeartRateDeviceType deviceType = HeartRateDeviceType.Auto,
 		AndroidBleStateRestoration? restoration = null,
-		bool enableMotion = false)
+		bool enableMotion = false,
+		IntervalSource intervalSource = IntervalSource.HeartRateService)
 	{
 		_context = context ?? throw new ArgumentNullException(nameof(context));
 		_deviceType = deviceType;
 		_enableMotion = enableMotion;
+		_intervalSource = intervalSource;
 		_restoration = restoration ?? new AndroidBleStateRestoration(context);
 
 		_manager = context.GetSystemService(Context.BluetoothService) as BluetoothManager;
@@ -198,6 +208,8 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 	{
 		StopScan();
 		_artifactFilter.Reset();
+		_rpeak.Reset();
+		_polarIntervalsActive = false;
 		_gattCallback = new GattCallbackImpl(this);
 
 		// autoConnect: true is the Android analog of iOS state restoration —
@@ -296,6 +308,8 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 		}
 
 		_artifactFilter.Reset();
+		_rpeak.Reset();
+		_polarIntervalsActive = false;
 		EnqueueGattOp(() => gatt.DiscoverServices());
 	}
 
@@ -327,7 +341,7 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 			}
 		}
 
-		if (_enableMotion)
+		if (PmdEnabled)
 		{
 			var pmd = gatt.GetService(PmdServiceUuid);
 			var data = pmd?.GetCharacteristic(PmdDataUuid);
@@ -335,10 +349,23 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 			if (data is not null && controlPoint is not null)
 			{
 				// Notifications on the data stream, indications on the control point, then ask the
-				// device to start the accelerometer — each step a serialised GATT op.
+				// device to start each desired PMD stream — each step a serialised GATT op.
 				EnqueueGattOp(() => EnableNotifications(gatt, data));
 				EnqueueGattOp(() => EnableNotifications(gatt, controlPoint, indicate: true));
-				EnqueueGattOp(() => WriteControlPoint(gatt, controlPoint, PmdControlPoint.BuildStartAcc()));
+
+				if (_enableMotion)
+				{
+					EnqueueGattOp(() => WriteControlPoint(gatt, controlPoint, PmdControlPoint.BuildStartAcc()));
+				}
+
+				if (_intervalSource == IntervalSource.PolarPpi)
+				{
+					EnqueueGattOp(() => WriteControlPoint(gatt, controlPoint, PmdControlPoint.BuildStartPpi()));
+				}
+				else if (_intervalSource == IntervalSource.PolarEcg)
+				{
+					EnqueueGattOp(() => WriteControlPoint(gatt, controlPoint, PmdControlPoint.BuildStartEcg()));
+				}
 			}
 		}
 	}
@@ -404,18 +431,47 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 		}
 	}
 
-	// Decode a PMD data frame; only ACC frames produce motion samples.
+	// Decode a PMD data frame: ACC → motion, PPI/ECG → beats (suppressing HRS once they're live).
 	private void OnPmdData(byte[] bytes)
 	{
-		if (bytes.Length < 10 || (PmdMeasurementType)bytes[0] != PmdMeasurementType.Acc)
+		if (bytes.Length < 10)
 		{
 			return;
 		}
 
 		var now = DateTimeOffset.UtcNow;
-		foreach (PmdAccSample acc in PmdFrameParser.ParseAcc(bytes))
+		switch ((PmdMeasurementType)bytes[0])
 		{
-			MotionSampleReceived?.Invoke(PolarMotion.ToMotionSample(acc, now));
+			case PmdMeasurementType.Acc:
+				foreach (PmdAccSample acc in PmdFrameParser.ParseAcc(bytes))
+				{
+					MotionSampleReceived?.Invoke(PolarMotion.ToMotionSample(acc, now));
+				}
+
+				break;
+
+			case PmdMeasurementType.Ppi:
+				foreach (PmdPpiSample ppi in PmdFrameParser.ParsePpi(bytes))
+				{
+					bool timingArtifact = _artifactFilter.IsArtifact(ppi.PpiMs);
+					_polarIntervalsActive = true;
+					_channel.Writer.TryWrite(PolarPpi.ToBeat(ppi, now, timingArtifact));
+				}
+
+				break;
+
+			case PmdMeasurementType.Ecg:
+				foreach (PmdEcgSample ecg in PmdFrameParser.ParseEcg(bytes))
+				{
+					if (_rpeak.AddSample(ecg.MicroVolts) is { } rrMs)
+					{
+						bool isArtifact = _artifactFilter.IsArtifact(rrMs);
+						_polarIntervalsActive = true;
+						_channel.Writer.TryWrite(new Beat(now, rrMs, (int)Math.Round(60000.0 / rrMs), isArtifact));
+					}
+				}
+
+				break;
 		}
 	}
 
@@ -447,6 +503,12 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 		// Surface contact on every notification — the only signal that survives
 		// contact loss, when RR intervals (and beats) dry up.
 		SensorContactChanged?.Invoke(measurement.SensorContact);
+
+		// Once a preferred Polar interval stream is live, HRS RR is the redundant source — drop it.
+		if (_polarIntervalsActive)
+		{
+			return;
+		}
 
 		foreach (double rrMs in measurement.RrIntervals)
 		{

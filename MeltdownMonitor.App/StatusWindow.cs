@@ -1383,6 +1383,23 @@ public sealed class StatusWindow : IDisposable
 
 		_settings.Thresholds = t;
 
+		// ── Interval source ─────────────────────────────────────────────
+		ImGui.SeparatorText("Interval source (applies on next start)");
+		ImGui.TextDisabled("Which stream supplies beat-to-beat intervals:");
+		foreach (IntervalSource src in Enum.GetValues<IntervalSource>())
+		{
+			if (ImGui.RadioButton(IntervalSourceLabel(src), _settings.PreferredIntervalSource == src))
+			{
+				_settings.PreferredIntervalSource = src;
+				_settingsDirty = true;
+			}
+
+			ImGui.SameLine();
+			HelpMarker(IntervalSourceHelp(src));
+		}
+
+		ImGui.NewLine();
+
 		// ── Baseline seeding ─────────────────────────────────────────────
 		ImGui.SeparatorText("Baseline seeding (applies on re-seed / next launch)");
 
@@ -1663,6 +1680,20 @@ public sealed class StatusWindow : IDisposable
 			ImGui.SetTooltip(text);
 		}
 	}
+
+	private static string IntervalSourceLabel(IntervalSource source) => source switch
+	{
+		IntervalSource.PolarPpi => "Polar PPI",
+		IntervalSource.PolarEcg => "Polar ECG",
+		_ => "Heart-rate service",
+	};
+
+	private static string IntervalSourceHelp(IntervalSource source) => source switch
+	{
+		IntervalSource.PolarPpi => "Polar Verity Sense PMD peak-to-peak intervals — optical, with per-beat quality flags that sharpen artifact rejection. Falls back to HRS RR on devices without it.",
+		IntervalSource.PolarEcg => "RR from the Polar H10's raw ECG R-peaks — gold-standard fidelity. Falls back to HRS RR on devices without it.",
+		_ => "Standard Bluetooth Heart Rate RR intervals. Works with every supported sensor.",
+	};
 
 	// A labelled blend-mode checkbox with a trailing help marker. Properties can't be passed by
 	// ref, so the current value is read in and the setter is invoked on change.

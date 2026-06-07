@@ -13,6 +13,12 @@
                           HorizontalAlignment="Stretch" />
                 <TextBlock Text="Auto connects to the first heart-rate device found."
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+                <TextBlock Text="Interval source" FontSize="12" Foreground="#8A8F98" Margin="0,6,0,0" />
+                <ComboBox ItemsSource="{Binding IntervalSources}"
+                          SelectedItem="{Binding PreferredIntervalSource, Mode=TwoWay}"
+                          HorizontalAlignment="Stretch" />
+                <TextBlock Text="Heart-rate-service RR works on any sensor. Polar PPI (Verity Sense) and Polar ECG (H10) use the proprietary stream for higher-quality intervals; they fall back to RR on other devices. Applies on next start."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
             </StackPanel>
 
             <StackPanel Spacing="6">

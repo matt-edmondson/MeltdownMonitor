@@ -214,7 +214,7 @@ public static class IosCompositionRoot
 		// Motion corroboration: stream the Polar strap accelerometer (PMD) when available, and run the
 		// device IMU as a fallback for non-Polar straps. The movement monitor prefers the strap.
 		bool motionEnabled = settings.EnableMotionCorroboration;
-		_source = new BleHrSource(settings.DeviceType, enableMotion: motionEnabled);
+		_source = new BleHrSource(settings.DeviceType, enableMotion: motionEnabled, intervalSource: settings.PreferredIntervalSource);
 		_motionFallback = motionEnabled ? new ImuMotionSource() : null;
 		var pipeline = new Pipeline(settings, repository, _source, _motionFallback);
 

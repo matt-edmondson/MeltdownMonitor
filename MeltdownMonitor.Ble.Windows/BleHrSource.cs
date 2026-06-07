@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Beats.Polar;
+using MeltdownMonitor.Core.Hrv;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.Advertisement;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
@@ -46,7 +47,14 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 
 	private readonly HeartRateDeviceType _deviceType;
 	private readonly bool _enableMotion;
+	private readonly IntervalSource _intervalSource;
+	private readonly EcgRPeakDetector _rpeak = new();
 	private readonly RrArtifactFilter _artifactFilter = new();
+
+	// Once the preferred Polar interval stream (PPI/ECG) is actually producing intervals, HRS beats
+	// are suppressed so the two sources can't double-count. Until then HRS keeps the pipeline fed.
+	private bool _polarIntervalsActive;
+	private System.Threading.Channels.ChannelWriter<Beat>? _beatWriter;
 
 	private BluetoothLEDevice? _device;
 	private bool _disposed;
@@ -65,10 +73,20 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 	/// When true, also negotiate the Polar PMD accelerometer stream and raise <see cref="MotionSampleReceived"/>
 	/// (no-op on non-Polar sensors, which have no PMD service). Off by default — opt-in via settings.
 	/// </param>
-	public BleHrSource(HeartRateDeviceType deviceType = HeartRateDeviceType.Auto, bool enableMotion = false)
+	/// <param name="intervalSource">
+	/// Which stream supplies the beat-to-beat intervals. <see cref="IntervalSource.HeartRateService"/>
+	/// (default) uses standard HRS RR. <see cref="IntervalSource.PolarPpi"/> / <see cref="IntervalSource.PolarEcg"/>
+	/// switch to the Polar PMD stream once it produces intervals, suppressing HRS to avoid double-counting;
+	/// on a device that doesn't offer it, HRS simply keeps flowing.
+	/// </param>
+	public BleHrSource(
+		HeartRateDeviceType deviceType = HeartRateDeviceType.Auto,
+		bool enableMotion = false,
+		IntervalSource intervalSource = IntervalSource.HeartRateService)
 	{
 		_deviceType = deviceType;
 		_enableMotion = enableMotion;
+		_intervalSource = intervalSource;
 	}
 
 	public async IAsyncEnumerable<Beat> GetBeatsAsync(
@@ -146,6 +164,8 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 		// from before a disconnect can't mis-flag the first beats after a reconnect
 		// (matches the Apple source, which resets on every connect).
 		_artifactFilter.Reset();
+		_rpeak.Reset();
+		_polarIntervalsActive = false;
 
 		_device?.Dispose();
 		_device = await BluetoothLEDevice.FromBluetoothAddressAsync(address);
@@ -170,8 +190,11 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 
 		var characteristic = charResult.Characteristics[0];
 
+		// Not single-writer: the HRS notification and the PMD data callback can both write briefly
+		// around the handover to a Polar interval source.
 		var channel = System.Threading.Channels.Channel.CreateUnbounded<Beat>(
-			new System.Threading.Channels.UnboundedChannelOptions { SingleWriter = true });
+			new System.Threading.Channels.UnboundedChannelOptions { SingleWriter = false });
+		_beatWriter = channel.Writer;
 
 		void OnValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
 		{
@@ -185,6 +208,12 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 			// Surface contact on every notification — it's the only signal that
 			// survives contact loss, when RR intervals (and beats) dry up.
 			SensorContactChanged?.Invoke(measurement.SensorContact);
+
+			// Once a preferred Polar interval stream is live, HRS RR is the redundant source — drop it.
+			if (_polarIntervalsActive)
+			{
+				return;
+			}
 
 			foreach (double rrMs in measurement.RrIntervals)
 			{
@@ -216,9 +245,9 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 		// blocking the beat stream.
 		await TrySubscribeBatteryAsync(_device).ConfigureAwait(false);
 		await TryReadDeviceInfoAsync(_device).ConfigureAwait(false);
-		if (_enableMotion)
+		if (_enableMotion || _intervalSource != IntervalSource.HeartRateService)
 		{
-			await TrySubscribePmdMotionAsync(_device).ConfigureAwait(false);
+			await TrySubscribePmdAsync(_device).ConfigureAwait(false);
 		}
 
 		try
@@ -240,7 +269,7 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 	// notifications on the data characteristic, confirm ACC is in the feature bitmask, then write
 	// the start command. Decoded samples are converted to g and raised as motion. Entirely
 	// best-effort — a non-Polar sensor has no PMD service, and any GATT error just means no motion.
-	private async Task TrySubscribePmdMotionAsync(BluetoothLEDevice device)
+	private async Task TrySubscribePmdAsync(BluetoothLEDevice device)
 	{
 		try
 		{
@@ -266,37 +295,81 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 				return;
 			}
 
-			// The control point indicates command responses; enable it so the start write completes.
+			// The control point indicates command responses; enable it so the start writes complete.
 			await controlPoint.WriteClientCharacteristicConfigurationDescriptorAsync(
 				GattClientCharacteristicConfigurationDescriptorValue.Indicate);
 
-			var features = await controlPoint.ReadValueAsync();
-			if (features.Status == GattCommunicationStatus.Success
-				&& !PmdControlPoint.ParseSupportedFeatures(ToBytes(features.Value)).Contains(PmdMeasurementType.Acc))
+			var featureRead = await controlPoint.ReadValueAsync();
+			var supported = featureRead.Status == GattCommunicationStatus.Success
+				? PmdControlPoint.ParseSupportedFeatures(ToBytes(featureRead.Value))
+				: null;
+
+			// Start each desired measurement the device actually supports (an empty feature read =
+			// attempt anyway; unsupported starts just yield no frames, leaving HRS as the source).
+			if (_enableMotion && Supports(supported, PmdMeasurementType.Acc))
 			{
-				return;
+				await WriteControlPointAsync(controlPoint, PmdControlPoint.BuildStartAcc());
 			}
 
-			await WriteControlPointAsync(controlPoint, PmdControlPoint.BuildStartAcc());
+			if (_intervalSource == IntervalSource.PolarPpi && Supports(supported, PmdMeasurementType.Ppi))
+			{
+				await WriteControlPointAsync(controlPoint, PmdControlPoint.BuildStartPpi());
+			}
+			else if (_intervalSource == IntervalSource.PolarEcg && Supports(supported, PmdMeasurementType.Ecg))
+			{
+				await WriteControlPointAsync(controlPoint, PmdControlPoint.BuildStartEcg());
+			}
 		}
 		catch
 		{
-			// Motion streaming must never interrupt the beat stream.
+			// PMD streaming must never interrupt the beat stream.
 		}
 	}
+
+	private static bool Supports(IReadOnlySet<PmdMeasurementType>? supported, PmdMeasurementType type) =>
+		supported is null || supported.Count == 0 || supported.Contains(type);
 
 	private void OnPmdDataChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
 	{
 		byte[] bytes = ToBytes(args.CharacteristicValue);
-		if (bytes.Length < 10 || (PmdMeasurementType)bytes[0] != PmdMeasurementType.Acc)
+		if (bytes.Length < 10)
 		{
 			return;
 		}
 
 		var now = DateTimeOffset.UtcNow;
-		foreach (PmdAccSample acc in PmdFrameParser.ParseAcc(bytes))
+		switch ((PmdMeasurementType)bytes[0])
 		{
-			MotionSampleReceived?.Invoke(PolarMotion.ToMotionSample(acc, now));
+			case PmdMeasurementType.Acc:
+				foreach (PmdAccSample acc in PmdFrameParser.ParseAcc(bytes))
+				{
+					MotionSampleReceived?.Invoke(PolarMotion.ToMotionSample(acc, now));
+				}
+
+				break;
+
+			case PmdMeasurementType.Ppi:
+				foreach (PmdPpiSample ppi in PmdFrameParser.ParsePpi(bytes))
+				{
+					bool timingArtifact = _artifactFilter.IsArtifact(ppi.PpiMs);
+					_polarIntervalsActive = true;
+					_beatWriter?.TryWrite(PolarPpi.ToBeat(ppi, now, timingArtifact));
+				}
+
+				break;
+
+			case PmdMeasurementType.Ecg:
+				foreach (PmdEcgSample ecg in PmdFrameParser.ParseEcg(bytes))
+				{
+					if (_rpeak.AddSample(ecg.MicroVolts) is { } rrMs)
+					{
+						bool isArtifact = _artifactFilter.IsArtifact(rrMs);
+						_polarIntervalsActive = true;
+						_beatWriter?.TryWrite(new Beat(now, rrMs, (int)Math.Round(60000.0 / rrMs), isArtifact));
+					}
+				}
+
+				break;
 		}
 	}
 
