@@ -99,6 +99,11 @@
       <BuildOutput></BuildOutput>
       <CodesignWarnIfNoEntitlements>false</CodesignWarnIfNoEntitlements>
     </AdditionalAppExtensions>
+    <!-- The .appex is already distribution-signed by Xcode (generate.sh release
+         mode) with its own provisioning profile, so the app's codesign pass must
+         not re-sign it (the app's profile doesn't cover the widget's bundle id).
+         Harmless on unsigned CI builds, where nothing is signed anyway. -->
+    <SkipCodesignItems Include="PlugIns/MeltdownMonitorWidgetExtension.appex" />
   </ItemGroup>
 
 </Project>

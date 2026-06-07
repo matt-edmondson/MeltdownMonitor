@@ -40,28 +40,44 @@ SDK="${SDK:-iphoneos}"
 CONFIG="${CONFIG:-Release}"
 OUT="build/${CONFIG}-${SDK}"
 mkdir -p "$OUT"
+BUILD_DIR="$(pwd)/$OUT"
 
-# When no signing team is configured (CI, or a quick local check), build
-# unsigned — the artifacts are linked/embedded into the .NET app, which does its
-# own signing. With DEVELOPMENT_TEAM set, sign normally so the result can run on
-# a device straight from Xcode.
-SIGN_ARGS=()
-if [[ -z "${DEVELOPMENT_TEAM:-}" ]]; then
+PROJ=(-project MeltdownMonitorWidget.xcodeproj -configuration "$CONFIG" -sdk "$SDK")
+DEST=(CONFIGURATION_BUILD_DIR="$BUILD_DIR")
+UNSIGNED=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= CODE_SIGN_ENTITLEMENTS=)
+
+# Three signing modes, picked from the environment:
+#   * MM_APPEX_PROFILE set  -> RELEASE/TestFlight. The .appex is distribution-signed
+#     with its own provisioning profile (MM_APPEX_PROFILE = profile name,
+#     MM_APPEX_IDENTITY = signing identity), and the .NET app must leave it intact
+#     (SkipCodesignItems in the .csproj). The bridge framework is built UNSIGNED —
+#     embedded frameworks need no profile and are signed by the app's codesign pass.
+#   * DEVELOPMENT_TEAM set   -> local on-device dev: Xcode automatic signing.
+#   * neither                -> unsigned (CI build-test, quick local checks).
+if [[ -n "${MM_APPEX_PROFILE:-}" ]]; then
+  : "${MM_APPEX_IDENTITY:?MM_APPEX_PROFILE set but MM_APPEX_IDENTITY missing}"
+  echo "==> Release signing: framework unsigned, .appex signed ($MM_APPEX_IDENTITY / $MM_APPEX_PROFILE)"
+  xcodebuild "${PROJ[@]}" -target MeltdownLiveActivityBridge "${UNSIGNED[@]}" "${DEST[@]}" build
+  xcodebuild "${PROJ[@]}" -target MeltdownMonitorWidgetExtension \
+    CODE_SIGN_STYLE=Manual \
+    DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-}" \
+    CODE_SIGN_IDENTITY="$MM_APPEX_IDENTITY" \
+    PROVISIONING_PROFILE_SPECIFIER="$MM_APPEX_PROFILE" \
+    "${DEST[@]}" build
+elif [[ -z "${DEVELOPMENT_TEAM:-}" ]]; then
   echo "==> DEVELOPMENT_TEAM unset — building unsigned"
-  SIGN_ARGS=(CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= CODE_SIGN_ENTITLEMENTS=)
+  for target in MeltdownLiveActivityBridge MeltdownMonitorWidgetExtension; do
+    echo "==> xcodebuild $target ($CONFIG / $SDK)"
+    xcodebuild "${PROJ[@]}" -target "$target" "${UNSIGNED[@]}" "${DEST[@]}" build
+  done
+else
+  echo "==> Automatic signing (DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM)"
+  for target in MeltdownLiveActivityBridge MeltdownMonitorWidgetExtension; do
+    echo "==> xcodebuild $target ($CONFIG / $SDK)"
+    xcodebuild "${PROJ[@]}" -target "$target" -allowProvisioningUpdates \
+      DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" "${DEST[@]}" build
+  done
 fi
-
-for target in MeltdownLiveActivityBridge MeltdownMonitorWidgetExtension; do
-  echo "==> xcodebuild $target ($CONFIG / $SDK)"
-  xcodebuild \
-    -project MeltdownMonitorWidget.xcodeproj \
-    -target "$target" \
-    -configuration "$CONFIG" \
-    -sdk "$SDK" \
-    CONFIGURATION_BUILD_DIR="$(pwd)/$OUT" \
-    "${SIGN_ARGS[@]}" \
-    build
-done
 
 echo
 echo "Built into $OUT:"
