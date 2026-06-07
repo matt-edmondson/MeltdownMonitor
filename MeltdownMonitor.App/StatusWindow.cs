@@ -8,6 +8,7 @@ using MeltdownMonitor.Core.Baseline;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Motion;
 using MeltdownMonitor.Core.Persistence;
 using MeltdownMonitor.Core.Regulation;
 using System.Numerics;
@@ -693,6 +694,25 @@ public sealed class StatusWindow : IDisposable
 		{
 			ImGui.SameLine();
 			ImGui.TextColored(StateColors.For(DetectorState.Warning), "   No sensor contact");
+		}
+
+		// Motion corroboration: show the live movement level + intensity (g) — handy for tuning the
+		// gate thresholds — and flag in warning colour when it's high enough to defer alerts.
+		var movement = _pipeline.CurrentMovement;
+		if (movement != MovementLevel.Unknown)
+		{
+			var thresholds = _pipeline.LatestThresholds;
+			bool gating = thresholds.UseMovementGating && movement >= thresholds.MovementGateLevel;
+			string label = $"   Movement {movement} ({_pipeline.CurrentMovementIntensity:F2}g){(gating ? " — gating" : string.Empty)}";
+			ImGui.SameLine();
+			if (gating)
+			{
+				ImGui.TextColored(StateColors.For(DetectorState.Warning), label);
+			}
+			else
+			{
+				ImGui.TextDisabled(label);
+			}
 		}
 	}
 

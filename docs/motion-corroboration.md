@@ -59,6 +59,11 @@ Feature negotiation: read the control point once for the supported-type bitmask 
 
 - **Wired now:** ACC → motion → detector gate + baseline freeze, on all three heads + device-IMU
   fallback. This captures the headline value (killing the exercise false-positive).
+- **Surfaced in the UI:** both pipelines raise `MovementUpdated` (level + g-RMS intensity) per sample
+  and expose `CurrentMovement` / `CurrentMovementIntensity`. The desktop status header shows
+  `Movement <level> (<g>) — gating` (warning-coloured when above the gate); the mobile Now screen
+  shows the level and a "Moving — alerts deferred, baseline paused" cue. The intensity readout is
+  there specifically to help tune `DetectionThresholds.MovementGateLevel` against a real sensor.
 - **Decoded + tested in Core, not yet on the beat path:** PPI and ECG. Both are *alternative RR
   sources*, so feeding them as beats means **picking one** interval source to avoid double-counting
   (HRS RR vs. PPI vs. ECG-derived R-peaks). PPI's per-beat error/blocker flags would sharpen the

@@ -5,6 +5,7 @@ using Avalonia.Threading;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Motion;
 using MeltdownMonitor.Core.Persistence;
 using MeltdownMonitor.Core.Regulation;
 
@@ -71,6 +72,7 @@ public sealed class NowViewModel : ViewModelBase
 	private double _baselineRmssd;
 	private int? _batteryPercent;
 	private SensorContactStatus _contact = SensorContactStatus.NotSupported;
+	private MovementLevel _movement = MovementLevel.Unknown;
 	private DeviceInformation? _deviceInfo;
 	private DateTimeOffset _stateChangedAt = DateTimeOffset.UtcNow;
 	private ConnectionState _connection = ConnectionState.Disconnected;
@@ -555,6 +557,38 @@ public sealed class NowViewModel : ViewModelBase
 	/// out of contact — the cue to warn that readings are unreliable.</summary>
 	public bool IsContactLost => _contact == SensorContactStatus.NotDetected;
 
+	/// <summary>Live movement level from the motion source (strap PMD or device IMU).</summary>
+	public MovementLevel Movement
+	{
+		get => _movement;
+		private set
+		{
+			if (SetField(ref _movement, value))
+			{
+				Raise(nameof(MovementText));
+				Raise(nameof(IsMovementVisible));
+				Raise(nameof(IsMovementGating));
+			}
+		}
+	}
+
+	/// <summary>Human-readable movement label, e.g. "Moving (walking)". Empty when no motion data.</summary>
+	public string MovementText => _movement switch
+	{
+		MovementLevel.Still => "Still",
+		MovementLevel.Light => "Light movement",
+		MovementLevel.Moderate => "Moving (walking)",
+		MovementLevel.Vigorous => "Moving (vigorous)",
+		_ => string.Empty,
+	};
+
+	/// <summary>Whether to show the movement indicator at all — hidden when no motion source is feeding.</summary>
+	public bool IsMovementVisible => _movement != MovementLevel.Unknown;
+
+	/// <summary>True when movement is high enough (Moderate+) that detection is likely being gated —
+	/// the cue that alerts are deferred and the baseline is paused.</summary>
+	public bool IsMovementGating => _movement >= MovementLevel.Moderate;
+
 	/// <summary>Sensor identity (model / firmware) once read from the device, else null.</summary>
 	public DeviceInformation? DeviceInfo
 	{
@@ -676,6 +710,7 @@ public sealed class NowViewModel : ViewModelBase
 		pipeline.RecoveryUpdated += OnRecoveryUpdated;
 		pipeline.BatteryUpdated += OnBatteryUpdated;
 		pipeline.ContactChanged += OnContactChanged;
+		pipeline.MovementUpdated += OnMovementUpdated;
 		pipeline.DeviceInfoUpdated += OnDeviceInfoUpdated;
 		pipeline.BeatReceived += OnBeatReceived;
 		_coldCalibratedProvider = () => pipeline.IsColdCalibrated;
@@ -779,6 +814,13 @@ public sealed class NowViewModel : ViewModelBase
 	/// the other handlers. Public so tests can drive it without a live pipeline.
 	/// </summary>
 	public void OnContactChanged(SensorContactStatus status) => RunOnUi(() => Contact = status);
+
+	/// <summary>
+	/// Push a fresh movement snapshot into the VM. Wired to <see cref="Pipeline.MovementUpdated"/>
+	/// and marshalled to the UI thread like the other handlers. Public so tests can drive it without
+	/// a live pipeline.
+	/// </summary>
+	public void OnMovementUpdated(MovementSnapshot snapshot) => RunOnUi(() => Movement = snapshot.Level);
 
 	/// <summary>
 	/// Push device identity into the VM. Wired to <see cref="Pipeline.DeviceInfoUpdated"/>

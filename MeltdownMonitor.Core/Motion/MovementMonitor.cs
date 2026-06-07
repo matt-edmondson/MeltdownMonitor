@@ -26,6 +26,14 @@ public enum MovementLevel
 }
 
 /// <summary>
+/// An immutable snapshot of the movement monitor's current reading, for surfacing in the UI.
+/// </summary>
+/// <param name="Level">The classified movement level.</param>
+/// <param name="IntensityG">Dynamic-acceleration intensity (g RMS) — useful for tuning the gate thresholds.</param>
+/// <param name="Source">Which sensor produced the latest sample, or null before any arrive.</param>
+public record MovementSnapshot(MovementLevel Level, double IntensityG, MotionSourceKind? Source);
+
+/// <summary>
 /// Turns the high-rate accelerometer stream into a low-rate movement intensity and level.
 ///
 /// Intensity is the RMS of acceleration magnitude about its own rolling mean over a short window —
@@ -66,6 +74,9 @@ public class MovementMonitor
 
 	/// <summary>Source of the most recent sample, for UI/telemetry.</summary>
 	public MotionSourceKind? LatestSource { get; private set; }
+
+	/// <summary>Immutable snapshot of the current movement state, for fan-out to the UI.</summary>
+	public MovementSnapshot Snapshot => new(Level, IntensityG, LatestSource);
 
 	/// <summary>Current dynamic-acceleration intensity (g RMS). Zero before any samples arrive.</summary>
 	public double IntensityG { get; private set; }
