@@ -308,7 +308,10 @@ public sealed class Pipeline : IDisposable
 		// `using` releases the BluetoothLEDevice native handle deterministically when
 		// the loop unwinds — on both clean cancellation and an exception path.
 		bool motionEnabled = _settings.EnableMotionCorroboration;
-		using var source = new BleHrSource(_settings.DeviceType, enableMotion: motionEnabled);
+		using var source = new BleHrSource(
+			_settings.DeviceType,
+			enableMotion: motionEnabled,
+			intervalSource: _settings.PreferredIntervalSource);
 
 		// Battery and contact are optional source capabilities — wire each only when supported.
 		if (source is IBatterySource batterySource)

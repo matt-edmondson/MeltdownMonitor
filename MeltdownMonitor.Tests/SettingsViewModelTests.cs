@@ -1,3 +1,4 @@
+using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Mobile;
 using MeltdownMonitor.Mobile.ViewModels;
 
@@ -18,6 +19,21 @@ public class SettingsViewModelTests
 
 		vm.EnableMotionCorroboration = true; // changed → persists onto settings
 		Assert.IsTrue(settings.EnableMotionCorroboration);
+		Assert.AreEqual(1, saves);
+	}
+
+	[TestMethod]
+	public void PreferredIntervalSource_RoundTripsAndPersistsOnlyOnChange()
+	{
+		var settings = new MobileSettings { PreferredIntervalSource = IntervalSource.HeartRateService };
+		int saves = 0;
+		var vm = new SettingsViewModel(settings, onChanged: () => saves++);
+
+		vm.PreferredIntervalSource = IntervalSource.HeartRateService; // unchanged → no persist
+		Assert.AreEqual(0, saves);
+
+		vm.PreferredIntervalSource = IntervalSource.PolarPpi; // changed → persists
+		Assert.AreEqual(IntervalSource.PolarPpi, settings.PreferredIntervalSource);
 		Assert.AreEqual(1, saves);
 	}
 

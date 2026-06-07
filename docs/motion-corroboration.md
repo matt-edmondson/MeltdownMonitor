@@ -64,13 +64,15 @@ Feature negotiation: read the control point once for the supported-type bitmask 
   `Movement <level> (<g>) — gating` (warning-coloured when above the gate); the mobile Now screen
   shows the level and a "Moving — alerts deferred, baseline paused" cue. The intensity readout is
   there specifically to help tune `DetectionThresholds.MovementGateLevel` against a real sensor.
-- **Decoded + tested in Core, not yet on the beat path:** PPI and ECG. Both are *alternative RR
-  sources*, so feeding them as beats means **picking one** interval source to avoid double-counting
-  (HRS RR vs. PPI vs. ECG-derived R-peaks). PPI's per-beat error/blocker flags would sharpen the
-  artifact filter (especially for the optical Verity Sense); ECG would enable gold-standard R-peak
-  HRV on the H10. Both need an R-peak detector and/or a source-selection switch, plus on-device
-  validation — a deliberate follow-on, kept out of this change so it can't introduce a
-  double-counting regression.
+- **Selectable interval source (PPI + ECG), wired:** `IntervalSource` (HeartRateService / PolarPpi /
+  PolarEcg, in settings) picks the one stream that supplies beats — never more than one, or beats
+  would double-count. **PPI** (Verity Sense) becomes the source via `PolarPpi.ToBeat`, folding its
+  per-beat blocker / error-estimate / contact flags into the artifact decision. **ECG** (H10) feeds
+  the streaming `EcgRPeakDetector` (Core/Hrv, Pan–Tompkins-style, unit-tested), whose RR intervals
+  become beats. Anti-double-count rule: HRS RR keeps flowing until the chosen Polar stream is
+  *actually producing intervals*, then the head suppresses HRS — so an unsupported device (PPI on an
+  H10) or a slow PMD start never goes silent. Like all BLE behaviour, only fully verifiable on the
+  live app with a real sensor.
 
 ## Verification
 

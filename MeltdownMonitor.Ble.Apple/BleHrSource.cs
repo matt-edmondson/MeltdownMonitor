@@ -5,6 +5,7 @@ using CoreFoundation;
 using Foundation;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Beats.Polar;
+using MeltdownMonitor.Core.Hrv;
 
 namespace MeltdownMonitor.Ble.Apple;
 
@@ -70,8 +71,14 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 
 	private readonly HeartRateDeviceType _deviceType;
 	private readonly bool _enableMotion;
+	private readonly IntervalSource _intervalSource;
+	private readonly EcgRPeakDetector _rpeak = new();
 	private readonly CBUUID[] _servicesToDiscover;
 	private readonly BleStateRestoration _restoration;
+
+	// Once a preferred Polar interval stream (PPI/ECG) is producing intervals, HRS beats are
+	// suppressed so the two sources can't double-count. Until then HRS keeps the pipeline fed.
+	private bool _polarIntervalsActive;
 	private readonly RrArtifactFilter _artifactFilter = new();
 	private readonly Channel<Beat> _channel = Channel.CreateUnbounded<Beat>(
 		new UnboundedChannelOptions { SingleWriter = true });
@@ -84,11 +91,13 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 		HeartRateDeviceType deviceType = HeartRateDeviceType.Auto,
 		BleStateRestoration? restoration = null,
 		string restoreIdentifier = DefaultRestoreIdentifier,
-		bool enableMotion = false)
+		bool enableMotion = false,
+		IntervalSource intervalSource = IntervalSource.HeartRateService)
 	{
 		_deviceType = deviceType;
 		_enableMotion = enableMotion;
-		_servicesToDiscover = enableMotion
+		_intervalSource = intervalSource;
+		_servicesToDiscover = PmdEnabled
 			? [HeartRateServiceUuid, BatteryServiceUuid, DeviceInfoServiceUuid, PmdServiceUuid]
 			: [HeartRateServiceUuid, BatteryServiceUuid, DeviceInfoServiceUuid];
 		_restoration = restoration ?? new BleStateRestoration();
@@ -111,7 +120,7 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 	internal bool IsDeviceInfoCharacteristic(CBUUID uuid) =>
 		Array.Exists(_deviceInfoCharacteristics, u => u.Equals(uuid));
 
-	internal bool EnableMotion => _enableMotion;
+	internal bool PmdEnabled => _enableMotion || _intervalSource != IntervalSource.HeartRateService;
 	internal CBUUID PmdService => PmdServiceUuid;
 	internal CBUUID PmdControlPointCharacteristic => PmdControlPointUuid;
 	internal CBUUID PmdData => PmdDataUuid;
@@ -180,6 +189,8 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 		}
 
 		_artifactFilter.Reset();
+		_rpeak.Reset();
+		_polarIntervalsActive = false;
 		peripheral.DiscoverServices(_servicesToDiscover);
 	}
 
@@ -244,6 +255,12 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 		// survives contact loss, when RR intervals (and beats) dry up.
 		SensorContactChanged?.Invoke(measurement.SensorContact);
 
+		// Once a preferred Polar interval stream is live, HRS RR is the redundant source — drop it.
+		if (_polarIntervalsActive)
+		{
+			return;
+		}
+
 		foreach (double rrMs in measurement.RrIntervals)
 		{
 			bool isArtifact = _artifactFilter.IsArtifact(rrMs);
@@ -252,18 +269,66 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 		}
 	}
 
-	// Decode a PMD data frame; only ACC frames produce motion samples.
+	// The PMD start commands to issue for the configured streams (ACC for motion, PPI or ECG for the
+	// chosen interval source). Unsupported starts are simply ignored by the device.
+	internal IEnumerable<byte[]> PmdStartCommands()
+	{
+		if (_enableMotion)
+		{
+			yield return PmdControlPoint.BuildStartAcc();
+		}
+
+		if (_intervalSource == IntervalSource.PolarPpi)
+		{
+			yield return PmdControlPoint.BuildStartPpi();
+		}
+		else if (_intervalSource == IntervalSource.PolarEcg)
+		{
+			yield return PmdControlPoint.BuildStartEcg();
+		}
+	}
+
+	// Decode a PMD data frame: ACC → motion, PPI/ECG → beats (suppressing HRS once they're live).
 	internal void OnPmdData(byte[] bytes)
 	{
-		if (bytes.Length < 10 || (PmdMeasurementType)bytes[0] != PmdMeasurementType.Acc)
+		if (bytes.Length < 10)
 		{
 			return;
 		}
 
 		var now = DateTimeOffset.UtcNow;
-		foreach (PmdAccSample acc in PmdFrameParser.ParseAcc(bytes))
+		switch ((PmdMeasurementType)bytes[0])
 		{
-			MotionSampleReceived?.Invoke(PolarMotion.ToMotionSample(acc, now));
+			case PmdMeasurementType.Acc:
+				foreach (PmdAccSample acc in PmdFrameParser.ParseAcc(bytes))
+				{
+					MotionSampleReceived?.Invoke(PolarMotion.ToMotionSample(acc, now));
+				}
+
+				break;
+
+			case PmdMeasurementType.Ppi:
+				foreach (PmdPpiSample ppi in PmdFrameParser.ParsePpi(bytes))
+				{
+					bool timingArtifact = _artifactFilter.IsArtifact(ppi.PpiMs);
+					_polarIntervalsActive = true;
+					_channel.Writer.TryWrite(PolarPpi.ToBeat(ppi, now, timingArtifact));
+				}
+
+				break;
+
+			case PmdMeasurementType.Ecg:
+				foreach (PmdEcgSample ecg in PmdFrameParser.ParseEcg(bytes))
+				{
+					if (_rpeak.AddSample(ecg.MicroVolts) is { } rrMs)
+					{
+						bool isArtifact = _artifactFilter.IsArtifact(rrMs);
+						_polarIntervalsActive = true;
+						_channel.Writer.TryWrite(new Beat(now, rrMs, (int)Math.Round(60000.0 / rrMs), isArtifact));
+					}
+				}
+
+				break;
 		}
 	}
 
@@ -323,7 +388,7 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 				{
 					peripheral.DiscoverCharacteristics(_owner.DeviceInfoCharacteristics, service);
 				}
-				else if (_owner.EnableMotion && service.UUID.Equals(_owner.PmdService))
+				else if (_owner.PmdEnabled && service.UUID.Equals(_owner.PmdService))
 				{
 					peripheral.DiscoverCharacteristics(new[] { _owner.PmdControlPointCharacteristic, _owner.PmdData }, service);
 				}
@@ -354,16 +419,18 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 					// Static identity — a single read, no notifications.
 					peripheral.ReadValue(characteristic);
 				}
-				else if (_owner.EnableMotion && characteristic.UUID.Equals(_owner.PmdData))
+				else if (_owner.PmdEnabled && characteristic.UUID.Equals(_owner.PmdData))
 				{
 					peripheral.SetNotifyValue(true, characteristic);
 				}
-				else if (_owner.EnableMotion && characteristic.UUID.Equals(_owner.PmdControlPointCharacteristic))
+				else if (_owner.PmdEnabled && characteristic.UUID.Equals(_owner.PmdControlPointCharacteristic))
 				{
-					// Enable indications, then ask the device to start streaming the accelerometer.
+					// Enable indications, then ask the device to start each desired PMD stream.
 					peripheral.SetNotifyValue(true, characteristic);
-					peripheral.WriteValue(NSData.FromArray(PmdControlPoint.BuildStartAcc()), characteristic,
-						CBCharacteristicWriteType.WithResponse);
+					foreach (byte[] command in _owner.PmdStartCommands())
+					{
+						peripheral.WriteValue(NSData.FromArray(command), characteristic, CBCharacteristicWriteType.WithResponse);
+					}
 				}
 			}
 		}
@@ -381,7 +448,7 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 			bool isHr = characteristic.UUID.Equals(_owner.CharacteristicUuid);
 			bool isBattery = characteristic.UUID.Equals(_owner.BatteryCharacteristic);
 			bool isDeviceInfo = _owner.IsDeviceInfoCharacteristic(characteristic.UUID);
-			bool isPmdData = _owner.EnableMotion && characteristic.UUID.Equals(_owner.PmdData);
+			bool isPmdData = _owner.PmdEnabled && characteristic.UUID.Equals(_owner.PmdData);
 			if (!isHr && !isBattery && !isDeviceInfo && !isPmdData)
 			{
 				return;

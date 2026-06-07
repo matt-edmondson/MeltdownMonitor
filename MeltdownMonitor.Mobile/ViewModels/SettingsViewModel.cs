@@ -67,6 +67,24 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	public IReadOnlyList<IntervalSource> IntervalSources { get; } = Enum.GetValues<IntervalSource>();
+
+	/// <summary>Which stream supplies beat-to-beat intervals (HRS RR, Polar PPI, or Polar ECG).
+	/// Applies on the next monitoring start.</summary>
+	public IntervalSource PreferredIntervalSource
+	{
+		get => _settings.PreferredIntervalSource;
+		set
+		{
+			if (_settings.PreferredIntervalSource != value)
+			{
+				_settings.PreferredIntervalSource = value;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	public bool EnableChime
 	{
 		get => _settings.EnableChime;

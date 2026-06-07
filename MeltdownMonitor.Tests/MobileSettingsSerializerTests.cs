@@ -18,6 +18,7 @@ public class MobileSettingsSerializerTests
 			EnableChime = false,
 			EnableNotifications = false,
 			EnableMotionCorroboration = true,
+			PreferredIntervalSource = IntervalSource.PolarEcg,
 			AlertSuggestion = "Breathe. You've got this.",
 			WriteEpisodesToHealthKit = true,
 			EnableLiveActivity = true,
@@ -43,6 +44,7 @@ public class MobileSettingsSerializerTests
 		Assert.AreEqual(original.EnableChime, restored.EnableChime);
 		Assert.AreEqual(original.EnableNotifications, restored.EnableNotifications);
 		Assert.AreEqual(original.EnableMotionCorroboration, restored.EnableMotionCorroboration);
+		Assert.AreEqual(original.PreferredIntervalSource, restored.PreferredIntervalSource);
 		Assert.AreEqual(original.AlertSuggestion, restored.AlertSuggestion);
 		Assert.AreEqual(original.WriteEpisodesToHealthKit, restored.WriteEpisodesToHealthKit);
 		Assert.AreEqual(original.EnableLiveActivity, restored.EnableLiveActivity);

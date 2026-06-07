@@ -24,6 +24,14 @@ public sealed class MobileSettings
 	/// </summary>
 	public bool EnableMotionCorroboration { get; set; }
 
+	/// <summary>
+	/// Which stream supplies beat-to-beat intervals. Default <see cref="IntervalSource.HeartRateService"/>
+	/// (standard HRS RR, every device). The Polar PMD options (<see cref="IntervalSource.PolarPpi"/> for
+	/// Verity Sense, <see cref="IntervalSource.PolarEcg"/> for the H10) take over once their stream is
+	/// live and fall back to HRS on a device that doesn't offer them. Applies on next start.
+	/// </summary>
+	public IntervalSource PreferredIntervalSource { get; set; } = IntervalSource.HeartRateService;
+
 	/// <summary>When set, monitoring is paused until this UTC time.</summary>
 	public DateTimeOffset? PausedUntil { get; set; }
 
