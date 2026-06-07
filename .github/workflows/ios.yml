@@ -434,6 +434,55 @@ jobs:
           echo "$IOS_PROVISIONING_PROFILE_BASE64" | base64 --decode \
             > "$PROFILE_DIR/meltdownmonitor-distribution.mobileprovision"
 
+      # --- Live Activity widget (optional, gated on the widget signing assets) ---
+      # The Live Activity needs a WidgetKit extension embedded in the app. Shipping
+      # a SIGNED one needs its own App ID + App Store distribution provisioning
+      # profile (bundle id com.matthewedmondson.meltdownmonitor.WidgetExtension),
+      # supplied via the IOS_WIDGET_* secrets below. Until those exist, every step
+      # here no-ops and the archive embeds nothing (the .csproj items are
+      # Exists()-guarded), so releases ship exactly as before — zero risk.
+      # See docs/live-activity.md ▸ "Shipping the widget on TestFlight".
+      - name: Install widget provisioning profile (if configured)
+        env:
+          IOS_WIDGET_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE_BASE64 }}
+        run: |
+          set -e
+          if [ -z "$IOS_WIDGET_PROVISIONING_PROFILE_BASE64" ]; then
+            echo "No IOS_WIDGET_PROVISIONING_PROFILE_BASE64 — skipping Live Activity widget (app ships without it)."
+            exit 0
+          fi
+          PROFILE_DIR="$HOME/Library/MobileDevice/Provisioning Profiles"
+          mkdir -p "$PROFILE_DIR"
+          echo "$IOS_WIDGET_PROVISIONING_PROFILE_BASE64" | base64 --decode \
+            > "$PROFILE_DIR/meltdownmonitor-widget-distribution.mobileprovision"
+          echo "Installed widget distribution profile."
+
+      - name: Build Live Activity native targets (signed, if configured)
+        env:
+          IOS_WIDGET_PROVISIONING_PROFILE_BASE64: ${{ secrets.IOS_WIDGET_PROVISIONING_PROFILE_BASE64 }}
+          IOS_WIDGET_PROVISION_NAME: ${{ secrets.IOS_WIDGET_PROVISION_NAME }}
+          IOS_CODESIGN_KEY: ${{ secrets.IOS_CODESIGN_KEY }}
+          IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+        run: |
+          set -e
+          if [ -z "$IOS_WIDGET_PROVISIONING_PROFILE_BASE64" ]; then
+            echo "Widget not configured — skipping native build."
+            exit 0
+          fi
+          brew install xcodegen
+          pushd MeltdownMonitor.iOS.WidgetExtension
+          # Release signing: framework unsigned (the app signs it), .appex
+          # distribution-signed with its own profile. MM_APPEX_IDENTITY reuses the
+          # app's distribution signing key; MM_APPEX_PROFILE is the widget profile name.
+          SDK=iphoneos CONFIG=Release \
+            DEVELOPMENT_TEAM="$IOS_TEAM_ID" \
+            MM_APPEX_IDENTITY="$IOS_CODESIGN_KEY" \
+            MM_APPEX_PROFILE="$IOS_WIDGET_PROVISION_NAME" \
+            ./generate.sh --build
+          popd
+          echo "Built signed Live Activity artifacts:"
+          ls -1 MeltdownMonitor.iOS.WidgetExtension/build/Release-iphoneos
+
       # App Store Connect rejects any upload whose CFBundleVersion already
       # exists for a given CFBundleShortVersionString, so the build number must
       # increase on every release. github.run_number is monotonic per workflow,

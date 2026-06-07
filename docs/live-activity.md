@@ -126,17 +126,41 @@ device `.app` actually contains `Frameworks/MeltdownLiveActivityBridge.framework
 and `PlugIns/MeltdownMonitorWidgetExtension.appex`. That gates the spec, the
 Swift compile, and the framework/`.appex` **link + embed** against regressions.
 
-Two things CI does **not** cover:
+One thing CI does **not** cover: **on-device presentation.** Whether the Lock
+Screen banner / Dynamic Island actually render, and the `dlsym` symbols resolve
+at runtime, still needs a real device — a simulator/headless build can't show a
+Live Activity.
 
-- **On-device presentation.** Whether the Lock Screen banner / Dynamic Island
-  actually render, and the `dlsym` symbols resolve at runtime, still needs a real
-  device (a simulator/headless build can't show a Live Activity).
-- **The signed TestFlight path.** The `testflight` job is left untouched, so
-  release builds do **not** yet ship the widget. Shipping a *signed* extension
-  needs a dedicated App ID + provisioning profile for
-  `com.matthewedmondson.meltdownmonitor.WidgetExtension` (App Store Connect
-  setup), after which the release job can build the artifacts signed and embed
-  them the same way.
+## Shipping the widget on TestFlight
+
+The `testflight` release job builds, signs, and embeds the widget **only when the
+widget signing assets are configured** — otherwise every widget step no-ops and
+the release ships exactly as before (the `.csproj` items are `Exists()`-guarded).
+So enabling it is a one-time setup, not a code change:
+
+**1. Apple Developer / App Store Connect (manual, one-time):**
+- Register an **App ID** `com.matthewedmondson.meltdownmonitor.WidgetExtension`.
+  No extra capability is needed — `NSSupportsLiveActivities` (already in the app
+  `Info.plist`) is enough, because we update the activity in-process, not via push.
+- Create an **App Store distribution provisioning profile** for that App ID,
+  using the same distribution certificate as the app.
+
+**2. CI secrets (in the `ios-release` environment):**
+- `IOS_WIDGET_PROVISIONING_PROFILE_BASE64` — the widget profile, `base64 -w0`'d.
+- `IOS_WIDGET_PROVISION_NAME` — that profile's **name** (used as the manual
+  `PROVISIONING_PROFILE_SPECIFIER` when Xcode signs the `.appex`).
+- `IOS_TEAM_ID` — your 10-character Apple team id.
+
+(The `.appex` is signed by Xcode with the widget profile and `IOS_CODESIGN_KEY`,
+then marked `SkipCodesignItems` so the app's codesign pass leaves it intact; the
+bridge framework is built unsigned and signed by the app like any embedded
+framework.)
+
+Once those exist, the next push to `main` (or `ios-v*` tag) produces a TestFlight
+build with the Live Activity. **First-run note:** this distribution-signing path
+(manual `.appex` signing + the app embedding/linking it) hasn't been exercised
+end-to-end yet, so the first release after enabling it should be watched and the
+result confirmed on a device.
 
 ## Throttling & lifecycle
 
