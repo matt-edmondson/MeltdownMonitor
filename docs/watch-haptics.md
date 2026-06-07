@@ -1,6 +1,6 @@
 # Apple Watch companion — somatic feedback (iOS v1.1+)
 
-Status: **Draft / Pre-implementation**
+Status: **Phase W1 landed** (managed scaffold + tests). Phases W2–W3 pending a Mac + paired Watch.
 Author: design pass, May 2026
 Scope: a watchOS companion that turns detected dysregulation into gentle,
 non-jarring **haptic co-regulation cues on the wrist** — the first *output*
@@ -343,7 +343,29 @@ being paired.
 
 Each phase ends at a buildable, demoable state, matching the doc's house style.
 
-### Phase W1 — managed scaffold + tests (no Mac required)
+### Phase W1 — managed scaffold + tests (no Mac required) — **LANDED**
+
+> **Implemented.** `IWatchSession` + `WatchHapticState` / `WatchHapticCue` +
+> `NoOpWatchSession` (`Services/IWatchSession.cs`), the pure `WatchHapticPlanner`
+> (+ `WatchHapticPlan` / `WatchHapticOptions` / `WatchHapticMode` /
+> `WatchHapticIntensity`), the `WatchHapticPublisher`, the four `MobileSettings`
+> fields (§9), the composition-root wiring in `IosCompositionRoot` (against
+> `NoOpWatchSession`), and `WatchHapticPlannerTests` + `WatchHapticPublisherTests`
+> + settings round-trip/defaults tests. `dotnet test` green on Linux/CI.
+>
+> **One refinement from the sketch below:** `WatchHapticState` carries the
+> **resolved** plan (`Intensity` + `BreathPeriodSeconds` from the tested planner)
+> rather than the raw `RegulationIndex` + `Confidence`. This keeps the eventual
+> Swift watch app a dumb renderer and the entire when/how-strong decision in
+> tested managed code — the doc's own ethos — instead of duplicating the mapping
+> in untested Swift. The §6 sketch is left as-is for context.
+>
+> **Not yet done (deferred to W2, where they're testable/useful):** the
+> Settings ▸ Haptics UI (a toggle for a watch feature with no watch app is
+> premature), and wiring `AlertFired` to a must-arrive cue.
+
+The original W1 task list:
+
 
 - `IWatchSession` seam + `WatchHapticState` / `WatchHapticCue`.
 - `WatchHapticPublisher` (opt-in, gating, throttle, state-bypass, fire-and-forget)
