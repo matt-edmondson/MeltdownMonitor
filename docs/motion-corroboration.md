@@ -73,6 +73,13 @@ Feature negotiation: read the control point once for the supported-type bitmask 
   *actually producing intervals*, then the head suppresses HRS — so an unsupported device (PPI on an
   H10) or a slow PMD start never goes silent. Like all BLE behaviour, only fully verifiable on the
   live app with a real sensor.
+- **Live ECG waveform (dedicated view, both heads):** when the ECG source is active the heads forward
+  raw samples (`IEcgSource` / `EcgSamples`, with per-batch R-peak offsets) into the Core
+  `EcgWaveformBuffer` — a thread-safe rolling window that the pipeline exposes as a snapshot
+  (`EcgWaveform`) and a `EcgUpdated` event. The buffer also derives a `EcgSignalQuality` cue
+  (flatline/saturation/peak-rate). A dedicated **ECG tab** on each head (desktop `DrawEcgTab` via
+  ImPlot; mobile `EcgView` + the `EcgStrip` Avalonia control) draws the scrolling trace with R-peak
+  dots, a peak-derived heart rate, and the quality cue. It is a signal view, not a diagnostic ECG.
 
 ## Verification
 

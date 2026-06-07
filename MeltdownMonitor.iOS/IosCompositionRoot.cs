@@ -32,6 +32,7 @@ public static class IosCompositionRoot
 	private static NowViewModel? _now;
 	private static HistoryViewModel? _history;
 	private static MetricsViewModel? _metrics;
+	private static EcgViewModel? _ecg;
 	private static BleHrSource? _source;
 	private static ImuMotionSource? _motionFallback;
 	private static Pipeline? _pipeline;
@@ -165,7 +166,8 @@ public static class IosCompositionRoot
 			isAvailable: () => HKHealthStore.IsHealthDataAvailable,
 			onChanged: () => _store.Save(settings));
 
-		return new RootViewModel(settings, _now, _history, settingsTab, _metrics, _store, healthPrompt);
+		_ecg = new EcgViewModel();
+		return new RootViewModel(settings, _now, _history, settingsTab, _metrics, _ecg, _store, healthPrompt);
 	}
 
 	/// <summary>
@@ -264,6 +266,7 @@ public static class IosCompositionRoot
 		await Dispatcher.UIThread.InvokeAsync(() =>
 		{
 			_now?.AttachPipeline(pipeline);
+			_ecg?.AttachPipeline(pipeline);
 			_history?.UseDatabase(dbPath);
 		});
 	}

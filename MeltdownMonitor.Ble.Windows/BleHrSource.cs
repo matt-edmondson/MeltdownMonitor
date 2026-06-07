@@ -15,7 +15,7 @@ namespace MeltdownMonitor.Ble.Windows;
 /// set <see cref="HeartRateDeviceType.Auto"/> to connect to whichever is found first.
 /// Reconnects automatically with exponential backoff on disconnect.
 /// </summary>
-public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IDisposable
+public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IEcgSource, IDisposable
 {
 	private static readonly Guid HeartRateServiceUuid = new("0000180d-0000-1000-8000-00805f9b34fb");
 	private static readonly Guid HrMeasurementCharUuid = new("00002a37-0000-1000-8000-00805f9b34fb");
@@ -44,6 +44,11 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 
 	/// <inheritdoc />
 	public event Action<MotionSample>? MotionSampleReceived;
+
+	/// <inheritdoc />
+	public event Action<EcgSamples>? EcgSamplesReceived;
+
+	private const double EcgSampleRateHz = 130.0;
 
 	private readonly HeartRateDeviceType _deviceType;
 	private readonly bool _enableMotion;
@@ -359,17 +364,30 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 				break;
 
 			case PmdMeasurementType.Ecg:
-				foreach (PmdEcgSample ecg in PmdFrameParser.ParseEcg(bytes))
+			{
+				var ecgSamples = PmdFrameParser.ParseEcg(bytes);
+				var microVolts = new int[ecgSamples.Count];
+				var peaks = new List<int>();
+				for (int i = 0; i < ecgSamples.Count; i++)
 				{
-					if (_rpeak.AddSample(ecg.MicroVolts) is { } rrMs)
+					microVolts[i] = ecgSamples[i].MicroVolts;
+					double? rrMs = _rpeak.AddSample(microVolts[i]);
+					if (_rpeak.LastSampleWasRPeak)
 					{
-						bool isArtifact = _artifactFilter.IsArtifact(rrMs);
+						peaks.Add(i);
+					}
+
+					if (rrMs is { } rr)
+					{
+						bool isArtifact = _artifactFilter.IsArtifact(rr);
 						_polarIntervalsActive = true;
-						_beatWriter?.TryWrite(new Beat(now, rrMs, (int)Math.Round(60000.0 / rrMs), isArtifact));
+						_beatWriter?.TryWrite(new Beat(now, rr, (int)Math.Round(60000.0 / rr), isArtifact));
 					}
 				}
 
+				EcgSamplesReceived?.Invoke(new EcgSamples(now, microVolts, EcgSampleRateHz, peaks));
 				break;
+			}
 		}
 	}
 

@@ -44,11 +44,20 @@ public sealed class EcgRPeakDetector
 	}
 
 	/// <summary>
+	/// True when the most recent <see cref="AddSample"/> call detected an R-peak — including the very
+	/// first peak (which yields no RR). Lets the waveform display mark every QRS, not just those that
+	/// completed an interval.
+	/// </summary>
+	public bool LastSampleWasRPeak { get; private set; }
+
+	/// <summary>
 	/// Feeds one ECG sample (microvolts). Returns the RR interval in milliseconds when this sample
 	/// completes a new beat-to-beat interval (an R-peak detected after a prior one), otherwise null.
+	/// <see cref="LastSampleWasRPeak"/> reflects whether this sample was an R-peak regardless of RR.
 	/// </summary>
 	public double? AddSample(double microVolts)
 	{
+		LastSampleWasRPeak = false;
 		for (int i = _recent.Length - 1; i > 0; i--)
 		{
 			_recent[i] = _recent[i - 1];
@@ -91,6 +100,7 @@ public sealed class EcgRPeakDetector
 				// subtraction would overflow), so accept it to anchor timing without emitting an RR.
 				if (firstPeak || peakIndex - _lastPeakIndex > _refractorySamples)
 				{
+					LastSampleWasRPeak = true;
 					_spki = (0.125 * _prevInteg) + (0.875 * _spki);
 					if (!firstPeak)
 					{
@@ -133,5 +143,6 @@ public sealed class EcgRPeakDetector
 		_prevInteg = 0;
 		_prevPrevInteg = 0;
 		_primed = false;
+		LastSampleWasRPeak = false;
 	}
 }

@@ -19,6 +19,7 @@ public sealed class RootViewModel : ViewModelBase
 		HistoryViewModel history,
 		SettingsViewModel settings_tab,
 		MetricsViewModel metrics,
+		EcgViewModel ecg,
 		IMobileSettingsStore? store = null,
 		HealthPromptViewModel? healthPrompt = null)
 	{
@@ -28,6 +29,7 @@ public sealed class RootViewModel : ViewModelBase
 		History = history;
 		Settings = settings_tab;
 		Metrics = metrics;
+		Ecg = ecg;
 		// A null prompt (design-time / desktop hosts) collapses to a never-shown banner.
 		HealthPrompt = healthPrompt ?? new HealthPromptViewModel(settings, isAvailable: () => false);
 		Disclaimer = new DisclaimerViewModel(AcceptDisclaimer);
@@ -37,6 +39,7 @@ public sealed class RootViewModel : ViewModelBase
 	public HistoryViewModel History { get; }
 	public SettingsViewModel Settings { get; }
 	public MetricsViewModel Metrics { get; }
+	public EcgViewModel Ecg { get; }
 	public DisclaimerViewModel Disclaimer { get; }
 
 	/// <summary>The one-shot, dismissible "record to Apple Health / Health Connect" prompt.</summary>
@@ -68,7 +71,8 @@ public sealed class RootViewModel : ViewModelBase
 			new NowViewModel(),
 			new HistoryViewModel(),
 			new SettingsViewModel(settings),
-			new MetricsViewModel());
+			new MetricsViewModel(),
+			new EcgViewModel());
 	}
 
 	private void AcceptDisclaimer()

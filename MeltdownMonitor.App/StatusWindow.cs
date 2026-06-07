@@ -98,6 +98,7 @@ public sealed class StatusWindow : IDisposable
 		_tabs.AddTab("Regulation Field", () => DrawScrollableTab("regulation-field", _regulationField.Draw));
 		_tabs.AddTab("Overview", () => DrawScrollableTab("overview", DrawOverviewTab));
 		_tabs.AddTab("Heart Rate", () => DrawScrollableTab("heart-rate", DrawHeartRateTab));
+		_tabs.AddTab("ECG", () => DrawScrollableTab("ecg", DrawEcgTab));
 		_tabs.AddTab("Time-Domain HRV", () => DrawScrollableTab("time-domain", DrawTimeDomainTab));
 		_tabs.AddTab("Frequency-Domain", () => DrawScrollableTab("frequency-domain", DrawFrequencyTab));
 		_tabs.AddTab("Poincaré", () => DrawScrollableTab("poincare", DrawPoincareTab));
@@ -1815,6 +1816,81 @@ public sealed class StatusWindow : IDisposable
 		float[] ys = ToFloat(rrMs);
 
 		return (xs, ys);
+	}
+
+	// Live raw ECG trace (Polar H10 PMD ECG stream), with R-peak markers, derived HR, and a
+	// signal-quality cue. Empty unless the Polar ECG interval source is selected.
+	private void DrawEcgTab()
+	{
+		EcgWaveformSnapshot ecg = _pipeline.EcgWaveform;
+		if (ecg.MicroVolts.Count < 2)
+		{
+			ImGui.TextWrapped("Select \"Polar ECG\" as the interval source (Settings tab) with a Polar H10 to see the live trace.");
+			return;
+		}
+
+		int bpm = EcgBpm(ecg);
+		ImGui.Text(bpm > 0 ? $"Heart rate: {bpm} bpm" : "Heart rate: —");
+		ImGui.SameLine();
+		ImGui.TextDisabled($"   {EcgQualityText(ecg.Quality)}");
+
+		int n = ecg.MicroVolts.Count;
+		double rate = ecg.SampleRateHz > 0 ? ecg.SampleRateHz : 130.0;
+		var xs = new float[n];
+		var ys = new float[n];
+		for (int i = 0; i < n; i++)
+		{
+			xs[i] = (float)(i / rate);
+			ys[i] = ecg.MicroVolts[i];
+		}
+
+		float height = Math.Max(180f, ImGui.GetContentRegionAvail().Y - 28f);
+		var size = new Vector2(ImGui.GetContentRegionAvail().X, height);
+		if (ImPlot.BeginPlot("##ecg", size, ImPlotFlags.NoLegend | ImPlotFlags.NoMouseText))
+		{
+			ImPlot.SetupAxes("s", "µV", ImPlotAxisFlags.AutoFit, ImPlotAxisFlags.AutoFit);
+			ImPlot.PlotLine("ECG", ref xs[0], ref ys[0], n);
+
+			if (ecg.RPeakIndices.Count > 0)
+			{
+				int m = ecg.RPeakIndices.Count;
+				var peakXs = new float[m];
+				var peakYs = new float[m];
+				for (int k = 0; k < m; k++)
+				{
+					int idx = ecg.RPeakIndices[k];
+					peakXs[k] = xs[idx];
+					peakYs[k] = ys[idx];
+				}
+
+				ImPlot.PlotScatter("R-peaks", ref peakXs[0], ref peakYs[0], m);
+			}
+
+			ImPlot.EndPlot();
+		}
+
+		ImGui.TextDisabled("Signal view only — not a diagnostic ECG.");
+	}
+
+	private static string EcgQualityText(EcgSignalQuality quality) => quality switch
+	{
+		EcgSignalQuality.Good => "Signal: good",
+		EcgSignalQuality.Poor => "Signal: poor — check electrode contact",
+		_ => "Signal: —",
+	};
+
+	// Mean heart rate from the spacing of the R-peaks currently in the window.
+	private static int EcgBpm(EcgWaveformSnapshot ecg)
+	{
+		IReadOnlyList<int> peaks = ecg.RPeakIndices;
+		if (ecg.SampleRateHz <= 0 || peaks.Count < 2)
+		{
+			return 0;
+		}
+
+		double meanRrSamples = (double)(peaks[^1] - peaks[0]) / (peaks.Count - 1);
+		double rrMs = meanRrSamples / ecg.SampleRateHz * 1000.0;
+		return rrMs > 0 ? (int)Math.Round(60000.0 / rrMs) : 0;
 	}
 
 	private void Plot(string title, float[] xs, float[] ys, Vector2 size)
