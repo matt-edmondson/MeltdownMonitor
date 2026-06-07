@@ -52,6 +52,9 @@ public sealed class Pipeline : IDisposable
 	/// <see cref="MovementLevel.Unknown"/> when motion corroboration is off or no sensor is feeding.</summary>
 	public MovementLevel CurrentMovement => _movement.Level;
 
+	/// <summary>Current dynamic-acceleration intensity (g RMS) from the motion source, for tuning display.</summary>
+	public double CurrentMovementIntensity => _movement.IntensityG;
+
 	/// <summary>Sensor identity from the Device Information Service, or null until read.</summary>
 	public DeviceInformation? LatestDeviceInfo { get; private set; }
 
@@ -94,6 +97,11 @@ public sealed class Pipeline : IDisposable
 	/// <summary>Fires when the sensor's skin / electrode contact state changes.
 	/// Only ever raised when the injected source implements <see cref="IContactSource"/>.</summary>
 	public event Action<SensorContactStatus>? ContactChanged;
+
+	/// <summary>Fires per sample with the current movement snapshot (level + intensity), so the UI can
+	/// show when motion gating is active. Carries <see cref="MovementLevel.Unknown"/> when no motion
+	/// source is feeding.</summary>
+	public event Action<MovementSnapshot>? MovementUpdated;
 
 	/// <summary>Fires when the sensor's Device Information is read (typically once on
 	/// connect). Only ever raised when the injected source implements <see cref="IDeviceInfoSource"/>.</summary>
@@ -367,6 +375,7 @@ public sealed class Pipeline : IDisposable
 			// sample.State.) Gated on the prior-sample episode state, which keeps the dysregulation
 			// detector's IsWarm timing identical; a one-sample lag is negligible for a minutes-long EWMA.
 			MovementLevel movement = _movement.Level;
+			MovementUpdated?.Invoke(_movement.Snapshot);
 			if (!_hypoDetector.IsEpisodeActive)
 			{
 				_baseline.Update(sample, LatestContact, movement);

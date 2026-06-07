@@ -1,6 +1,7 @@
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Motion;
 using MeltdownMonitor.Core.Persistence;
 using MeltdownMonitor.Core.Regulation;
 using MeltdownMonitor.Mobile;
@@ -214,6 +215,28 @@ public class NowViewModelTests
 
 		vm.OnContactChanged(SensorContactStatus.Detected);
 		Assert.IsFalse(vm.IsContactLost, "Regaining contact clears the warning.");
+	}
+
+	[TestMethod]
+	public void OnMovementUpdated_SurfacesLevelAndGatingCue()
+	{
+		var vm = new NowViewModel();
+
+		// No motion source yet → hidden, not gating.
+		Assert.IsFalse(vm.IsMovementVisible);
+		Assert.IsFalse(vm.IsMovementGating);
+
+		vm.OnMovementUpdated(new MovementSnapshot(MovementLevel.Light, 0.04, MotionSourceKind.PolarStrap));
+		Assert.IsTrue(vm.IsMovementVisible, "Any real level shows the indicator.");
+		Assert.IsFalse(vm.IsMovementGating, "Light movement is below the gate.");
+		StringAssert.Contains(vm.MovementText, "Light", StringComparison.Ordinal);
+
+		vm.OnMovementUpdated(new MovementSnapshot(MovementLevel.Moderate, 0.12, MotionSourceKind.PolarStrap));
+		Assert.IsTrue(vm.IsMovementGating, "Moderate+ movement gates detection.");
+
+		vm.OnMovementUpdated(new MovementSnapshot(MovementLevel.Still, 0.0, MotionSourceKind.DeviceImu));
+		Assert.IsTrue(vm.IsMovementVisible);
+		Assert.IsFalse(vm.IsMovementGating, "Returning to still clears the gating cue.");
 	}
 
 	[TestMethod]
