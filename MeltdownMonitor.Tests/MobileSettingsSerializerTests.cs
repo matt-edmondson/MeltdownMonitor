@@ -217,6 +217,35 @@ public class MobileSettingsSerializerTests
 	}
 
 	[TestMethod]
+	public void RoundTrip_PreservesWatchHapticSettings()
+	{
+		var s = new MobileSettings
+		{
+			EnableWatchHaptics = true,
+			WatchHapticMode = WatchHapticMode.StateCues,
+			WatchHapticIntensity = WatchHapticIntensity.Firm,
+			WatchPacedBreathRate = 5.5,
+		};
+
+		var back = MobileSettingsSerializer.Deserialize(MobileSettingsSerializer.Serialize(s));
+
+		Assert.IsTrue(back.EnableWatchHaptics);
+		Assert.AreEqual(WatchHapticMode.StateCues, back.WatchHapticMode);
+		Assert.AreEqual(WatchHapticIntensity.Firm, back.WatchHapticIntensity);
+		Assert.AreEqual(5.5, back.WatchPacedBreathRate, 1e-9);
+	}
+
+	[TestMethod]
+	public void Default_WatchHaptics_AreConservative()
+	{
+		var s = new MobileSettings();
+		Assert.IsFalse(s.EnableWatchHaptics);
+		Assert.AreEqual(WatchHapticMode.Both, s.WatchHapticMode);
+		Assert.AreEqual(WatchHapticIntensity.Low, s.WatchHapticIntensity);
+		Assert.AreEqual(6.0, s.WatchPacedBreathRate, 1e-9);
+	}
+
+	[TestMethod]
 	public void Defaults_match_desktop_tuned_values()
 	{
 		var s = new MobileSettings();

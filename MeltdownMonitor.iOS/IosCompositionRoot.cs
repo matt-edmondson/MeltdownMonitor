@@ -22,6 +22,7 @@ public static class IosCompositionRoot
 {
 	private static MobileAlertDispatcher? _alertDispatcher;
 	private static LiveActivityPublisher? _liveActivity;
+	private static WatchHapticPublisher? _watchHaptics;
 	private static HealthKitEpisodeRecorder? _episodeRecorder;
 	private static HealthDataRecorder? _healthRecorder;
 	private static NotificationDispatcher? _notifications;
@@ -239,6 +240,12 @@ public static class IosCompositionRoot
 		// itself honours the flag, starting the activity only when enabled.
 		_liveActivity = new LiveActivityPublisher(pipeline, new LiveActivityController(), settings);
 
+		// Mirror state/arousal to the Apple Watch as gentle haptic co-regulation
+		// (docs/watch-haptics.md). Opt-in (EnableWatchHaptics); the publisher honours
+		// the flag. Until the watch app + WCSession bridge land (Phase W2) this drives
+		// a no-op session, so it is harmless when no watch is paired.
+		_watchHaptics = new WatchHapticPublisher(pipeline, new NoOpWatchSession(), settings);
+
 		_pipeline = pipeline;
 
 		// Feed the Metrics tab the same live streams the desktop StatusWindow charts.
@@ -334,6 +341,12 @@ public static class IosCompositionRoot
 		if (_liveActivity is not null)
 		{
 			await _liveActivity.StopAsync().ConfigureAwait(false);
+		}
+
+		// Tell the watch to stop cueing before we go (mirrors the Live Activity teardown).
+		if (_watchHaptics is not null)
+		{
+			await _watchHaptics.StopAsync().ConfigureAwait(false);
 		}
 
 		var stop = _pipeline.StopAsync();

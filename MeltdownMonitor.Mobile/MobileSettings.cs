@@ -1,6 +1,7 @@
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Regulation;
+using MeltdownMonitor.Mobile.Services;
 
 namespace MeltdownMonitor.Mobile;
 
@@ -96,6 +97,26 @@ public sealed class MobileSettings
 	/// tray icon.
 	/// </summary>
 	public bool EnableLiveActivity { get; set; }
+
+	// ── Apple Watch haptic co-regulation (docs/watch-haptics.md §9) ──────────
+	// Somatic output is off until explicitly asked for, with a gentle ceiling and
+	// a calming cadence. All conservative by default.
+
+	/// <summary>Master opt-in for the Apple Watch haptic companion: a gentle,
+	/// proportional breath pacer + discrete state cues on the wrist. Default off.</summary>
+	public bool EnableWatchHaptics { get; set; }
+
+	/// <summary>Which haptic outputs are enabled — the continuous breath pacer, the
+	/// discrete state cues, or both — so individual sensory profiles are respected.</summary>
+	public WatchHapticMode WatchHapticMode { get; set; } = WatchHapticMode.Both;
+
+	/// <summary>Ceiling for all wrist haptics (gentle / medium / firm). Default gentle.</summary>
+	public WatchHapticIntensity WatchHapticIntensity { get; set; } = WatchHapticIntensity.Low;
+
+	/// <summary>Paced-breath target in breaths per minute (3–12; clamped at the consumer).
+	/// Default ≈ 6 brpm, the resonance frequency that most raises HRV.</summary>
+	public double WatchPacedBreathRate { get; set; } = 6.0;
+
 
 	/// <summary>Number of recent readings drawn as the Regulation Field comet trail
 	/// (12–2160; clamped at the consumer). Default 48 ≈ 4 min, max ≈ 3 h at the 5 s emit cadence.</summary>
