@@ -53,6 +53,48 @@ public class PmdFrameParserTests
 	}
 
 	[TestMethod]
+	public void ParseAcc_DecodesMultipleDeltaGroups()
+	{
+		// Reference (100,-200,4000), then TWO 4-bit delta groups of 2 samples each, both carrying the
+		// same deltas (s.x=+1, s.y=-1, s.z=+2) / (0,+1,-1) packed LSB-first as F1 02 F1. This exercises
+		// the group-to-group byte advancement (DivRoundUp) that a single-group frame never reaches.
+		byte[] data =
+		[
+			0x64, 0x00, 0x38, 0xFF, 0xA0, 0x0F, // reference
+			0x04, 0x02, 0xF1, 0x02, 0xF1,       // group 1
+			0x04, 0x02, 0xF1, 0x02, 0xF1,       // group 2
+		];
+		byte[] frame = Frame(0x02, OneSecondTimestamp, 0x81, data);
+
+		var samples = PmdFrameParser.ParseAcc(frame);
+
+		Assert.AreEqual(5, samples.Count);
+		Assert.AreEqual(new PmdAccSample(100, -200, 4000), samples[0]);
+		Assert.AreEqual(new PmdAccSample(101, -201, 4002), samples[1]);
+		Assert.AreEqual(new PmdAccSample(101, -200, 4001), samples[2]);
+		Assert.AreEqual(new PmdAccSample(102, -201, 4003), samples[3]);
+		Assert.AreEqual(new PmdAccSample(102, -200, 4002), samples[4]);
+	}
+
+	[TestMethod]
+	public void ParseAcc_DecodesUncompressedFrame()
+	{
+		// Frame-type byte 0x00 ⇒ not compressed: a flat array of int16 LE channel triples.
+		byte[] data =
+		[
+			0x64, 0x00, 0x38, 0xFF, 0xA0, 0x0F, // (100, -200, 4000)
+			0x9C, 0xFF, 0x64, 0x00, 0x00, 0x00, // (-100, 100, 0)
+		];
+		byte[] frame = Frame(0x02, OneSecondTimestamp, 0x00, data);
+
+		var samples = PmdFrameParser.ParseAcc(frame);
+
+		Assert.AreEqual(2, samples.Count);
+		Assert.AreEqual(new PmdAccSample(100, -200, 4000), samples[0]);
+		Assert.AreEqual(new PmdAccSample(-100, 100, 0), samples[1]);
+	}
+
+	[TestMethod]
 	public void ParsePpi_DecodesSamplesAndFlags()
 	{
 		// Sample 1: HR=60, PPI=800, error=5, flags=0x06 (contact status + supported, no blocker).

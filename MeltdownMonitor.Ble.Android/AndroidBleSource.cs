@@ -88,8 +88,13 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 	private bool _polarIntervalsActive;
 	private bool PmdEnabled => _enableMotion || _intervalSource != IntervalSource.HeartRateService;
 	private readonly RrArtifactFilter _artifactFilter = new();
+
+	// Not single-writer: the HRS notification (OnMeasurementBytes) and the PMD data callback (OnPmdData,
+	// for PPI/ECG) can both write briefly around the handover to a Polar interval source. A single GATT's
+	// callbacks are serialised on one binder thread today, but the channel must not rely on that — matches
+	// the Windows head, which documents the same dual-writer handover.
 	private readonly Channel<Beat> _channel = Channel.CreateUnbounded<Beat>(
-		new UnboundedChannelOptions { SingleWriter = true });
+		new UnboundedChannelOptions { SingleWriter = false });
 	private readonly BluetoothManager? _manager;
 	private readonly BluetoothAdapter? _adapter;
 

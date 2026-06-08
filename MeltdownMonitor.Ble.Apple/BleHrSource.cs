@@ -85,8 +85,13 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 	// suppressed so the two sources can't double-count. Until then HRS keeps the pipeline fed.
 	private bool _polarIntervalsActive;
 	private readonly RrArtifactFilter _artifactFilter = new();
+
+	// Not single-writer: the HRS notification (OnMeasurementBytes) and the PMD data callback (OnPmdData,
+	// for PPI/ECG) can both write briefly around the handover to a Polar interval source. CoreBluetooth
+	// serialises delegate callbacks on the central's queue today, but the channel must not rely on that —
+	// matches the Windows head, which documents the same dual-writer handover.
 	private readonly Channel<Beat> _channel = Channel.CreateUnbounded<Beat>(
-		new UnboundedChannelOptions { SingleWriter = true });
+		new UnboundedChannelOptions { SingleWriter = false });
 	private readonly CBCentralManager _central;
 
 	private PeripheralObserver? _peripheralObserver;
