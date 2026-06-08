@@ -24,13 +24,16 @@ public enum EcgSignalQuality
 /// <param name="MaxMicroVolts">Maximum sample in the window.</param>
 /// <param name="SampleRateHz">Sample rate of the trace.</param>
 /// <param name="Quality">Signal-quality cue.</param>
+/// <param name="TotalPeaks">Monotonic count of every R-peak detected since the stream began — a stable
+/// new-beat signal for the overlay's sweep animation (unaffected by peaks scrolling out of the window).</param>
 public record EcgWaveformSnapshot(
 	IReadOnlyList<int> MicroVolts,
 	IReadOnlyList<int> RPeakIndices,
 	int MinMicroVolts,
 	int MaxMicroVolts,
 	double SampleRateHz,
-	EcgSignalQuality Quality)
+	EcgSignalQuality Quality,
+	long TotalPeaks = 0)
 {
 	/// <summary>An empty snapshot (no ECG streaming).</summary>
 	public static readonly EcgWaveformSnapshot Empty = new([], [], 0, 0, 0, EcgSignalQuality.Unknown);
@@ -51,6 +54,7 @@ public sealed class EcgWaveformBuffer
 	private readonly Queue<int> _samples = new();
 	private readonly Queue<long> _peakIndices = new();
 	private double _sampleRateHz;
+	private long _totalPeaks;
 	private long _totalAppended;
 
 	/// <param name="windowSeconds">How many seconds of trace to retain (the visible strip width).</param>
@@ -85,6 +89,7 @@ public sealed class EcgWaveformBuffer
 			foreach (int offset in batch.RPeakOffsets)
 			{
 				_peakIndices.Enqueue(batchStart + offset);
+				_totalPeaks++;
 			}
 
 			int capacity = CapacityLocked();
@@ -132,7 +137,7 @@ public sealed class EcgWaveformBuffer
 				if (s > max) { max = s; }
 			}
 
-			return new EcgWaveformSnapshot(samples, peaks, min, max, _sampleRateHz, AssessQuality(samples, max - min, peaks.Length));
+			return new EcgWaveformSnapshot(samples, peaks, min, max, _sampleRateHz, AssessQuality(samples, max - min, peaks.Length), _totalPeaks);
 		}
 	}
 
@@ -165,6 +170,7 @@ public sealed class EcgWaveformBuffer
 			_samples.Clear();
 			_peakIndices.Clear();
 			_totalAppended = 0;
+			_totalPeaks = 0;
 			_sampleRateHz = 0;
 		}
 	}

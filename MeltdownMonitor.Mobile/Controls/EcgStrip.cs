@@ -39,6 +39,11 @@ public sealed class EcgStrip : Control
 	private double _easedReferenceRr;
 	private bool _easeInitialised;
 
+	// The live beat draws itself in like an ECG pen: a reveal point sweeps left→right at real time and
+	// resets when a fresh R-peak arrives, so a new beat is traced out rather than appearing all at once.
+	private double _revealSeconds;
+	private long _lastSequence = -1;
+
 	public static readonly StyledProperty<EcgBeatOverlay?> OverlayProperty =
 		AvaloniaProperty.Register<EcgStrip, EcgBeatOverlay?>(nameof(Overlay));
 
@@ -140,6 +145,20 @@ public sealed class EcgStrip : Control
 			return;
 		}
 
+		// Sweep the reveal point. On a fresh beat, jump it to the live beat's left edge and trace from there;
+		// otherwise advance at real time (a constant-speed pen, like clinical ECG paper).
+		if (overlay.LiveBeatSequence != _lastSequence)
+		{
+			_lastSequence = overlay.LiveBeatSequence;
+			_revealSeconds = overlay.Live is { Samples.Count: > 0 } first
+				? first.Samples[0].OffsetSeconds
+				: -overlay.HalfWindowSeconds;
+		}
+		else
+		{
+			_revealSeconds = Math.Min(_revealSeconds + dt, overlay.HalfWindowSeconds + 0.05);
+		}
+
 		// Ease the vertical scale (already robust to amplitude spikes) and the reference cadence toward the
 		// overlay's values. Easing the reference holds the centre steady so each beat's early/late shift
 		// reads against a calm baseline — no jumps; the horizontal spread is the real timing signal.
@@ -200,17 +219,23 @@ public sealed class EcgStrip : Control
 		using (context.PushClip(bounds))
 		{
 			// Faded stack, oldest first so newer beats paint on top. Each beat is shifted by how far its
-			// RR sits from the reference cadence — that horizontal offset is the early/late signal.
+			// RR sits from the reference cadence — that horizontal offset is the early/late signal. The
+			// completed beats are history, drawn whole; only the live beat is revealed by the pen.
 			foreach (EcgOverlayBeat beat in overlay.Beats)
 			{
 				double alpha = Math.Max(MinBeatAlpha, NewestBeatAlpha * Math.Pow(BeatAlphaFalloff, beat.Age));
-				DrawBeat(context, beat, lineColor, alpha, LineThickness * 0.9, centreX, pxPerSecond, referenceRr, YAt);
+				DrawBeat(context, beat, lineColor, alpha, LineThickness * 0.9, centreX, pxPerSecond, referenceRr, YAt, double.PositiveInfinity);
 			}
 
-			// Live beat: full strength, a touch heavier, on top of everything.
-			if (overlay.Live is { } live)
+			// Live beat: full strength, a touch heavier, traced left→right up to the sweeping pen.
+			if (overlay.Live is { Samples.Count: > 1 } live)
 			{
-				DrawBeat(context, live, lineColor, 1.0, LineThickness, centreX, pxPerSecond, referenceRr, YAt);
+				Point? penTip = DrawBeat(context, live, lineColor, 1.0, LineThickness, centreX, pxPerSecond, referenceRr, YAt, _revealSeconds);
+				bool sweeping = _revealSeconds < live.Samples[^1].OffsetSeconds;
+				if (sweeping && penTip is { } tip)
+				{
+					context.DrawEllipse(new SolidColorBrush(lineColor), null, tip, LineThickness + 1.0, LineThickness + 1.0);
+				}
 			}
 
 			// Centre guide: the reference cadence (a beat exactly on cadence sits here).
@@ -221,27 +246,31 @@ public sealed class EcgStrip : Control
 
 	// Strokes one beat as a single polyline geometry — one draw op instead of one per sample pair. The
 	// beat is translated horizontally by (its RR − reference cadence), so an early beat sits left of
-	// centre and a late beat right of it.
-	private static void DrawBeat(
+	// centre and a late beat right of it. Only samples up to <paramref name="revealLimitSeconds"/> are
+	// drawn (the rest awaits the sweeping pen); returns the pen-tip point, or null if nothing was drawn.
+	private static Point? DrawBeat(
 		DrawingContext context, EcgOverlayBeat beat, Color color, double alpha, double thickness,
-		double centreX, double pxPerSecond, double referenceRr, Func<double, double> yAt)
+		double centreX, double pxPerSecond, double referenceRr, Func<double, double> yAt, double revealLimitSeconds)
 	{
 		IReadOnlyList<EcgBeatSample> samples = beat.Samples;
-		if (samples.Count < 2)
+		if (samples.Count < 2 || samples[0].OffsetSeconds > revealLimitSeconds)
 		{
-			return;
+			return null;
 		}
 
 		double shift = beat.IntervalSeconds > 0 ? beat.IntervalSeconds - referenceRr : 0.0;
 		double XAt(double offsetSeconds) => centreX + ((offsetSeconds + shift) * pxPerSecond);
 
+		var first = new Point(XAt(samples[0].OffsetSeconds), yAt(samples[0].MicroVolts));
+		Point tip = first;
 		var geometry = new StreamGeometry();
 		using (StreamGeometryContext geo = geometry.Open())
 		{
-			geo.BeginFigure(new Point(XAt(samples[0].OffsetSeconds), yAt(samples[0].MicroVolts)), isFilled: false);
-			for (int i = 1; i < samples.Count; i++)
+			geo.BeginFigure(first, isFilled: false);
+			for (int i = 1; i < samples.Count && samples[i].OffsetSeconds <= revealLimitSeconds; i++)
 			{
-				geo.LineTo(new Point(XAt(samples[i].OffsetSeconds), yAt(samples[i].MicroVolts)));
+				tip = new Point(XAt(samples[i].OffsetSeconds), yAt(samples[i].MicroVolts));
+				geo.LineTo(tip);
 			}
 
 			geo.EndFigure(isClosed: false);
@@ -250,5 +279,6 @@ public sealed class EcgStrip : Control
 		var pen = new Pen(
 			new SolidColorBrush(color, alpha), thickness, lineJoin: PenLineJoin.Round, lineCap: PenLineCap.Round);
 		context.DrawGeometry(null, pen, geometry);
+		return tip;
 	}
 }

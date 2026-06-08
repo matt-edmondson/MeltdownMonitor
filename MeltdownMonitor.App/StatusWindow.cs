@@ -52,6 +52,11 @@ public sealed class StatusWindow : IDisposable
 	private double _ecgEasedReferenceRr;
 	private bool _ecgEaseInit;
 
+	// The live beat draws itself in like an ECG pen: a reveal point sweeps left→right at real time and
+	// resets when a fresh R-peak arrives, so a new beat is traced out rather than appearing all at once.
+	private double _ecgRevealSeconds;
+	private long _ecgLastSequence = -1;
+
 	// Auto-fitted height (px) of the compact HUD, measured each frame and applied on the
 	// next so the overlay grows/shrinks vertically with the selected metrics.
 	private int _compactHeight;
@@ -1942,12 +1947,29 @@ public sealed class StatusWindow : IDisposable
 	private const float EcgBeatAlphaFalloff = 0.72f;
 	private const float EcgMinBeatAlpha = 0.06f;
 
-	private void ResetEcgEasing() => _ecgEaseInit = false;
+	private void ResetEcgEasing()
+	{
+		_ecgEaseInit = false;
+		_ecgLastSequence = -1;
+	}
 
 	// Eases the (robust) vertical scale and the reference cadence toward the overlay's values. Easing the
 	// cadence holds the centre steady; each beat's horizontal offset from it is the real early/late signal.
 	private void AdvanceEcgEasing(EcgBeatOverlay overlay, float dt)
 	{
+		// Sweep the reveal pen: restart on a fresh beat, else advance at real time.
+		if (overlay.LiveBeatSequence != _ecgLastSequence)
+		{
+			_ecgLastSequence = overlay.LiveBeatSequence;
+			_ecgRevealSeconds = overlay.Live is { Samples.Count: > 0 } first
+				? first.Samples[0].OffsetSeconds
+				: -overlay.HalfWindowSeconds;
+		}
+		else
+		{
+			_ecgRevealSeconds = Math.Min(_ecgRevealSeconds + dt, overlay.HalfWindowSeconds + 0.05);
+		}
+
 		if (!_ecgEaseInit)
 		{
 			_ecgEasedMin = overlay.MinMicroVolts;
@@ -1999,12 +2021,17 @@ public sealed class StatusWindow : IDisposable
 		foreach (EcgOverlayBeat beat in overlay.Beats)
 		{
 			float alpha = Math.Max(EcgMinBeatAlpha, EcgNewestBeatAlpha * (float)Math.Pow(EcgBeatAlphaFalloff, beat.Age));
-			DrawBeatTrace(draw, beat, lineHue with { W = alpha }, 1.5f, centreX, pxPerSecond, referenceRr, YAt);
+			DrawBeatTrace(draw, beat, lineHue with { W = alpha }, 1.5f, centreX, pxPerSecond, referenceRr, YAt, double.PositiveInfinity);
 		}
 
-		if (overlay.Live is { } live)
+		if (overlay.Live is { Samples.Count: > 1 } live)
 		{
-			DrawBeatTrace(draw, live, lineHue, 2f, centreX, pxPerSecond, referenceRr, YAt);
+			Vector2? penTip = DrawBeatTrace(draw, live, lineHue, 2f, centreX, pxPerSecond, referenceRr, YAt, _ecgRevealSeconds);
+			bool sweeping = _ecgRevealSeconds < live.Samples[^1].OffsetSeconds;
+			if (sweeping && penTip is { } tip)
+			{
+				draw.AddCircleFilled(tip, 3f, Col(lineHue));
+			}
 		}
 
 		// Centre guide (dashed): the reference cadence — a beat exactly on cadence sits here.
@@ -2019,14 +2046,15 @@ public sealed class StatusWindow : IDisposable
 
 	// Strokes one beat, translated horizontally by (its RR − reference cadence) so an early beat sits left
 	// of centre and a late beat right of it — the spread of the fading stack is the timing variability.
-	private static void DrawBeatTrace(
+	// Only samples up to revealLimitSeconds are drawn; returns the pen-tip point (or null if nothing drawn).
+	private static Vector2? DrawBeatTrace(
 		ImDrawListPtr draw, EcgOverlayBeat beat, Vector4 colour, float thickness,
-		float centreX, double pxPerSecond, double referenceRr, Func<double, float> yAt)
+		float centreX, double pxPerSecond, double referenceRr, Func<double, float> yAt, double revealLimitSeconds)
 	{
 		IReadOnlyList<EcgBeatSample> samples = beat.Samples;
-		if (samples.Count < 2)
+		if (samples.Count < 2 || samples[0].OffsetSeconds > revealLimitSeconds)
 		{
-			return;
+			return null;
 		}
 
 		double shift = beat.IntervalSeconds > 0 ? beat.IntervalSeconds - referenceRr : 0.0;
@@ -2034,12 +2062,14 @@ public sealed class StatusWindow : IDisposable
 
 		uint col = Col(colour);
 		var prev = new Vector2(XAt(samples[0].OffsetSeconds), yAt(samples[0].MicroVolts));
-		for (int i = 1; i < samples.Count; i++)
+		for (int i = 1; i < samples.Count && samples[i].OffsetSeconds <= revealLimitSeconds; i++)
 		{
 			var next = new Vector2(XAt(samples[i].OffsetSeconds), yAt(samples[i].MicroVolts));
 			draw.AddLine(prev, next, col, thickness);
 			prev = next;
 		}
+
+		return prev;
 	}
 
 	private static uint Col(Vector4 c) => ImGui.ColorConvertFloat4ToU32(c);
