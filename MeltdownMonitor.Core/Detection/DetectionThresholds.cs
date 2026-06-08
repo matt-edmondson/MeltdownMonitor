@@ -114,6 +114,17 @@ public record DetectionThresholds
 	public bool UseWatchCorroboration { get; init; } = true;
 
 	/// <summary>
+	/// When true, a <see cref="WatchCorroboration.Conflicted"/> verdict also <b>freezes the baseline</b>
+	/// for that sample — the same treatment the movement gate gives exertion — on the reasoning that a
+	/// strap reading the wrist contradicts is suspect RR that would otherwise quietly re-normalise the
+	/// EWMA baseline. Off by default: the verdict already gates escalation (<see cref="UseWatchCorroboration"/>),
+	/// the baseline's minutes-long memory absorbs a few suspect samples, and freezing is the stricter,
+	/// opt-in choice. Only consulted when <see cref="UseWatchCorroboration"/> is on and a verdict other
+	/// than <see cref="WatchCorroboration.Unknown"/> is present, so a no-watch build is unaffected.
+	/// </summary>
+	public bool FreezeBaselineOnWatchConflict { get; init; }
+
+	/// <summary>
 	/// Tuning for the <see cref="HypoarousalDetector"/> — the low-arousal/shutdown edge (audit A(b)).
 	/// Nested here so the whole detection configuration travels and serialises as one object and the
 	/// pipelines can wire the detector to live edits via <c>Thresholds.Hypoarousal</c>. The

@@ -35,6 +35,7 @@ public class MobileSettingsSerializerTests
 				CooldownDuration = TimeSpan.FromMinutes(7),
 				UseLfHfCorroboration = true,
 				LfHfWarningRiseFraction = 0.6,
+				FreezeBaselineOnWatchConflict = true,
 			},
 		};
 

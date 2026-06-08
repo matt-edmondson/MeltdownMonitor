@@ -411,6 +411,10 @@ public sealed class Pipeline : IDisposable
 		double emit = Math.Clamp(_settings.HrvEmitIntervalSeconds, 0.5, 30.0);
 		_hrv.EmitIntervalSeconds = emit;
 		_baseline.RmssdHrAlpha = Math.Clamp(emit / BaselineWindowSeconds, 0.0001, 1.0);
+
+		// Opt-in baseline freeze on a watch/strap HR conflict, gated on watch corroboration being on.
+		DetectionThresholds t = _settings.Thresholds;
+		_baseline.FreezeOnWatchConflict = t.UseWatchCorroboration && t.FreezeBaselineOnWatchConflict;
 	}
 
 	private async Task RunAsync(CancellationToken cancellationToken)
@@ -451,17 +455,19 @@ public sealed class Pipeline : IDisposable
 			// shutdown and blind the detectors. (Hyperarousal episodes are frozen inside Update via
 			// sample.State.) Gated on the prior-sample episode state, which keeps the dysregulation
 			// detector's IsWarm timing identical; a one-sample lag is negligible for a minutes-long EWMA.
+			// Cross-check the strap's HR against the watch (if one is feeding) for this sample, so a
+			// strap signal the wrist contradicts can't drive the detector — or (opt-in) the baseline.
+			// Unknown when no watch feeds. Evaluated before the baseline update so the conflict freeze
+			// (FreezeOnWatchConflict) sees this sample's verdict.
+			WatchCorroboration watch = _watchCorroboration.Evaluate(sample.MeanHr, sample.Timestamp);
+			WatchCorroborationUpdated?.Invoke(_watchCorroboration.Snapshot);
+
 			MovementLevel movement = _movement.Level;
 			MovementUpdated?.Invoke(_movement.Snapshot);
 			if (!_hypoDetector.IsEpisodeActive)
 			{
-				_baseline.Update(sample, LatestContact, movement);
+				_baseline.Update(sample, LatestContact, movement, watch);
 			}
-
-			// Cross-check the strap's HR against the watch (if one is feeding) for this sample, so a
-			// strap signal the wrist contradicts can't drive the detector. Unknown when no watch feeds.
-			WatchCorroboration watch = _watchCorroboration.Evaluate(sample.MeanHr, sample.Timestamp);
-			WatchCorroborationUpdated?.Invoke(_watchCorroboration.Snapshot);
 
 			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact, movement, watch);
 			_hypoDetector.Process(sample, _baseline.IsWarm, LatestContact);

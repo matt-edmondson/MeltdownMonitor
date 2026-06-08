@@ -29,6 +29,10 @@ public class BaselineHrvTracker
 	public bool FreezeOnMovement { get; set; } = true;
 	/// <summary>Movement level at/above which the baseline freezes (exercise HRV must not re-normalise it).</summary>
 	public MovementLevel MovementFreezeLevel { get; set; } = MovementLevel.Moderate;
+	/// <summary>When true, skip baseline updates while the Apple Watch contradicts the strap
+	/// (<see cref="WatchCorroboration.Conflicted"/>) — a suspect strap reading must not re-normalise the
+	/// baseline. Off by default; the owner (Pipeline) sets it from the detection thresholds.</summary>
+	public bool FreezeOnWatchConflict { get; set; }
 
 	private double _baselineRmssd;
 	private double _baselineHr;
@@ -97,10 +101,17 @@ public class BaselineHrvTracker
 	/// baseline would desensitise the detector. The default (<see cref="MovementLevel.Unknown"/>)
 	/// never freezes, so a build with no accelerometer is unaffected.
 	/// </param>
+	/// <param name="watch">
+	/// Current Apple Watch corroboration verdict. When <see cref="WatchCorroboration.Conflicted"/> and
+	/// <see cref="FreezeOnWatchConflict"/> is set, the update is skipped: the strap reading the wrist
+	/// contradicts is suspect and must not re-normalise the baseline. The default
+	/// (<see cref="WatchCorroboration.Unknown"/>) never freezes, so a no-watch build is unaffected.
+	/// </param>
 	public void Update(
 		HrvSample sample,
 		SensorContactStatus contact = SensorContactStatus.NotSupported,
-		MovementLevel movement = MovementLevel.Unknown)
+		MovementLevel movement = MovementLevel.Unknown,
+		WatchCorroboration watch = WatchCorroboration.Unknown)
 	{
 		// Do not update during dysregulated states — prevents baseline from
 		// chasing a sustained episode and blinding the detector.
@@ -120,6 +131,13 @@ public class BaselineHrvTracker
 		// Do not update while moving — exercise HRV is real but unrepresentative of the resting
 		// baseline, so folding it in would blind the detector to a later genuine episode.
 		if (FreezeOnMovement && movement != MovementLevel.Unknown && movement >= MovementFreezeLevel)
+		{
+			return;
+		}
+
+		// Do not update while the wrist contradicts the strap (opt-in) — the suspect RR that drove the
+		// conflict would otherwise quietly re-normalise the baseline, same reasoning as the movement freeze.
+		if (FreezeOnWatchConflict && watch == WatchCorroboration.Conflicted)
 		{
 			return;
 		}
