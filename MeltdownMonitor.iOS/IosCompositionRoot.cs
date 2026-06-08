@@ -156,7 +156,8 @@ public static class IosCompositionRoot
 			requestHealthKit: () => _healthStore.RequestAuthorizationAsync(),
 			exportDatabase: () => exporter.ExportAsync(DatabasePath()),
 			onChanged: () => _store.Save(settings),
-			revokeHealthAccess: RevokeHealthAsync);
+			revokeHealthAccess: RevokeHealthAsync,
+			clearData: ClearStoredDataAsync);
 
 		// Unintrusive one-shot prompt to enable Health recording. Enabling asks for the
 		// same HealthKit authorization as the Settings button, then flips the opt-ins on.
@@ -190,6 +191,10 @@ public static class IosCompositionRoot
 
 		return Task.CompletedTask;
 	}
+
+	// Wipe all stored physiological data (the Settings "clear my data" action). Runs off the UI
+	// thread because it touches SQLite; a no-op if the pipeline hasn't started yet.
+	private static Task ClearStoredDataAsync() => Task.Run(() => _pipeline?.ClearStoredData());
 
 	/// <summary>
 	/// Opens the repository, constructs the BLE source, warm-starts the

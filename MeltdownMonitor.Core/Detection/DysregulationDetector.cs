@@ -47,6 +47,20 @@ public class DysregulationDetector
 	}
 
 	/// <summary>
+	/// Clears the in-progress warning / recovery / severe-drop streaks (without changing the current
+	/// state). Called on the off-body / movement-gated path, and by the pipeline when contact is lost,
+	/// so a streak that was building right before a dropout can't fire on reconnect after a long gap in
+	/// which no beats arrived to drive <see cref="Process"/>.
+	/// </summary>
+	public void ResetTransientStreaks()
+	{
+		_warningConditionsActive = false;
+		_recoveryActive = false;
+		_severeDropStreak = 0;
+		_recovery = RecoveryProgress.Inactive;
+	}
+
+	/// <summary>
 	/// Processes a new HRV sample. Returns the (possibly updated) detector state.
 	/// </summary>
 	/// <param name="sample">The latest HRV sample.</param>
@@ -81,10 +95,7 @@ public class DysregulationDetector
 
 		if (contact == SensorContactStatus.NotDetected || movementGated)
 		{
-			_warningConditionsActive = false;
-			_recoveryActive = false;
-			_severeDropStreak = 0;
-			_recovery = RecoveryProgress.Inactive;
+			ResetTransientStreaks();
 			return _state;
 		}
 

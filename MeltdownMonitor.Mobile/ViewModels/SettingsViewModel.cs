@@ -17,7 +17,10 @@ public sealed class SettingsViewModel : ViewModelBase
 	private readonly Func<Task<bool>>? _requestHealthKit;
 	private readonly Func<Task>? _revokeHealthAccess;
 	private readonly Func<Task>? _exportDatabase;
+	private readonly Func<Task>? _clearData;
 	private readonly Action? _onChanged;
+	private bool _isClearDataConfirmPending;
+	private string? _clearDataStatus;
 
 	public SettingsViewModel(
 		MobileSettings settings,
@@ -25,13 +28,15 @@ public sealed class SettingsViewModel : ViewModelBase
 		Func<Task<bool>>? requestHealthKit = null,
 		Func<Task>? exportDatabase = null,
 		Action? onChanged = null,
-		Func<Task>? revokeHealthAccess = null)
+		Func<Task>? revokeHealthAccess = null,
+		Func<Task>? clearData = null)
 	{
 		_settings = settings;
 		_requestNotifications = requestNotifications;
 		_requestHealthKit = requestHealthKit;
 		_revokeHealthAccess = revokeHealthAccess;
 		_exportDatabase = exportDatabase;
+		_clearData = clearData;
 		_onChanged = onChanged;
 
 		PauseOneHourCommand = new RelayCommand(PauseOneHour);
@@ -42,6 +47,12 @@ public sealed class SettingsViewModel : ViewModelBase
 		ExportDatabaseCommand = new RelayCommand(
 			() => _ = ExportDatabaseAsync(),
 			() => _exportDatabase is not null);
+
+		// Clearing data is destructive and irreversible, so it's a two-step confirm: the first command
+		// arms the confirmation panel, the second actually wipes.
+		ClearDataCommand = new RelayCommand(BeginClearData, () => _clearData is not null);
+		ConfirmClearDataCommand = new RelayCommand(() => _ = ConfirmClearDataAsync());
+		CancelClearDataCommand = new RelayCommand(CancelClearData);
 	}
 
 	/// <summary>
@@ -649,6 +660,31 @@ public sealed class SettingsViewModel : ViewModelBase
 	public ICommand RequestHealthKitCommand { get; }
 	public ICommand RevokeHealthCommand { get; }
 	public ICommand ExportDatabaseCommand { get; }
+	public ICommand ClearDataCommand { get; }
+	public ICommand ConfirmClearDataCommand { get; }
+	public ICommand CancelClearDataCommand { get; }
+
+	/// <summary>True while the destructive "clear my data" confirmation panel is showing.</summary>
+	public bool IsClearDataConfirmPending
+	{
+		get => _isClearDataConfirmPending;
+		private set => SetField(ref _isClearDataConfirmPending, value);
+	}
+
+	/// <summary>One-line outcome shown after a clear completes; null when nothing to report.</summary>
+	public string? ClearDataStatus
+	{
+		get => _clearDataStatus;
+		private set
+		{
+			if (SetField(ref _clearDataStatus, value))
+			{
+				Raise(nameof(HasClearDataStatus));
+			}
+		}
+	}
+
+	public bool HasClearDataStatus => !string.IsNullOrEmpty(_clearDataStatus);
 
 	private void PauseOneHour()
 	{
@@ -674,6 +710,26 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 
 		await _exportDatabase().ConfigureAwait(true);
+	}
+
+	private void BeginClearData()
+	{
+		ClearDataStatus = null;
+		IsClearDataConfirmPending = true;
+	}
+
+	private void CancelClearData() => IsClearDataConfirmPending = false;
+
+	private async Task ConfirmClearDataAsync()
+	{
+		IsClearDataConfirmPending = false;
+		if (_clearData is null)
+		{
+			return;
+		}
+
+		await _clearData().ConfigureAwait(true);
+		ClearDataStatus = "Your data has been cleared.";
 	}
 
 	private async Task RequestNotificationsAsync()

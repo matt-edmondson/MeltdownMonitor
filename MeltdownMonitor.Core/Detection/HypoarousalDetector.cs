@@ -52,6 +52,16 @@ public class HypoarousalDetector
 	}
 
 	/// <summary>
+	/// Clears the in-progress enter/exit streaks (without changing state). Called on the off-body path
+	/// and by the pipeline on contact loss, so a streak can't resume across a long beats-free gap.
+	/// </summary>
+	public void ResetTransientStreaks()
+	{
+		_enterConditionsActive = false;
+		_exitConditionsActive = false;
+	}
+
+	/// <summary>
 	/// Processes a new HRV sample. Returns the (possibly updated) state.
 	/// </summary>
 	/// <param name="sample">The latest HRV sample.</param>
@@ -69,8 +79,7 @@ public class HypoarousalDetector
 	{
 		if (contact == SensorContactStatus.NotDetected)
 		{
-			_enterConditionsActive = false;
-			_exitConditionsActive = false;
+			ResetTransientStreaks();
 			return _state;
 		}
 

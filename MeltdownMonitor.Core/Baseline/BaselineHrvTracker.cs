@@ -340,16 +340,21 @@ public class BaselineHrvTracker
 
 	public void Reset()
 	{
-		_baselineRmssd = 0;
-		_baselineHr = 0;
-		_baselineLfHfRatio = 0;
-		_firstSampleTime = DateTimeOffset.MinValue;
-		_isWarm = false;
-		_anchorRmssd = 0;
-		_anchorHr = 0;
-		_anchorLfHfRatio = 0;
-		_warmUpRmssd.Clear();
-		_warmUpHr.Clear();
-		_coldCalibrated = false;
+		// Lock so a reset from the UI thread (e.g. "clear my data") can't race the live Update on the
+		// BLE thread mutating the warm-up buffers.
+		lock (_lock)
+		{
+			_baselineRmssd = 0;
+			_baselineHr = 0;
+			_baselineLfHfRatio = 0;
+			_firstSampleTime = DateTimeOffset.MinValue;
+			_isWarm = false;
+			_anchorRmssd = 0;
+			_anchorHr = 0;
+			_anchorLfHfRatio = 0;
+			_warmUpRmssd.Clear();
+			_warmUpHr.Clear();
+			_coldCalibrated = false;
+		}
 	}
 }
