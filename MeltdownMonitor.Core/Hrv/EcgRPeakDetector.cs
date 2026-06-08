@@ -4,17 +4,22 @@ namespace MeltdownMonitor.Core.Hrv;
 /// Streaming R-peak detector for raw ECG (the Polar H10's PMD ECG stream), producing RR intervals
 /// for the HRV pipeline. A Pan–Tompkins pipeline — 5-point derivative → squaring → moving-window
 /// integration → adaptive double-threshold with a refractory period — fed one sample at a time, with
-/// the three additions that make derived RR trustworthy rather than merely plausible:
+/// the additions that make derived RR trustworthy <i>and</i> high-resolution rather than merely plausible:
 ///
 /// <list type="bullet">
-/// <item><b>Device-time RR.</b> RR is the difference of the two R-peaks' <i>device</i> timestamps, not
-/// a count of received samples. A dropped BLE notification (a whole ECG frame lost over the air) no
-/// longer miscounts the interval into a plausible-but-wrong value — the device clock jumps by the true
-/// elapsed time, so the gap surfaces as an honest (over-long) RR the artifact filter rejects, instead
-/// of a silently halved/short one that slips through. Callers pass each sample's device time; the
-/// timestamp-free overload assumes contiguous samples at the configured rate (tests, and a graceful
-/// fallback for firmware that doesn't timestamp frames). Non-monotonic/zero device times are clamped
-/// to contiguous spacing so a bad clock degrades to the old behaviour rather than corrupting RR.</item>
+/// <item><b>Sub-sample fiducial.</b> The integration envelope only says <i>which</i> beat fired; the RR
+/// timing is taken from the raw R-wave apex, located to a fraction of a sample by fitting a parabola to
+/// the apex and its two neighbours. Without this, every R-peak snaps to the 130 Hz grid (~7.7 ms steps),
+/// which inflates SDNN/RMSSD/pNN50 with quantisation jitter even though the mean RR is right — a real
+/// hazard here, since spurious variability can mask the genuine low-HRV states the app is built to catch.
+/// Interpolation pulls beat-to-beat timing down to sub-millisecond, close to the sensor's own RR.</item>
+/// <item><b>Device-time RR.</b> RR is the difference of the two R-peaks' <i>device</i> timestamps, not a
+/// count of received samples. A dropped BLE notification (a whole ECG frame lost over the air) no longer
+/// miscounts the interval into a plausible-but-wrong value — the device clock jumps by the true elapsed
+/// time, so the gap surfaces as an honest (over-long) RR the artifact filter rejects, instead of a
+/// silently halved/short one that slips through. Callers pass each sample's device time; the timestamp-free
+/// overload assumes contiguous samples at the configured rate (tests, and a graceful fallback for firmware
+/// that doesn't timestamp frames). Non-monotonic/zero device times are clamped to contiguous spacing.</item>
 /// <item><b>Search-back.</b> If no QRS crosses the primary threshold within 1.66× the running mean RR,
 /// the largest sub-threshold local max since the last beat (above the secondary threshold) is accepted
 /// retroactively — recovering a weak beat that would otherwise double the next interval.</item>
@@ -24,9 +29,10 @@ namespace MeltdownMonitor.Core.Hrv;
 /// phase 1) rather than bootstrapping from zero, so the opening beats aren't anchored on noise.</item>
 /// </list>
 ///
-/// The integrated-signal peak lags the true R-peak by a fixed ~window/2, but RR is the difference of
-/// two peak times so the constant lag cancels. Opt-in, platform-neutral, and unit-tested; like all BLE
-/// behaviour the live stream is only fully verifiable on the app with a real sensor.
+/// The integrated-signal peak lags the true R-peak by a fixed delay, but the fiducial is recovered from
+/// the raw apex, and RR is a difference of two fiducials, so both the lag and any constant offset cancel.
+/// Opt-in, platform-neutral, and unit-tested; like all BLE behaviour the live stream is only fully
+/// verifiable on the app with a real sensor.
 /// </summary>
 public sealed class EcgRPeakDetector
 {
@@ -49,12 +55,18 @@ public sealed class EcgRPeakDetector
 	private int _integIndex;
 	private double _integSum;
 
+	// Raw-sample ring for sub-sample fiducial refinement: the value + device time of recent samples,
+	// long enough to reach back across one integration window from the (lagging) envelope peak.
+	private readonly int _ringSize;
+	private readonly double[] _ringVal;
+	private readonly double[] _ringTime;
+	private long _absIndex; // absolute index of the sample currently being processed
+
 	private double _spki;   // running signal-peak estimate
 	private double _npki;   // running noise-peak estimate
 
 	private double _prevInteg;
 	private double _prevPrevInteg;
-	private double _prevSampleTime;
 	private double _lastSampleTime;
 	private bool _primed;
 
@@ -63,15 +75,16 @@ public sealed class EcgRPeakDetector
 	private double _learnMax;
 	private double _learnSum;
 
-	// Accepted-peak timing.
+	// Accepted-peak timing (sub-sample fiducial time of the last accepted R-peak).
 	private bool _hasLastPeak;
-	private double _lastPeakTime;
+	private double _lastFiducialTime;
 	private double _lastQrsAmplitude;
 
-	// Search-back candidate: the largest sub-threshold local max since the last accepted peak.
+	// Search-back candidate: the largest sub-threshold envelope local max since the last accepted peak,
+	// kept as its absolute envelope index so its fiducial is refined the same way if it's accepted.
 	private bool _hasCandidate;
 	private double _candidateValue;
-	private double _candidateTime;
+	private long _candidateEnvIndex;
 
 	// Running mean RR (seconds) over recent normal beats, for the search-back timing gate.
 	private readonly Queue<double> _recentRr = new();
@@ -86,6 +99,9 @@ public sealed class EcgRPeakDetector
 		_refractorySeconds = 0.200;                                          // 200 ms ⇒ ≤ 300 bpm
 		_learningSamples = Math.Max(1, (int)Math.Round(1.0 * sampleRateHz)); // ~1 s threshold learning
 		_integWindow = new double[_windowSize];
+		_ringSize = _windowSize + 16;                                        // window of look-back + margin
+		_ringVal = new double[_ringSize];
+		_ringTime = new double[_ringSize];
 	}
 
 	/// <summary>
@@ -119,6 +135,11 @@ public sealed class EcgRPeakDetector
 		{
 			sampleTimeSeconds = _lastSampleTime + _sampleIntervalSeconds;
 		}
+
+		// Record the raw sample so the fiducial can be refined from the apex later.
+		int slot = (int)(_absIndex % _ringSize);
+		_ringVal[slot] = microVolts;
+		_ringTime[slot] = sampleTimeSeconds;
 
 		for (int i = _recent.Length - 1; i > 0; i--)
 		{
@@ -162,12 +183,13 @@ public sealed class EcgRPeakDetector
 		// Search-back first, so it acts on an earlier sample than the next real peak (they never collide):
 		// if too long has passed since the last beat and a sub-threshold candidate is waiting, accept it.
 		if (_hasLastPeak && _rrSum > 0 && _hasCandidate
-			&& (sampleTimeSeconds - _lastPeakTime) > (SearchBackRrFactor * MeanRr))
+			&& (sampleTimeSeconds - _lastFiducialTime) > (SearchBackRrFactor * MeanRr))
 		{
+			double refined = RefineFiducial(_candidateEnvIndex);
 			_spki = (0.25 * _candidateValue) + (0.75 * _spki);
-			rr = (_candidateTime - _lastPeakTime) * 1000.0;
-			UpdateMeanRr(_candidateTime - _lastPeakTime);
-			_lastPeakTime = _candidateTime;
+			rr = (refined - _lastFiducialTime) * 1000.0;
+			UpdateMeanRr(refined - _lastFiducialTime);
+			_lastFiducialTime = refined;
 			_lastQrsAmplitude = _candidateValue;
 			_hasCandidate = false;
 			LastSampleWasRPeak = true;
@@ -179,13 +201,13 @@ public sealed class EcgRPeakDetector
 		if (rr is null && _primed && _prevInteg >= _prevPrevInteg && _prevInteg > integrated)
 		{
 			double peakValue = _prevInteg;
-			double peakTime = _prevSampleTime;
+			long envIndex = _absIndex - 1; // _prevInteg corresponds to the previous sample
 			bool firstPeak = !_hasLastPeak;
-			double threshold = ThresholdI1;
 
-			if (peakValue > threshold)
+			if (peakValue > ThresholdI1)
 			{
-				double interval = peakTime - _lastPeakTime;
+				double refined = RefineFiducial(envIndex);
+				double interval = refined - _lastFiducialTime;
 				if (firstPeak || interval > _refractorySeconds)
 				{
 					bool isTwave = !firstPeak && interval < TWaveWindowSeconds
@@ -204,7 +226,7 @@ public sealed class EcgRPeakDetector
 							UpdateMeanRr(interval);
 						}
 
-						_lastPeakTime = peakTime;
+						_lastFiducialTime = refined;
 						_lastQrsAmplitude = peakValue;
 						_hasLastPeak = true;
 						_hasCandidate = false;
@@ -222,21 +244,21 @@ public sealed class EcgRPeakDetector
 				// It must sit beyond the T-wave window: a missed beat lands ~one RR out, whereas a low-energy
 				// bump within 360 ms of the last beat is far more likely a T-wave, which must never be recovered.
 				if (_hasLastPeak && peakValue > ThresholdI2
-					&& (peakTime - _lastPeakTime) > TWaveWindowSeconds
+					&& (TimeAt(envIndex) - _lastFiducialTime) > TWaveWindowSeconds
 					&& (!_hasCandidate || peakValue > _candidateValue))
 				{
 					_hasCandidate = true;
 					_candidateValue = peakValue;
-					_candidateTime = peakTime;
+					_candidateEnvIndex = envIndex;
 				}
 			}
 		}
 
 		_prevPrevInteg = _prevInteg;
 		_prevInteg = integrated;
-		_prevSampleTime = sampleTimeSeconds;
 		_lastSampleTime = sampleTimeSeconds;
 		_primed = true;
+		_absIndex++;
 
 		return rr;
 	}
@@ -246,6 +268,57 @@ public sealed class EcgRPeakDetector
 	private double ThresholdI2 => 0.5 * ThresholdI1;
 
 	private double MeanRr => _recentRr.Count > 0 ? _rrSum / _recentRr.Count : 0.0;
+
+	// Refines the integration-envelope peak (which only localises the beat to ±a few samples) to the
+	// true R-wave apex with sub-sample precision: find the largest-magnitude raw sample within one
+	// integration window back from the envelope peak, then fit a parabola to it and its two neighbours.
+	// Returns the device time of the interpolated apex. Falls back to the nearest sample time when the
+	// ring doesn't yet hold the neighbours (start-up).
+	private double RefineFiducial(long envIndex)
+	{
+		long oldest = Math.Max(0, _absIndex - _ringSize + 1);
+		long hi = Math.Min(envIndex, _absIndex);
+		long lo = Math.Max(oldest, envIndex - _windowSize);
+		if (hi < lo)
+		{
+			return TimeAt(Math.Max(oldest, Math.Min(envIndex, _absIndex)));
+		}
+
+		long apex = lo;
+		double best = Math.Abs(ValAt(lo));
+		for (long a = lo + 1; a <= hi; a++)
+		{
+			double m = Math.Abs(ValAt(a));
+			if (m > best)
+			{
+				best = m;
+				apex = a;
+			}
+		}
+
+		double apexTime = TimeAt(apex);
+		if (apex - 1 < oldest || apex + 1 > _absIndex)
+		{
+			return apexTime;
+		}
+
+		// Parabolic interpolation on the rectified apex: the sub-sample offset of the vertex.
+		double ym1 = Math.Abs(ValAt(apex - 1));
+		double y0 = Math.Abs(ValAt(apex));
+		double yp1 = Math.Abs(ValAt(apex + 1));
+		double denom = ym1 - (2 * y0) + yp1;
+		if (Math.Abs(denom) < 1e-9)
+		{
+			return apexTime;
+		}
+
+		double delta = Math.Clamp(0.5 * (ym1 - yp1) / denom, -1.0, 1.0);
+		return apexTime + (delta * _sampleIntervalSeconds);
+	}
+
+	private double ValAt(long absIndex) => _ringVal[(int)(((absIndex % _ringSize) + _ringSize) % _ringSize)];
+
+	private double TimeAt(long absIndex) => _ringTime[(int)(((absIndex % _ringSize) + _ringSize) % _ringSize)];
 
 	private void UpdateMeanRr(double rrSeconds)
 	{
@@ -270,22 +343,24 @@ public sealed class EcgRPeakDetector
 		Array.Clear(_integWindow);
 		_integIndex = 0;
 		_integSum = 0;
+		Array.Clear(_ringVal);
+		Array.Clear(_ringTime);
+		_absIndex = 0;
 		_spki = 0;
 		_npki = 0;
 		_prevInteg = 0;
 		_prevPrevInteg = 0;
-		_prevSampleTime = 0;
 		_lastSampleTime = 0;
 		_primed = false;
 		_learnCount = 0;
 		_learnMax = 0;
 		_learnSum = 0;
 		_hasLastPeak = false;
-		_lastPeakTime = 0;
+		_lastFiducialTime = 0;
 		_lastQrsAmplitude = 0;
 		_hasCandidate = false;
 		_candidateValue = 0;
-		_candidateTime = 0;
+		_candidateEnvIndex = 0;
 		_recentRr.Clear();
 		_rrSum = 0;
 		LastSampleWasRPeak = false;
