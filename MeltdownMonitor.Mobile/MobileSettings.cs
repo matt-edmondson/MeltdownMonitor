@@ -214,6 +214,10 @@ public sealed class MobileSettings
 	/// <summary>How much history the sparklines display (1–360 min). Default 60 min.</summary>
 	public int SparklineWindowMinutes { get; set; } = 60;
 
+	/// <summary>How quickly the ECG view's live beat eases to centre — the exponential settle rate per
+	/// second (0.5–12; clamped at the consumer). Lower is slower and smoother; 3.0 is the default.</summary>
+	public double EcgCenteringEaseRate { get; set; } = 3.0;
+
 	// ── Per-element blend modes ──────────────────────────────────────────────
 	// Each Regulation Field glow layer can be drawn either additively (overlaps bloom toward
 	// white — the signature glow) or with plain alpha compositing (no bloom). True = additive

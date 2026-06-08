@@ -20,9 +20,10 @@ public sealed class EcgStrip : Control
 	// ~30 fps render loop, tied to the visual-tree lifecycle so it stops when the tab is off-screen.
 	private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(33);
 
-	// Exponential-ease rates (per second): how fast the vertical scale and the centre anchor settle.
+	// Exponential-ease rate (per second) for the vertical scale. The centre-anchor rate is the
+	// user-tunable AnchorEaseRate styled property (default below).
 	private const double ScaleEaseRate = 4.0;
-	private const double AnchorEaseRate = 7.0;
+	private const double DefaultAnchorEaseRate = 3.0;
 
 	// Alpha schedule for the fading stack: the newest completed beat starts here and each older beat is
 	// multiplied down by the falloff, never dropping below the floor (so the oldest still ghosts in).
@@ -45,6 +46,9 @@ public sealed class EcgStrip : Control
 
 	public static readonly StyledProperty<EcgBeatOverlay?> OverlayProperty =
 		AvaloniaProperty.Register<EcgStrip, EcgBeatOverlay?>(nameof(Overlay));
+
+	public static readonly StyledProperty<double> AnchorEaseRateProperty =
+		AvaloniaProperty.Register<EcgStrip, double>(nameof(AnchorEaseRate), DefaultAnchorEaseRate);
 
 	public static readonly StyledProperty<IBrush> LineBrushProperty =
 		AvaloniaProperty.Register<EcgStrip, IBrush>(
@@ -74,6 +78,14 @@ public sealed class EcgStrip : Control
 	{
 		get => GetValue(OverlayProperty);
 		set => SetValue(OverlayProperty, value);
+	}
+
+	/// <summary>Exponential-ease rate (per second) for the centre anchor — lower settles a new beat to
+	/// centre more slowly/softly. User-tunable via the Settings slider.</summary>
+	public double AnchorEaseRate
+	{
+		get => GetValue(AnchorEaseRateProperty);
+		set => SetValue(AnchorEaseRateProperty, value);
 	}
 
 	/// <summary>Colour of the trace (the live beat at full strength; older beats fade from it).</summary>
@@ -159,7 +171,7 @@ public sealed class EcgStrip : Control
 			_easedMax += (targetMax - _easedMax) * scaleK;
 		}
 
-		_anchorSeconds *= Math.Exp(-dt * AnchorEaseRate);
+		_anchorSeconds *= Math.Exp(-dt * Math.Max(0.0, AnchorEaseRate));
 
 		InvalidateVisual();
 	}

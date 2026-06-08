@@ -149,7 +149,7 @@ public static class AndroidCompositionRoot
 			isAvailable: () => HealthConnectStore.IsAvailable(context),
 			onChanged: () => _store.Save(settings));
 
-		_ecg = new EcgViewModel();
+		_ecg = new EcgViewModel(centeringEaseRateProvider: () => settings.EcgCenteringEaseRate);
 		_debug = new DebugViewModel();
 		var root = new RootViewModel(settings, _now, _history, settingsTab, _metrics, _ecg, _debug, _store, healthPrompt);
 

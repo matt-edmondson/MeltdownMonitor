@@ -672,6 +672,21 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	public double EcgCenteringEaseRate
+	{
+		get => _settings.EcgCenteringEaseRate;
+		set
+		{
+			double clamped = Math.Clamp(value, 0.5, 12.0);
+			if (Math.Abs(_settings.EcgCenteringEaseRate - clamped) > 1e-6)
+			{
+				_settings.EcgCenteringEaseRate = clamped;
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	public string PausedUntilLabel =>
 		_settings.PausedUntil is null
 			? "Not paused"

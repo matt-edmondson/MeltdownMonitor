@@ -17,6 +17,7 @@
         <Border Grid.Row="1" Background="#11141A" CornerRadius="6">
             <Panel>
                 <ctl:EcgStrip Overlay="{Binding Overlay}"
+                              AnchorEaseRate="{Binding CenteringEaseRate}"
                               IsVisible="{Binding IsStreaming}"
                               Margin="6" />
                 <TextBlock Text="Select &quot;Polar ECG&quot; as the interval source in Settings, with a Polar H10, to see the live trace."

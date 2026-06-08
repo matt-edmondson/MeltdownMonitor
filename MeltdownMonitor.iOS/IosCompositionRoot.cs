@@ -168,7 +168,7 @@ public static class IosCompositionRoot
 			isAvailable: () => HKHealthStore.IsHealthDataAvailable,
 			onChanged: () => _store.Save(settings));
 
-		_ecg = new EcgViewModel();
+		_ecg = new EcgViewModel(centeringEaseRateProvider: () => settings.EcgCenteringEaseRate);
 		_debug = new DebugViewModel();
 		return new RootViewModel(settings, _now, _history, settingsTab, _metrics, _ecg, _debug, _store, healthPrompt);
 	}
