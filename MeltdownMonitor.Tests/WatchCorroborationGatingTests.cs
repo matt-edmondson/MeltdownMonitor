@@ -1,3 +1,4 @@
+using MeltdownMonitor.Core.Baseline;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
 
@@ -96,5 +97,49 @@ public class WatchCorroborationGatingTests
 
 		Assert.IsFalse(fired, "A conflict must clear the building warning streak.");
 		Assert.AreEqual(DetectorState.Watching, state);
+	}
+
+	[TestMethod]
+	public void Baseline_FrozenOnConflict_WhenOptedIn()
+	{
+		var tracker = new BaselineHrvTracker { RmssdHrAlpha = 0.5, FreezeOnWatchConflict = true };
+		tracker.Update(Sample(rmssd: 50, meanHr: 70)); // anchors at 50 / 70
+
+		tracker.Update(Sample(rmssd: 30, meanHr: 90), watch: WatchCorroboration.Conflicted);
+
+		Assert.AreEqual(50, tracker.BaselineRmssd, 1e-9);
+		Assert.AreEqual(70, tracker.BaselineHr, 1e-9);
+	}
+
+	[TestMethod]
+	public void Baseline_NotFrozenOnConflict_WhenOptionOff()
+	{
+		// Default off: the gate-only behaviour — a conflict does not freeze the baseline.
+		var tracker = new BaselineHrvTracker { RmssdHrAlpha = 0.5 };
+		tracker.Update(Sample(rmssd: 50, meanHr: 70));
+
+		tracker.Update(Sample(rmssd: 30, meanHr: 90), watch: WatchCorroboration.Conflicted);
+
+		// EWMA at α=0.5 still folds the sample in: (0.5 × 50) + (0.5 × 30) = 40.
+		Assert.AreEqual(40, tracker.BaselineRmssd, 1e-9);
+		Assert.AreEqual(80, tracker.BaselineHr, 1e-9);
+	}
+
+	[TestMethod]
+	public void Baseline_NotFrozenWhenConfirmed_EvenIfOptedIn()
+	{
+		var tracker = new BaselineHrvTracker { RmssdHrAlpha = 0.5, FreezeOnWatchConflict = true };
+		tracker.Update(Sample(rmssd: 50, meanHr: 70));
+
+		// A Confirmed (or Unknown) verdict never freezes — only a conflict does.
+		tracker.Update(Sample(rmssd: 30, meanHr: 90), watch: WatchCorroboration.Confirmed);
+
+		Assert.AreEqual(40, tracker.BaselineRmssd, 1e-9);
+	}
+
+	[TestMethod]
+	public void Threshold_FreezeBaselineOnWatchConflict_DefaultsOff()
+	{
+		Assert.IsFalse(new DetectionThresholds().FreezeBaselineOnWatchConflict);
 	}
 }

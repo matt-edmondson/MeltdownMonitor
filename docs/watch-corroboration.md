@@ -79,6 +79,7 @@ motion corroboration shipped under.
 | `WatchCorroboration` (`Unknown` / `Confirmed` / `Conflicted`) | `Core/Detection/WatchCorroborationMonitor.cs` | The verdict. `Unknown` is the no-watch sentinel — like `MovementLevel.Unknown`, it never gates. |
 | `WatchCorroborationMonitor` (+ `WatchCorroborationSnapshot`) | `Core/Detection/WatchCorroborationMonitor.cs` | Holds the latest watch reading; `Evaluate(strapHr, ts)` produces the verdict. Timestamp-driven (no wall clock) → deterministic/replay-safe. |
 | `DetectionThresholds.UseWatchCorroboration` (default **on**) | `Core/Detection/DetectionThresholds.cs` | Whether a `Conflicted` verdict gates. Consulted only when a verdict is present, so a no-watch build is unaffected. |
+| `DetectionThresholds.FreezeBaselineOnWatchConflict` (default **off**) | `Core/Detection/DetectionThresholds.cs` | Opt-in: also freeze the baseline on a `Conflicted` verdict (`BaselineHrvTracker.FreezeOnWatchConflict`), for movement-style symmetry. |
 | `DysregulationDetector.Process(…, watch)` | `Core/Detection/DysregulationDetector.cs` | New optional param; `Conflicted` holds state + clears streaks, alongside the off-body and movement gates. |
 | `MobileSettings.EnableWatchCorroboration` (default **off**) | `Mobile/MobileSettings.cs` | Master opt-in for the feature wiring. |
 | `Pipeline` wiring + `CurrentWatchCorroboration` + `WatchCorroborationUpdated` | `Mobile/Pipeline.cs` | Subscribes the monitor when enabled and a source is present; evaluates per sample; fans the snapshot out for the UI. |
@@ -106,11 +107,15 @@ on `DetectionThresholds` (like `MovementGateLevel`).
   changes, which touch both `Pipeline.cs` copies — the desktop (`App`) pipeline is
   untouched. Its `Process` call passes the default `Unknown`, so the Core change
   is behaviour-neutral there.
-- **Detector gate only; baseline left alone (for now).** A `Conflicted` verdict
-  defers escalation. It does *not* freeze the baseline (the movement gate does),
-  because the EWMA baseline's minutes-long memory absorbs a few suspect samples
-  and motion gating already covers the dominant artifact source. Freezing on
-  conflict is a noted follow-up if device testing shows it matters.
+- **Detector gate by default; baseline freeze is opt-in.** A `Conflicted` verdict
+  always defers escalation. Freezing the baseline on conflict (the movement gate's
+  stricter treatment) is **off by default** behind
+  `DetectionThresholds.FreezeBaselineOnWatchConflict`: the EWMA baseline's
+  minutes-long memory absorbs a few suspect samples, so the gate alone is the
+  lighter-touch default, but the option is there for the stricter symmetry. The
+  Mobile pipeline sets `BaselineHrvTracker.FreezeOnWatchConflict` from that flag in
+  `ApplyTuning`, gated on `UseWatchCorroboration` also being on; the verdict is
+  evaluated before the baseline update so the freeze sees the current sample.
 - **No UI toggle yet.** Unlike motion corroboration (which works fully on-device
   today), watch corroboration does nothing until the watch app + `WCSession`
   relay exist (a Mac-only phase), so a Settings toggle would govern a dormant
@@ -129,7 +134,9 @@ on `DetectionThresholds` (like `MovementGateLevel`).
   latest-wins on out-of-order delivery, snapshot, reset.
 - **`WatchCorroborationGatingTests`** — Conflicted defers a severe drop and clears
   a building warning streak; Confirmed and Unknown alert normally;
-  `UseWatchCorroboration = false` ignores conflict.
+  `UseWatchCorroboration = false` ignores conflict. Plus the opt-in baseline freeze:
+  Conflicted freezes only when `FreezeOnWatchConflict` is set, never on
+  Confirmed/Unknown, and the threshold defaults off.
 - **`MobileSettingsSerializerTests`** — `EnableWatchCorroboration` round-trips and
   defaults off.
 
@@ -149,4 +156,5 @@ like the haptic transport and the Live Activity presentation.
 3. **Settings ▸ a watch section** exposing `EnableWatchCorroboration`, gated on a
    paired watch.
 4. **On-device validation** of the tolerance/staleness defaults against real
-   wrist-optical lag, and a decision on baseline-freeze-on-conflict (§4).
+   wrist-optical lag, and of whether `FreezeBaselineOnWatchConflict` (§4) should
+   become the default once the conflict rate on a real watch is known.
