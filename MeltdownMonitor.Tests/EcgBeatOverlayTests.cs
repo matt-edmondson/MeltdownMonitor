@@ -144,6 +144,15 @@ public class EcgBeatOverlayTests
 	}
 
 	[TestMethod]
+	public void Build_CarriesTheLiveBeatSequenceFromTotalPeaks()
+	{
+		var snapshot = new EcgWaveformSnapshot(
+			[.. Enumerable.Range(0, 520)], [130, 260, 390], 0, 519, 130.0, EcgSignalQuality.Good, TotalPeaks: 42);
+
+		Assert.AreEqual(42, EcgBeatOverlay.Build(snapshot).LiveBeatSequence);
+	}
+
+	[TestMethod]
 	public void Build_CarriesSampleRateAndQuality()
 	{
 		EcgBeatOverlay overlay = EcgBeatOverlay.Build(Snapshot(520, [130, 260, 390]));

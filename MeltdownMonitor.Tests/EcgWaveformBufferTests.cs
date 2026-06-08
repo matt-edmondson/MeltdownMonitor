@@ -32,6 +32,22 @@ public class EcgWaveformBufferTests
 	}
 
 	[TestMethod]
+	public void TotalPeaks_CountsEveryPeakEvenAfterEviction()
+	{
+		// 1-second window at 10 Hz ⇒ capacity 10, so the first peak scrolls out of the window…
+		var buffer = new EcgWaveformBuffer(windowSeconds: 1.0);
+		buffer.Append(Batch([.. Enumerable.Range(0, 8)], 10.0, 0));
+		buffer.Append(Batch([.. Enumerable.Range(8, 8)], 10.0, 4));
+
+		var snap = buffer.Snapshot();
+		Assert.AreEqual(1, snap.RPeakIndices.Count, "Only the in-window peak is exposed.");
+		Assert.AreEqual(2, snap.TotalPeaks, "…but the running total still counts both peaks.");
+
+		buffer.Reset();
+		Assert.AreEqual(0, buffer.Snapshot().TotalPeaks);
+	}
+
+	[TestMethod]
 	public void Append_EvictsBeyondWindowAndDropsOffscreenPeaks()
 	{
 		// 1-second window at 10 Hz ⇒ capacity 10.

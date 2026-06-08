@@ -34,6 +34,8 @@ public sealed record EcgOverlayBeat(IReadOnlyList<EcgBeatSample> Samples, int Ag
 /// <param name="MaxMicroVolts">Maximum sample across the retained window.</param>
 /// <param name="SampleRateHz">Sample rate of the trace.</param>
 /// <param name="Quality">Signal-quality cue, carried through from the source snapshot.</param>
+/// <param name="LiveBeatSequence">Monotonic id of the live beat (the total R-peak count): bumps each time
+/// a fresh R-peak arrives, so the renderer can restart the live beat's left-to-right sweep animation.</param>
 public sealed record EcgBeatOverlay(
 	IReadOnlyList<EcgOverlayBeat> Beats,
 	EcgOverlayBeat? Live,
@@ -42,7 +44,8 @@ public sealed record EcgBeatOverlay(
 	double MinMicroVolts,
 	double MaxMicroVolts,
 	double SampleRateHz,
-	EcgSignalQuality Quality)
+	EcgSignalQuality Quality,
+	long LiveBeatSequence = 0)
 {
 	/// <summary>An empty overlay (no ECG streaming / nothing alignable yet).</summary>
 	public static readonly EcgBeatOverlay Empty = new([], null, 0, 0, 0, 0, 0, EcgSignalQuality.Unknown);
@@ -105,7 +108,8 @@ public sealed record EcgBeatOverlay(
 			robustMin,
 			robustMax,
 			rate,
-			snapshot.Quality);
+			snapshot.Quality,
+			snapshot.TotalPeaks);
 	}
 
 	// Median of each beat's own min/max across the stack (+ live), padded a little. Taking the median
