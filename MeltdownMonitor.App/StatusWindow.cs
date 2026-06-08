@@ -1410,7 +1410,26 @@ public sealed class StatusWindow : IDisposable
 			}
 			ImGui.SameLine();
 			HelpMarker("When on, movement at or above the chosen level defers Warning/Alerting and freezes the baseline. When off, motion is streamed but never gates.");
+
+			bool rejectMotion = t.RejectMotionArtifacts;
+			if (ImGui.Checkbox("Discard motion-corrupted beats from HRV", ref rejectMotion))
+			{
+				t = t with { RejectMotionArtifacts = rejectMotion };
+				_settingsDirty = true;
+			}
+			ImGui.SameLine();
+			HelpMarker("Excludes beats that arrive while moving (at/above the gate level) from the HRV computation entirely — motion smears RR timing, so dropping those beats yields a cleaner read. Complements the escalation gate above.");
 		}
+
+		// Cross-source RR validation — independent of motion, only active on the Polar ECG source.
+		bool crossSource = t.UseCrossSourceArtifactRejection;
+		if (ImGui.Checkbox("Cross-check ECG beats against HRS rhythm", ref crossSource))
+		{
+			t = t with { UseCrossSourceArtifactRejection = crossSource };
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("On the Polar ECG source, drops beats whose RR disagrees with the sensor's own heart-rate-service rhythm — Polar's validated on-device detection is an independent check that catches our R-peak detector's errors. No effect on other sources.");
 
 		_settings.Thresholds = t;
 
@@ -2038,6 +2057,7 @@ public sealed class StatusWindow : IDisposable
 		DrawDiagnosticSource("HRS", snap, IntervalSource.HeartRateService);
 		DrawDiagnosticSource("ECG", snap, IntervalSource.PolarEcg);
 		DrawDiagnosticSource("PPI", snap, IntervalSource.PolarPpi);
+		ImGui.Text($"Cross-check: {_pipeline.LatestConsensus} · conflicts {_pipeline.ConsensusConflictRate:P1}");
 
 		ImGui.SeparatorText("HRV / baseline");
 		var sample = _pipeline.LatestSample;

@@ -143,6 +143,43 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	/// <summary>
+	/// Exclude beats that arrive while moving (at/above the movement gate level) from the HRV
+	/// computation, instead of just deferring alerts — motion smears RR timing, so dropping those beats
+	/// yields a cleaner read. Needs motion corroboration on to have any effect. Applies live.
+	/// </summary>
+	public bool RejectMotionArtifacts
+	{
+		get => _settings.Thresholds.RejectMotionArtifacts;
+		set
+		{
+			if (_settings.Thresholds.RejectMotionArtifacts != value)
+			{
+				_settings.Thresholds = _settings.Thresholds with { RejectMotionArtifacts = value };
+				Raise();
+				Persist();
+			}
+		}
+	}
+
+	/// <summary>
+	/// On the Polar ECG source, drop beats whose RR contradicts the sensor's own Heart Rate Service
+	/// rhythm — an independent witness that catches our R-peak detector's errors. Applies live.
+	/// </summary>
+	public bool UseCrossSourceArtifactRejection
+	{
+		get => _settings.Thresholds.UseCrossSourceArtifactRejection;
+		set
+		{
+			if (_settings.Thresholds.UseCrossSourceArtifactRejection != value)
+			{
+				_settings.Thresholds = _settings.Thresholds with { UseCrossSourceArtifactRejection = value };
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	/// <summary>Raised when <see cref="EnableDebugMode"/> toggles, so the shell can show or hide the Debug tab.</summary>
 	public event Action? DebugModeChanged;
 

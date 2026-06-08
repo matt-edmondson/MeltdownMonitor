@@ -100,6 +100,31 @@ public record DetectionThresholds
 	/// </summary>
 	public MovementLevel MovementGateLevel { get; init; } = MovementLevel.Moderate;
 
+	/// <summary>
+	/// When true, individual beats that arrive while movement is at/above <see cref="MovementGateLevel"/>
+	/// are marked as artifacts and kept out of the HRV computation entirely — motion smears the RR with
+	/// noise (the same jitter that inflates SDNN/RMSSD), so excluding those beats yields a cleaner read
+	/// than merely deferring escalation. Complementary to <see cref="UseMovementGating"/>: that holds the
+	/// detector during exertion; this keeps motion-corrupted intervals out of the metrics themselves. Only
+	/// active when a motion source supplies a level other than <see cref="MovementLevel.Unknown"/>, so a
+	/// build with no accelerometer is unaffected. Default off — opt-in, since it discards data.
+	/// </summary>
+	public bool RejectMotionArtifacts { get; init; }
+
+	// ── Cross-source RR validation (only active on the Polar ECG interval source) ──
+
+	/// <summary>
+	/// When true, an ECG-derived beat whose RR contradicts the concurrent Heart Rate Service rhythm —
+	/// Polar's own validated on-device detection — is marked an artifact and kept out of HRV. The HRS RR
+	/// is an independent witness to the same heart, so it catches our R-peak detector's own errors (a
+	/// missed beat read as a doubled interval, a T-wave read as a halved one) with a confidence the
+	/// self-median filter can't, since that filter eventually adapts to a sustained miscount. Only applied
+	/// on the <see cref="MeltdownMonitor.Core.Beats.IntervalSource.PolarEcg"/> source and only when a fresh
+	/// HRS reference exists, so every other configuration is unaffected. Default off — opt-in, since it
+	/// discards data and leans on a second stream being present.
+	/// </summary>
+	public bool UseCrossSourceArtifactRejection { get; init; }
+
 	// ── Apple Watch corroboration (only active when a watch metric source feeds a verdict) ──
 
 	/// <summary>

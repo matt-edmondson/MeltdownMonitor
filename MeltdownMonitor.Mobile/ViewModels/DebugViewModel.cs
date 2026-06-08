@@ -52,6 +52,11 @@ public sealed class DebugViewModel : ViewModelBase
 	public string HrsRecentRr => $"HRS RR: {Recent(Src(IntervalSource.HeartRateService))}";
 	public string EcgRecentRr => $"ECG RR: {Recent(Src(IntervalSource.PolarEcg))}";
 
+	/// <summary>Cross-source (ECG-vs-HRS) consensus verdict + recent conflict rate, when the ECG source is active.</summary>
+	public string ConsensusText => _pipeline is { } p
+		? $"Cross-check: {p.LatestConsensus} · conflicts {p.ConsensusConflictRate:P1}"
+		: "Cross-check: —";
+
 	// ── HRV dump ─────────────────────────────────────────────────────────────
 
 	public string RmssdText => _sample is { } s ? $"RMSSD: {s.Rmssd:0.0} ms" : "RMSSD: —";
@@ -186,6 +191,7 @@ public sealed class DebugViewModel : ViewModelBase
 		Raise(nameof(HasPpi));
 		Raise(nameof(HrsRecentRr));
 		Raise(nameof(EcgRecentRr));
+		Raise(nameof(ConsensusText));
 		Raise(nameof(RmssdText));
 		Raise(nameof(Pnn50Text));
 		Raise(nameof(MeanHrText));

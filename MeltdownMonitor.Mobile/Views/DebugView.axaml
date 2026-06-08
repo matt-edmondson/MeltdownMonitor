@@ -38,6 +38,7 @@
                     <TextBlock Classes="value" Text="{Binding HrsSummary}" />
                     <TextBlock Classes="value" Text="{Binding EcgSummary}" />
                     <TextBlock Classes="value" Text="{Binding PpiSummary}" IsVisible="{Binding HasPpi}" />
+                    <TextBlock Classes="value" Text="{Binding ConsensusText}" />
                     <TextBlock Classes="value" Text="{Binding HrsRecentRr}" Foreground="#8A8F98" FontSize="12" />
                     <TextBlock Classes="value" Text="{Binding EcgRecentRr}" Foreground="#8A8F98" FontSize="12" />
                 </StackPanel>

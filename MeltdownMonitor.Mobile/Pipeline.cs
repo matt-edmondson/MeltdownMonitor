@@ -29,6 +29,7 @@ public sealed class Pipeline : IDisposable
 	private readonly MovementMonitor _movement = new();
 	private readonly WatchCorroborationMonitor _watchCorroboration = new();
 	private readonly EcgWaveformBuffer _ecg = new();
+	private readonly RrConsensus _consensus = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _runTask;
@@ -234,7 +235,7 @@ public sealed class Pipeline : IDisposable
 		// Side-channel diagnostics for the Debug tab (live ECG-vs-HRS A/B). Never feeds HRV.
 		if (source is IBeatDiagnosticsSource diagnosticsSource)
 		{
-			diagnosticsSource.BeatDiagnosticReceived += d => BeatDiagnosticReceived?.Invoke(d);
+			diagnosticsSource.BeatDiagnosticReceived += OnSourceDiagnostic;
 		}
 	}
 
@@ -243,6 +244,25 @@ public sealed class Pipeline : IDisposable
 		_ecg.Append(samples);
 		EcgUpdated?.Invoke(_ecg.Snapshot());
 	}
+
+	// Feed clean HRS RR into the cross-source consensus as the independent reference, and fan the
+	// diagnostic out to the Debug tab. HRS keeps flowing even while the ECG source drives HRV.
+	private void OnSourceDiagnostic(BeatDiagnostic d)
+	{
+		if (d.Source == IntervalSource.HeartRateService && !d.IsArtifact)
+		{
+			_consensus.AddReference(d.RrMs, d.Timestamp);
+		}
+
+		BeatDiagnosticReceived?.Invoke(d);
+	}
+
+	/// <summary>Latest cross-source (ECG-vs-HRS) verdict, for the Debug tab. Unknown unless the Polar
+	/// ECG source is active with a fresh HRS reference.</summary>
+	public ConsensusVerdict LatestConsensus => _consensus.Latest;
+
+	/// <summary>Fraction of recent ECG beats the HRS reference contradicted (0–1), for the Debug tab.</summary>
+	public double ConsensusConflictRate => _consensus.ConflictRate;
 
 	/// <summary>
 	/// Reconstructs up to <paramref name="count"/> recent Regulation Field readings from persisted
@@ -452,12 +472,31 @@ public sealed class Pipeline : IDisposable
 				continue;
 			}
 
-			_repository.InsertBeat(beat);
-			BeatReceived?.Invoke(beat);
+			// Keep motion-corrupted beats out of HRV entirely (opt-in): movement smears RR timing, so a beat
+			// arriving while moving at/above the gate level is marked an artifact (excluded from the metrics,
+			// still persisted with the flag). Complements the escalation-deferring movement gate.
+			Beat beatToProcess = _settings.Thresholds.RejectMotionArtifacts
+				&& MotionArtifactGate.IsArtifact(_movement.Level, _settings.Thresholds.MovementGateLevel)
+				? beat with { IsArtifact = true }
+				: beat;
+
+			// Cross-validate our ECG RR against Polar's independent HRS rhythm; drop beats it contradicts
+			// (opt-in). Checked whenever the ECG source is active so the Debug A/B sees the conflict rate.
+			if (_settings.PreferredIntervalSource == IntervalSource.PolarEcg && !beatToProcess.IsArtifact)
+			{
+				var verdict = _consensus.Check(beatToProcess.RrMs, beatToProcess.Timestamp);
+				if (verdict == ConsensusVerdict.Conflicted && _settings.Thresholds.UseCrossSourceArtifactRejection)
+				{
+					beatToProcess = beatToProcess with { IsArtifact = true };
+				}
+			}
+
+			_repository.InsertBeat(beatToProcess);
+			BeatReceived?.Invoke(beatToProcess);
 
 			ApplyTuning();
 			var sample = _hrv.AddBeat(
-				beat,
+				beatToProcess,
 				_baseline.BaselineRmssd,
 				_baseline.BaselineHr,
 				_detector.State,
