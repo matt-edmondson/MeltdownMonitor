@@ -43,6 +43,14 @@ public sealed class StatusWindow : IDisposable
 	private int _appliedCapacity = InitialSparklineCapacity;
 	private int _subscriptionsReleased;
 
+	// Eased state for the stacked-beats ECG view: vertical scale and a horizontal centre anchor that
+	// settles a new beat into place rather than snapping. Reset when the trace goes idle.
+	private double _ecgEasedMin;
+	private double _ecgEasedMax;
+	private bool _ecgScaleInit;
+	private double _ecgAnchorSeconds;
+	private int _ecgLastLiveLength = -1;
+
 	// Auto-fitted height (px) of the compact HUD, measured each frame and applied on the
 	// next so the overlay grows/shrinks vertically with the selected metrics.
 	private int _compactHeight;
@@ -1849,13 +1857,17 @@ public sealed class StatusWindow : IDisposable
 		return (xs, ys);
 	}
 
-	// Live raw ECG trace (Polar H10 PMD ECG stream), with R-peak markers, derived HR, and a
-	// signal-quality cue. Empty unless the Polar ECG interval source is selected.
+	// Stacked-beats ECG view (Polar H10 PMD ECG stream): each cardiac cycle is re-sliced one beat
+	// wide, aligned on its R-peak at centre, and overlaid — the live beat brightest, older beats fading
+	// — so beat-to-beat variability reads as the spread of the stack. A new beat eases softly to centre
+	// rather than snapping. Empty unless the Polar ECG interval source is selected.
 	private void DrawEcgTab()
 	{
 		EcgWaveformSnapshot ecg = _pipeline.EcgWaveform;
-		if (ecg.MicroVolts.Count < 2)
+		EcgBeatOverlay overlay = EcgBeatOverlay.Build(ecg);
+		if (!overlay.HasBeats)
 		{
+			ResetEcgEasing();
 			ImGui.TextWrapped("Select \"Polar ECG\" as the interval source (Settings tab) with a Polar H10 to see the live trace.");
 			return;
 		}
@@ -1865,43 +1877,127 @@ public sealed class StatusWindow : IDisposable
 		ImGui.SameLine();
 		ImGui.TextDisabled($"   {EcgQualityText(ecg.Quality)}");
 
-		int n = ecg.MicroVolts.Count;
-		double rate = ecg.SampleRateHz > 0 ? ecg.SampleRateHz : 130.0;
-		var xs = new float[n];
-		var ys = new float[n];
-		for (int i = 0; i < n; i++)
-		{
-			xs[i] = (float)(i / rate);
-			ys[i] = ecg.MicroVolts[i];
-		}
-
-		float height = Math.Max(180f, ImGui.GetContentRegionAvail().Y - 28f);
-		var size = new Vector2(ImGui.GetContentRegionAvail().X, height);
-		if (ImPlot.BeginPlot("##ecg", size, ImPlotFlags.NoLegend | ImPlotFlags.NoMouseText))
-		{
-			ImPlot.SetupAxes("s", "µV", ImPlotAxisFlags.AutoFit, ImPlotAxisFlags.AutoFit);
-			ImPlot.PlotLine("ECG", ref xs[0], ref ys[0], n);
-
-			if (ecg.RPeakIndices.Count > 0)
-			{
-				int m = ecg.RPeakIndices.Count;
-				var peakXs = new float[m];
-				var peakYs = new float[m];
-				for (int k = 0; k < m; k++)
-				{
-					int idx = ecg.RPeakIndices[k];
-					peakXs[k] = xs[idx];
-					peakYs[k] = ys[idx];
-				}
-
-				ImPlot.PlotScatter("R-peaks", ref peakXs[0], ref peakYs[0], m);
-			}
-
-			ImPlot.EndPlot();
-		}
+		AdvanceEcgEasing(overlay, ImGui.GetIO().DeltaTime);
+		DrawBeatStack(overlay);
 
 		ImGui.TextDisabled("Signal view only — not a diagnostic ECG.");
 	}
+
+	// Exponential-ease rates (per second) and the fading-stack alpha schedule, mirroring the mobile
+	// EcgStrip so both heads read the same.
+	private const float EcgScaleEaseRate = 4.0f;
+	private const float EcgAnchorEaseRate = 7.0f;
+	private const float EcgNewestBeatAlpha = 0.70f;
+	private const float EcgBeatAlphaFalloff = 0.72f;
+	private const float EcgMinBeatAlpha = 0.06f;
+
+	private void ResetEcgEasing()
+	{
+		_ecgScaleInit = false;
+		_ecgAnchorSeconds = 0;
+		_ecgLastLiveLength = -1;
+	}
+
+	// Eases the vertical scale toward the window amplitude and the centre anchor back to zero, bumping
+	// the anchor off-centre whenever a fresh R-peak resets the live beat (so it slides in, never jumps).
+	private void AdvanceEcgEasing(EcgBeatOverlay overlay, float dt)
+	{
+		int liveLength = overlay.Live?.Samples.Count ?? 0;
+		if (_ecgLastLiveLength >= 0 && liveLength < _ecgLastLiveLength)
+		{
+			_ecgAnchorSeconds = overlay.HalfWindowSeconds * 0.22;
+		}
+
+		_ecgLastLiveLength = liveLength;
+
+		if (!_ecgScaleInit)
+		{
+			_ecgEasedMin = overlay.MinMicroVolts;
+			_ecgEasedMax = overlay.MaxMicroVolts;
+			_ecgScaleInit = true;
+		}
+		else
+		{
+			double scaleK = 1.0 - Math.Exp(-dt * EcgScaleEaseRate);
+			_ecgEasedMin += (overlay.MinMicroVolts - _ecgEasedMin) * scaleK;
+			_ecgEasedMax += (overlay.MaxMicroVolts - _ecgEasedMax) * scaleK;
+		}
+
+		_ecgAnchorSeconds *= Math.Exp(-dt * EcgAnchorEaseRate);
+	}
+
+	private void DrawBeatStack(EcgBeatOverlay overlay)
+	{
+		float width = ImGui.GetContentRegionAvail().X;
+		float height = Math.Max(180f, ImGui.GetContentRegionAvail().Y - 28f);
+		Vector2 origin = ImGui.GetCursorScreenPos();
+		ImGui.Dummy(new Vector2(width, height)); // reserve the canvas; keeps the footer below it
+
+		double range = _ecgEasedMax - _ecgEasedMin;
+		if (range < 1.0)
+		{
+			range = 1.0;
+		}
+
+		float margin = height * 0.08f;
+		float plotHeight = height - (2 * margin);
+		float centreX = origin.X + (width / 2f);
+		double pxPerSecond = (width / 2.0) * 0.94 / overlay.HalfWindowSeconds;
+
+		float XAt(double offsetSeconds) => centreX + (float)((offsetSeconds + _ecgAnchorSeconds) * pxPerSecond);
+		float YAt(double v) => origin.Y + margin + (float)(plotHeight * (1.0 - ((v - _ecgEasedMin) / range)));
+
+		ImDrawListPtr draw = ImGui.GetWindowDrawList();
+		draw.PushClipRect(origin, new Vector2(origin.X + width, origin.Y + height), true);
+
+		// Baseline.
+		float midY = origin.Y + margin + (plotHeight / 2f);
+		draw.AddLine(new Vector2(origin.X, midY), new Vector2(origin.X + width, midY), Col(new Vector4(0.2f, 0.22f, 0.25f, 1f)), 1f);
+
+		var lineHue = new Vector4(0.24f, 0.84f, 0.55f, 1f); // matches the mobile #3DD68C trace
+		foreach (EcgOverlayBeat beat in overlay.Beats)
+		{
+			float alpha = Math.Max(EcgMinBeatAlpha, EcgNewestBeatAlpha * (float)Math.Pow(EcgBeatAlphaFalloff, beat.Age));
+			DrawBeatTrace(draw, beat, lineHue with { W = alpha }, 1.5f, XAt, YAt);
+		}
+
+		if (overlay.Live is { } live)
+		{
+			DrawBeatTrace(draw, live, lineHue, 2f, XAt, YAt);
+		}
+
+		// Centre R-peak guide (dashed).
+		float guideX = XAt(0);
+		uint guideCol = Col(new Vector4(0.90f, 0.75f, 0.48f, 0.55f));
+		for (float y = origin.Y + margin; y < origin.Y + height - margin; y += 5f)
+		{
+			draw.AddLine(new Vector2(guideX, y), new Vector2(guideX, Math.Min(y + 2f, origin.Y + height - margin)), guideCol, 1f);
+		}
+
+		draw.PopClipRect();
+	}
+
+	private static void DrawBeatTrace(
+		ImDrawListPtr draw, EcgOverlayBeat beat, Vector4 colour, float thickness,
+		Func<double, float> xAt, Func<double, float> yAt)
+	{
+		IReadOnlyList<EcgBeatSample> samples = beat.Samples;
+		if (samples.Count < 2)
+		{
+			return;
+		}
+
+		uint col = Col(colour);
+		var prev = new Vector2(xAt(samples[0].OffsetSeconds), yAt(samples[0].MicroVolts));
+		for (int i = 1; i < samples.Count; i++)
+		{
+			var next = new Vector2(xAt(samples[i].OffsetSeconds), yAt(samples[i].MicroVolts));
+			draw.AddLine(prev, next, col, thickness);
+			prev = next;
+		}
+	}
+
+	private static uint Col(Vector4 c) => ImGui.ColorConvertFloat4ToU32(c);
 
 	private static string EcgQualityText(EcgSignalQuality quality) => quality switch
 	{
