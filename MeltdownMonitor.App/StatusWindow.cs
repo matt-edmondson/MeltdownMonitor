@@ -1693,6 +1693,18 @@ public sealed class StatusWindow : IDisposable
 
 		_settings.HrvTuning = ht;
 
+		// ── ECG view ─────────────────────────────────────────────────────
+		ImGui.SeparatorText("ECG view");
+
+		float ecgEase = (float)_settings.EcgCenteringEaseRate;
+		if (ImGuiWidgets.Knob("Beat centering", ref ecgEase, 0.5f, 12f, format: "%.1f", flags: ImGuiKnobOptions.ValueTooltip))
+		{
+			_settings.EcgCenteringEaseRate = ecgEase;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("How quickly the stacked-beats ECG settles a new beat to centre. Lower is slower and smoother; 3.0 is the default.");
+
 		// Apply on every frame (live), but defer the disk write until no widget is
 		// being dragged — otherwise we'd rewrite the settings file 30+ times a second.
 		if (_settingsDirty && !ImGui.IsAnyItemActive())
@@ -1779,6 +1791,7 @@ public sealed class StatusWindow : IDisposable
 				_settings.FieldVagalBuckets = 16;
 				_settings.RecoveryArrowSpeed = 0.7;
 				_settings.RecoveryArrowCount = 3;
+				_settings.EcgCenteringEaseRate = 3.0;
 				_settings.LfHfHaloAdditive = true;
 				_settings.LobesAdditive = true;
 				_settings.TrailAdditive = true;
@@ -1904,9 +1917,9 @@ public sealed class StatusWindow : IDisposable
 	}
 
 	// Exponential-ease rates (per second) and the fading-stack alpha schedule, mirroring the mobile
-	// EcgStrip so both heads read the same.
+	// EcgStrip so both heads read the same. The centre-anchor rate is user-tunable (Settings tab).
 	private const float EcgScaleEaseRate = 4.0f;
-	private const float EcgAnchorEaseRate = 7.0f;
+	private float EcgAnchorEaseRate => (float)_settings.EcgCenteringEaseRate;
 	private const float EcgNewestBeatAlpha = 0.70f;
 	private const float EcgBeatAlphaFalloff = 0.72f;
 	private const float EcgMinBeatAlpha = 0.06f;

@@ -159,6 +159,10 @@ public class AppSettings : AppData<AppSettings>
 	/// (1–6; clamped at the consumer). Default 3.</summary>
 	public int RecoveryArrowCount { get; set; } = 3;
 
+	/// <summary>How quickly the ECG view's live beat eases to centre — the exponential settle rate per
+	/// second (0.5–12; clamped at the consumer). Lower is slower and smoother; 3.0 is the default.</summary>
+	public double EcgCenteringEaseRate { get; set; } = 3.0;
+
 	// ── Per-element blend modes ──────────────────────────────────────────────
 	// Each Regulation Field glow layer can be drawn either additively (overlaps bloom toward
 	// white — the signature glow) or with plain alpha compositing (overlaps composite over,

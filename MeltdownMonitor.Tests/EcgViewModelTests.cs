@@ -49,4 +49,22 @@ public class EcgViewModelTests
 		vm.OnEcgUpdated(new EcgWaveformSnapshot([1, 1, 1], [], 1, 1, 130.0, EcgSignalQuality.Poor));
 		StringAssert.Contains(vm.QualityText, "poor", StringComparison.OrdinalIgnoreCase);
 	}
+
+	[TestMethod]
+	public void CenteringEaseRate_FallsBackToDefaultWithoutAProvider()
+	{
+		var vm = new EcgViewModel();
+		Assert.AreEqual(3.0, vm.CenteringEaseRate, 1e-9);
+	}
+
+	[TestMethod]
+	public void CenteringEaseRate_ReadsTheProviderLive()
+	{
+		double rate = 7.0;
+		var vm = new EcgViewModel(centeringEaseRateProvider: () => rate);
+		Assert.AreEqual(7.0, vm.CenteringEaseRate, 1e-9);
+
+		rate = 1.5; // a later Settings change is reflected on the next read
+		Assert.AreEqual(1.5, vm.CenteringEaseRate, 1e-9);
+	}
 }

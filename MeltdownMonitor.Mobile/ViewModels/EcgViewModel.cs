@@ -12,9 +12,23 @@ namespace MeltdownMonitor.Mobile.ViewModels;
 /// </summary>
 public sealed class EcgViewModel : ViewModelBase
 {
+	/// <summary>Fallback ease rate when no settings provider is wired (design-time / tests).</summary>
+	private const double DefaultCenteringEaseRate = 3.0;
+
+	private readonly Func<double>? _centeringEaseRateProvider;
 	private EcgBeatOverlay _overlay = EcgBeatOverlay.Empty;
 	private EcgSignalQuality _quality = EcgSignalQuality.Unknown;
 	private int _heartRate;
+
+	/// <param name="centeringEaseRateProvider">Reads the user's ECG centring ease rate from settings, live.</param>
+	public EcgViewModel(Func<double>? centeringEaseRateProvider = null) =>
+		_centeringEaseRateProvider = centeringEaseRateProvider;
+
+	/// <summary>
+	/// Exponential ease rate (per second) the strip uses to settle a new beat to centre. Sourced from
+	/// settings so the Settings slider tunes it live; re-raised on each ECG update so the binding refreshes.
+	/// </summary>
+	public double CenteringEaseRate => _centeringEaseRateProvider?.Invoke() ?? DefaultCenteringEaseRate;
 
 	/// <summary>The R-peak-aligned stack of recent beats for the overlay control.</summary>
 	public EcgBeatOverlay Overlay
@@ -55,6 +69,8 @@ public sealed class EcgViewModel : ViewModelBase
 		Raise(nameof(QualityText));
 		_heartRate = EstimateBpm(snapshot);
 		Raise(nameof(HeartRateText));
+		// Refresh the bound ease rate so a Settings change takes effect on the next batch.
+		Raise(nameof(CenteringEaseRate));
 	});
 
 	public void AttachPipeline(Pipeline pipeline)

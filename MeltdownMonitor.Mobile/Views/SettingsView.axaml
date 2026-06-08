@@ -268,6 +268,19 @@
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
             </StackPanel>
 
+            <StackPanel Spacing="6">
+                <TextBlock Text="ECG view" FontWeight="SemiBold" />
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="Beat centering" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding EcgCenteringEaseRate, StringFormat='{}{0:F1}'}" />
+                </Grid>
+                <Slider Minimum="0.5" Maximum="12"
+                        Value="{Binding EcgCenteringEaseRate, Mode=TwoWay}" />
+                <TextBlock Text="How quickly the stacked-beats ECG settles a new beat to centre. Lower is slower and smoother; 3.0 is the default."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+            </StackPanel>
+
             <Expander Header="Sensitivity" HorizontalAlignment="Stretch">
               <StackPanel Spacing="6">
                 <Grid ColumnDefinitions="*,Auto">
