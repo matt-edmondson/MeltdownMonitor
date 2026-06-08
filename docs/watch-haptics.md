@@ -398,6 +398,11 @@ battery are acceptable; wrist-down haptics fire for the session's duration.
 
 ### Phase W3 — watch as HR source (stretch)
 
+> **Opened as corroboration first.** The watch→phone metric path now exists as a
+> managed, unit-tested **corroboration** channel (the watch HR cross-checks the
+> strap rather than replacing it) — see `docs/watch-corroboration.md`. The
+> beat-to-beat *replacement* below remains the further stretch.
+
 - `HKWorkoutSession` + `HKLiveWorkoutBuilder` stream beat-to-beat HR on the
   watch → phone via `sendMessage` → adapt to a `WatchBeatSource : IBeatSource`
   so the Pipeline runs **strap-free**.

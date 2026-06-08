@@ -100,6 +100,19 @@ public record DetectionThresholds
 	/// </summary>
 	public MovementLevel MovementGateLevel { get; init; } = MovementLevel.Moderate;
 
+	// ── Apple Watch corroboration (only active when a watch metric source feeds a verdict) ──
+
+	/// <summary>
+	/// When true, a <see cref="WatchCorroboration.Conflicted"/> verdict — the Apple Watch and the
+	/// chest strap disagree on heart rate — defers Warning/Alerting escalation the same way an
+	/// off-body sensor does: two sensors on one body should agree, so a sustained disagreement marks
+	/// the strap signal as suspect (motion artifact, poor contact) and the more conservative choice is
+	/// to hold rather than alarm on an unreliable reading. Only ever consulted when a watch metric
+	/// source supplies a verdict other than <see cref="WatchCorroboration.Unknown"/>, so a build with
+	/// no paired watch behaves exactly as before. Default on.
+	/// </summary>
+	public bool UseWatchCorroboration { get; init; } = true;
+
 	/// <summary>
 	/// Tuning for the <see cref="HypoarousalDetector"/> — the low-arousal/shutdown edge (audit A(b)).
 	/// Nested here so the whole detection configuration travels and serialises as one object and the

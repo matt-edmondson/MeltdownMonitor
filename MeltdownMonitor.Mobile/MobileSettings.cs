@@ -33,6 +33,15 @@ public sealed class MobileSettings
 	/// </summary>
 	public IntervalSource PreferredIntervalSource { get; set; } = IntervalSource.HeartRateService;
 
+	/// <summary>
+	/// When true, corroborate detection with an Apple Watch: the watch relays its own wrist heart rate
+	/// over the phone↔watch link and the pipeline cross-checks it against the strap, deferring alerts
+	/// when the two sensors disagree (a suspect strap signal). Two sensors on one body should agree, so
+	/// a sustained disagreement is most often a strap artifact reading as dysregulation. Has no effect
+	/// without a paired watch relaying metrics (iOS only). Default off.
+	/// </summary>
+	public bool EnableWatchCorroboration { get; set; }
+
 	/// <summary>When set, monitoring is paused until this UTC time.</summary>
 	public DateTimeOffset? PausedUntil { get; set; }
 
