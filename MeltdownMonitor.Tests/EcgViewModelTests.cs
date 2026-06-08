@@ -12,27 +12,22 @@ public class EcgViewModelTests
 		var vm = new EcgViewModel();
 		Assert.IsTrue(vm.IsIdle);
 		Assert.IsFalse(vm.IsStreaming);
+		Assert.IsFalse(vm.Overlay.HasBeats);
 		StringAssert.Contains(vm.HeartRateText, "—", StringComparison.Ordinal);
 	}
 
 	[TestMethod]
-	public void OnEcgUpdated_PopulatesTracePeaksAndQuality()
+	public void OnEcgUpdated_BuildsTheBeatOverlayAndSurfacesQuality()
 	{
 		var vm = new EcgViewModel();
-		var snapshot = new EcgWaveformSnapshot(
-			MicroVolts: [10, 20, 30, 40],
-			RPeakIndices: [1, 3],
-			MinMicroVolts: 10,
-			MaxMicroVolts: 40,
-			SampleRateHz: 130.0,
-			Quality: EcgSignalQuality.Good);
-
-		vm.OnEcgUpdated(snapshot);
+		// Three peaks one second apart at 130 Hz: two completed beats plus the live one.
+		int[] samples = [.. Enumerable.Range(0, 520)];
+		vm.OnEcgUpdated(new EcgWaveformSnapshot(samples, [130, 260, 390], 0, 519, 130.0, EcgSignalQuality.Good));
 
 		Assert.IsTrue(vm.IsStreaming);
 		Assert.IsFalse(vm.IsIdle);
-		Assert.AreEqual(4, vm.Samples.Count);
-		CollectionAssert.AreEqual(new[] { 1, 3 }, vm.RPeakIndices.ToArray());
+		Assert.AreEqual(2, vm.Overlay.Beats.Count);
+		Assert.IsNotNull(vm.Overlay.Live);
 		StringAssert.Contains(vm.QualityText, "good", StringComparison.OrdinalIgnoreCase);
 	}
 
