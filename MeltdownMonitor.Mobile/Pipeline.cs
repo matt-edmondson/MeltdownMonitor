@@ -452,12 +452,20 @@ public sealed class Pipeline : IDisposable
 				continue;
 			}
 
-			_repository.InsertBeat(beat);
-			BeatReceived?.Invoke(beat);
+			// Keep motion-corrupted beats out of HRV entirely (opt-in): movement smears RR timing, so a beat
+			// arriving while moving at/above the gate level is marked an artifact (excluded from the metrics,
+			// still persisted with the flag). Complements the escalation-deferring movement gate.
+			Beat beatToProcess = _settings.Thresholds.RejectMotionArtifacts
+				&& MotionArtifactGate.IsArtifact(_movement.Level, _settings.Thresholds.MovementGateLevel)
+				? beat with { IsArtifact = true }
+				: beat;
+
+			_repository.InsertBeat(beatToProcess);
+			BeatReceived?.Invoke(beatToProcess);
 
 			ApplyTuning();
 			var sample = _hrv.AddBeat(
-				beat,
+				beatToProcess,
 				_baseline.BaselineRmssd,
 				_baseline.BaselineHr,
 				_detector.State,

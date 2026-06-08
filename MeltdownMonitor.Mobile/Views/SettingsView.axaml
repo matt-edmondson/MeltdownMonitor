@@ -27,6 +27,10 @@
                           IsChecked="{Binding EnableMotionCorroboration, Mode=TwoWay}" />
                 <TextBlock Text="Defers alerts and pauses baseline learning while you're moving, so exercise isn't mistaken for dysregulation. Uses the Polar strap accelerometer when available, otherwise the phone's motion sensor. Applies on next start."
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+                <CheckBox Content="Discard motion-corrupted beats from HRV"
+                          IsChecked="{Binding RejectMotionArtifacts, Mode=TwoWay}" />
+                <TextBlock Text="Keeps beats that arrive while you're moving out of the HRV metrics entirely (cleaner read), not just deferring alerts. Needs motion corroboration on."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
             </StackPanel>
 
             <StackPanel Spacing="6">

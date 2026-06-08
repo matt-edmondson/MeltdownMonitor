@@ -100,6 +100,17 @@ public record DetectionThresholds
 	/// </summary>
 	public MovementLevel MovementGateLevel { get; init; } = MovementLevel.Moderate;
 
+	/// <summary>
+	/// When true, individual beats that arrive while movement is at/above <see cref="MovementGateLevel"/>
+	/// are marked as artifacts and kept out of the HRV computation entirely — motion smears the RR with
+	/// noise (the same jitter that inflates SDNN/RMSSD), so excluding those beats yields a cleaner read
+	/// than merely deferring escalation. Complementary to <see cref="UseMovementGating"/>: that holds the
+	/// detector during exertion; this keeps motion-corrupted intervals out of the metrics themselves. Only
+	/// active when a motion source supplies a level other than <see cref="MovementLevel.Unknown"/>, so a
+	/// build with no accelerometer is unaffected. Default off — opt-in, since it discards data.
+	/// </summary>
+	public bool RejectMotionArtifacts { get; init; }
+
 	// ── Apple Watch corroboration (only active when a watch metric source feeds a verdict) ──
 
 	/// <summary>
