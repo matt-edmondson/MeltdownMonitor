@@ -214,8 +214,9 @@ public sealed class MobileSettings
 	/// <summary>How much history the sparklines display (1–360 min). Default 60 min.</summary>
 	public int SparklineWindowMinutes { get; set; } = 60;
 
-	/// <summary>How quickly the ECG view's live beat eases to centre — the exponential settle rate per
-	/// second (0.5–12; clamped at the consumer). Lower is slower and smoother; 3.0 is the default.</summary>
+	/// <summary>How fast the ECG view's reference cadence (the centre line each beat is drawn early/late
+	/// against) follows the heart rate — exponential rate per second (0.5–12; clamped at the consumer).
+	/// Lower holds a steadier centre, so beat-to-beat timing differences are easier to read; 3.0 default.</summary>
 	public double EcgCenteringEaseRate { get; set; } = 3.0;
 
 	// ── Per-element blend modes ──────────────────────────────────────────────

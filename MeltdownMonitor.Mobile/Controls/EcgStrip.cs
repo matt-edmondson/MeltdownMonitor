@@ -8,22 +8,21 @@ using MeltdownMonitor.Core.Hrv;
 namespace MeltdownMonitor.Mobile.Controls;
 
 /// <summary>
-/// "Stacked beats" ECG view: re-slices the live trace into one-beat-wide cardiac cycles, each aligned
-/// on its R-peak at centre, and overlays them — the live beat brightest, older beats fading with a
-/// diminishing alpha — so beat-to-beat variability reads as the spread of the stack. A render timer
-/// eases the vertical scale and a horizontal anchor so a new beat settles softly to centre rather than
-/// snapping into place. Backed by Avalonia's <see cref="DrawingContext"/> (Skia). Purely a signal view
-/// — not a diagnostic ECG.
+/// "Stacked beats" ECG view: re-slices the live trace into one-beat-wide cardiac cycles and overlays
+/// them — the live beat brightest, older beats fading with a diminishing alpha. Each beat is shifted
+/// horizontally by how far its RR sits from the eased reference cadence, so the fading stack shows how
+/// early or late each beat arrived relative to the others (a time-domain view of beat-to-beat
+/// variability). The reference cadence eases smoothly, holding the centre steady so the timing scatter
+/// is readable without jumps. Each beat is stroked as a single geometry (not per-segment lines) so the
+/// overlay stays cheap at 60 fps. Backed by Avalonia's <see cref="DrawingContext"/> (Skia). Purely a
+/// signal view — not a diagnostic ECG.
 /// </summary>
 public sealed class EcgStrip : Control
 {
-	// ~30 fps render loop, tied to the visual-tree lifecycle so it stops when the tab is off-screen.
-	private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(33);
+	// 60 fps render loop, tied to the visual-tree lifecycle so it stops when the tab is off-screen.
+	private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(16);
 
-	// Exponential-ease rate (per second) for the vertical scale. The centre-anchor rate is the
-	// user-tunable AnchorEaseRate styled property (default below).
-	private const double ScaleEaseRate = 4.0;
-	private const double DefaultAnchorEaseRate = 3.0;
+	private const double DefaultEaseRate = 3.0;
 
 	// Alpha schedule for the fading stack: the newest completed beat starts here and each older beat is
 	// multiplied down by the falloff, never dropping below the floor (so the oldest still ghosts in).
@@ -37,18 +36,14 @@ public sealed class EcgStrip : Control
 
 	private double _easedMin;
 	private double _easedMax;
-	private bool _scaleInitialised;
-
-	// Eased horizontal offset (seconds) applied to the whole stack. Bumped when a new beat arrives, then
-	// eased back to 0 — the "ease to centre" that keeps the latest beat from jumping into position.
-	private double _anchorSeconds;
-	private int _lastLiveLength = -1;
+	private double _easedReferenceRr;
+	private bool _easeInitialised;
 
 	public static readonly StyledProperty<EcgBeatOverlay?> OverlayProperty =
 		AvaloniaProperty.Register<EcgStrip, EcgBeatOverlay?>(nameof(Overlay));
 
 	public static readonly StyledProperty<double> AnchorEaseRateProperty =
-		AvaloniaProperty.Register<EcgStrip, double>(nameof(AnchorEaseRate), DefaultAnchorEaseRate);
+		AvaloniaProperty.Register<EcgStrip, double>(nameof(AnchorEaseRate), DefaultEaseRate);
 
 	public static readonly StyledProperty<IBrush> LineBrushProperty =
 		AvaloniaProperty.Register<EcgStrip, IBrush>(
@@ -80,8 +75,8 @@ public sealed class EcgStrip : Control
 		set => SetValue(OverlayProperty, value);
 	}
 
-	/// <summary>Exponential-ease rate (per second) for the centre anchor — lower settles a new beat to
-	/// centre more slowly/softly. User-tunable via the Settings slider.</summary>
+	/// <summary>Exponential-ease rate (per second) the view settles at — lower is slower and smoother.
+	/// User-tunable via the Settings slider. Governs the vertical scale and the window-width easing.</summary>
 	public double AnchorEaseRate
 	{
 		get => GetValue(AnchorEaseRateProperty);
@@ -145,33 +140,23 @@ public sealed class EcgStrip : Control
 			return;
 		}
 
-		// Detect a new beat: the live slice resets to a short length the instant a fresh R-peak fires.
-		int liveLength = overlay.Live?.Samples.Count ?? 0;
-		if (_lastLiveLength >= 0 && liveLength < _lastLiveLength)
+		// Ease the vertical scale (already robust to amplitude spikes) and the reference cadence toward the
+		// overlay's values. Easing the reference holds the centre steady so each beat's early/late shift
+		// reads against a calm baseline — no jumps; the horizontal spread is the real timing signal.
+		if (!_easeInitialised)
 		{
-			// Nudge the whole stack a fraction of a beat off-centre so it eases back in — no hard snap.
-			_anchorSeconds = overlay.HalfWindowSeconds * 0.22;
-		}
-
-		_lastLiveLength = liveLength;
-
-		// Ease the vertical scale toward the window's amplitude and the anchor back toward centre.
-		double targetMin = overlay.MinMicroVolts;
-		double targetMax = overlay.MaxMicroVolts;
-		if (!_scaleInitialised)
-		{
-			_easedMin = targetMin;
-			_easedMax = targetMax;
-			_scaleInitialised = true;
+			_easedMin = overlay.MinMicroVolts;
+			_easedMax = overlay.MaxMicroVolts;
+			_easedReferenceRr = overlay.ReferenceRrSeconds;
+			_easeInitialised = true;
 		}
 		else
 		{
-			double scaleK = 1.0 - Math.Exp(-dt * ScaleEaseRate);
-			_easedMin += (targetMin - _easedMin) * scaleK;
-			_easedMax += (targetMax - _easedMax) * scaleK;
+			double k = 1.0 - Math.Exp(-dt * Math.Max(0.1, AnchorEaseRate));
+			_easedMin += (overlay.MinMicroVolts - _easedMin) * k;
+			_easedMax += (overlay.MaxMicroVolts - _easedMax) * k;
+			_easedReferenceRr += (overlay.ReferenceRrSeconds - _easedReferenceRr) * k;
 		}
-
-		_anchorSeconds *= Math.Exp(-dt * Math.Max(0.0, AnchorEaseRate));
 
 		InvalidateVisual();
 	}
@@ -183,56 +168,63 @@ public sealed class EcgStrip : Control
 		context.DrawLine(new Pen(BaselineBrush, 1.0), new Point(0, midY), new Point(bounds.Width, midY));
 
 		EcgBeatOverlay? overlay = Overlay;
-		if (overlay is null || !overlay.HasBeats || bounds.Width <= 0 || bounds.Height <= 0
-			|| overlay.HalfWindowSeconds <= 0)
+		if (overlay is null || !overlay.HasBeats || bounds.Width <= 0 || bounds.Height <= 0)
 		{
 			return;
 		}
 
-		double min = _scaleInitialised ? _easedMin : overlay.MinMicroVolts;
-		double max = _scaleInitialised ? _easedMax : overlay.MaxMicroVolts;
+		double min = _easeInitialised ? _easedMin : overlay.MinMicroVolts;
+		double max = _easeInitialised ? _easedMax : overlay.MaxMicroVolts;
+		double referenceRr = _easeInitialised ? _easedReferenceRr : overlay.ReferenceRrSeconds;
 		double range = max - min;
 		if (range < 1.0)
 		{
 			range = 1.0; // avoid divide-by-zero on a flat trace
 		}
 
+		if (referenceRr <= 0)
+		{
+			return;
+		}
+
 		double margin = bounds.Height * 0.08;
 		double plotHeight = bounds.Height - (2 * margin);
 		double centreX = bounds.Width / 2.0;
-		// Half the window fills (most of) half the width, leaving a small horizontal margin.
-		double pxPerSecond = centreX * 0.94 / overlay.HalfWindowSeconds;
+		// Half a reference cycle fills (most of) half the width, leaving a small horizontal margin.
+		double pxPerSecond = centreX * 0.94 / (referenceRr / 2.0);
 
-		double XAt(double offsetSeconds) => centreX + ((offsetSeconds + _anchorSeconds) * pxPerSecond);
 		double YAt(double v) => margin + (plotHeight * (1.0 - ((v - min) / range)));
 
 		Color lineColor = (LineBrush as ISolidColorBrush)?.Color ?? Color.FromRgb(0x3D, 0xD6, 0x8C);
 
 		using (context.PushClip(bounds))
 		{
-			// Faded stack, oldest first so newer beats paint on top.
+			// Faded stack, oldest first so newer beats paint on top. Each beat is shifted by how far its
+			// RR sits from the reference cadence — that horizontal offset is the early/late signal.
 			foreach (EcgOverlayBeat beat in overlay.Beats)
 			{
 				double alpha = Math.Max(MinBeatAlpha, NewestBeatAlpha * Math.Pow(BeatAlphaFalloff, beat.Age));
-				DrawBeat(context, beat, lineColor, alpha, LineThickness * 0.9, XAt, YAt);
+				DrawBeat(context, beat, lineColor, alpha, LineThickness * 0.9, centreX, pxPerSecond, referenceRr, YAt);
 			}
 
 			// Live beat: full strength, a touch heavier, on top of everything.
 			if (overlay.Live is { } live)
 			{
-				DrawBeat(context, live, lineColor, 1.0, LineThickness, XAt, YAt);
+				DrawBeat(context, live, lineColor, 1.0, LineThickness, centreX, pxPerSecond, referenceRr, YAt);
 			}
 
-			// Centre R-peak guide.
+			// Centre guide: the reference cadence (a beat exactly on cadence sits here).
 			var guidePen = new Pen(PeakBrush, 1.0) { DashStyle = new DashStyle([2, 3], 0) };
-			double guideX = XAt(0);
-			context.DrawLine(guidePen, new Point(guideX, margin), new Point(guideX, bounds.Height - margin));
+			context.DrawLine(guidePen, new Point(centreX, margin), new Point(centreX, bounds.Height - margin));
 		}
 	}
 
+	// Strokes one beat as a single polyline geometry — one draw op instead of one per sample pair. The
+	// beat is translated horizontally by (its RR − reference cadence), so an early beat sits left of
+	// centre and a late beat right of it.
 	private static void DrawBeat(
 		DrawingContext context, EcgOverlayBeat beat, Color color, double alpha, double thickness,
-		Func<double, double> xAt, Func<double, double> yAt)
+		double centreX, double pxPerSecond, double referenceRr, Func<double, double> yAt)
 	{
 		IReadOnlyList<EcgBeatSample> samples = beat.Samples;
 		if (samples.Count < 2)
@@ -240,15 +232,23 @@ public sealed class EcgStrip : Control
 			return;
 		}
 
+		double shift = beat.IntervalSeconds > 0 ? beat.IntervalSeconds - referenceRr : 0.0;
+		double XAt(double offsetSeconds) => centreX + ((offsetSeconds + shift) * pxPerSecond);
+
+		var geometry = new StreamGeometry();
+		using (StreamGeometryContext geo = geometry.Open())
+		{
+			geo.BeginFigure(new Point(XAt(samples[0].OffsetSeconds), yAt(samples[0].MicroVolts)), isFilled: false);
+			for (int i = 1; i < samples.Count; i++)
+			{
+				geo.LineTo(new Point(XAt(samples[i].OffsetSeconds), yAt(samples[i].MicroVolts)));
+			}
+
+			geo.EndFigure(isClosed: false);
+		}
+
 		var pen = new Pen(
 			new SolidColorBrush(color, alpha), thickness, lineJoin: PenLineJoin.Round, lineCap: PenLineCap.Round);
-
-		var prev = new Point(xAt(samples[0].OffsetSeconds), yAt(samples[0].MicroVolts));
-		for (int i = 1; i < samples.Count; i++)
-		{
-			var next = new Point(xAt(samples[i].OffsetSeconds), yAt(samples[i].MicroVolts));
-			context.DrawLine(pen, prev, next);
-			prev = next;
-		}
+		context.DrawGeometry(null, pen, geometry);
 	}
 }
