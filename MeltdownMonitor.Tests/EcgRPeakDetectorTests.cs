@@ -189,7 +189,7 @@ public class EcgRPeakDetectorTests
 		for (int i = 0; i < sig.Length; i++)
 		{
 			if (auto.AddSample(sig[i]) is { } a) autoRr.Add(a);
-			if (timed.AddSample(sig[i], i * dt) is { } t) timedRr.Add(t);
+			if (timed.AddSample(sig[i], 1000.0 + (i * dt)) is { } t) timedRr.Add(t);
 		}
 
 		Assert.AreEqual(autoRr.Count, timedRr.Count);
@@ -304,5 +304,51 @@ public class EcgRPeakDetectorTests
 		Assert.IsTrue(
 			rrs.All(r => r > 0.7 * expected),
 			$"T-waves must not create short intervals, got: {string.Join(", ", rrs.Select(x => Math.Round(x)))}");
+	}
+
+	// A smooth parabolic-apex beat train whose period is a NON-integer number of samples, so each R-wave
+	// apex falls at a different sub-sample phase. A grid-snapping detector would alternate between adjacent
+	// sample times (jitter ≈ half a sample ≈ 3.8 ms); sub-sample interpolation should recover it far tighter.
+	private static double SmoothEcg(int index, double periodSamples, int firstPeak = 30, double amplitude = 1000.0, double halfWidth = 4.0)
+	{
+		// Distance (in samples) to the nearest beat centre.
+		double phase = (index - firstPeak) / periodSamples;
+		double nearest = Math.Round(phase);
+		double centre = firstPeak + (nearest * periodSamples);
+		double d = index - centre;
+		if (Math.Abs(d) > halfWidth)
+		{
+			return 0.0;
+		}
+
+		// Parabolic apex (clamped at zero) — ideal for parabolic interpolation.
+		double v = 1.0 - ((d / halfWidth) * (d / halfWidth));
+		return amplitude * Math.Max(0.0, v);
+	}
+
+	[TestMethod]
+	public void SubSamplePeak_RecoversFractionalRrWithLowJitter()
+	{
+		const double periodSamples = 100.4; // fractional ⇒ apex drifts across the sample grid every beat
+		double dt = 1.0 / Fs;
+		double expected = periodSamples / Fs * 1000.0; // ≈ 772.3 ms
+
+		var detector = new EcgRPeakDetector(Fs);
+		var rrs = new List<double>();
+		for (int i = 0; i < 5000; i++)
+		{
+			if (detector.AddSample(SmoothEcg(i, periodSamples), i * dt) is { } rr)
+			{
+				rrs.Add(rr);
+			}
+		}
+
+		Assert.IsTrue(rrs.Count > 20, $"Expected a long run of intervals, got {rrs.Count}.");
+		var tail = rrs.Skip(5).ToList(); // skip learning/warm-up
+		double mean = tail.Average();
+		double sd = Math.Sqrt(tail.Select(r => (r - mean) * (r - mean)).Average());
+
+		Assert.AreEqual(expected, mean, 1.0, $"Mean RR should track the fractional period; got {mean:0.00} ms.");
+		Assert.IsTrue(sd < 2.0, $"Sub-sample interpolation should keep RR jitter well under the 7.7 ms grid; SD was {sd:0.00} ms.");
 	}
 }
