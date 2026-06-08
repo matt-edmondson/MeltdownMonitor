@@ -27,6 +27,7 @@ public sealed class Pipeline : IDisposable
 	private readonly RegulationVelocityTracker _velocity = new();
 	private readonly RegulationVelocityTracker _hypoVelocity = new();
 	private readonly MovementMonitor _movement = new();
+	private readonly WatchCorroborationMonitor _watchCorroboration = new();
 	private readonly EcgWaveformBuffer _ecg = new();
 
 	private CancellationTokenSource _cts = new();
@@ -55,6 +56,10 @@ public sealed class Pipeline : IDisposable
 
 	/// <summary>Current dynamic-acceleration intensity (g RMS) from the motion source, for tuning display.</summary>
 	public double CurrentMovementIntensity => _movement.IntensityG;
+
+	/// <summary>Latest Apple Watch corroboration verdict (strap-vs-watch heart-rate cross-check).
+	/// <see cref="WatchCorroboration.Unknown"/> when watch corroboration is off or no watch is feeding.</summary>
+	public WatchCorroboration CurrentWatchCorroboration => _watchCorroboration.Verdict;
 
 	/// <summary>Snapshot of the recent raw ECG window for the live waveform view. Empty unless the
 	/// Polar ECG interval source is streaming.</summary>
@@ -108,6 +113,11 @@ public sealed class Pipeline : IDisposable
 	/// source is feeding.</summary>
 	public event Action<MovementSnapshot>? MovementUpdated;
 
+	/// <summary>Fires per sample with the current Apple Watch corroboration snapshot, so the UI can show
+	/// when the watch is confirming or contradicting the strap. Carries
+	/// <see cref="WatchCorroboration.Unknown"/> when no watch source is feeding.</summary>
+	public event Action<WatchCorroborationSnapshot>? WatchCorroborationUpdated;
+
 	/// <summary>Fires for each decoded ECG frame with the refreshed waveform snapshot, so the ECG view
 	/// can render the live trace. Only raised when the Polar ECG interval source is streaming.</summary>
 	public event Action<EcgWaveformSnapshot>? EcgUpdated;
@@ -145,8 +155,15 @@ public sealed class Pipeline : IDisposable
 	/// it is safe to wire this alongside a Polar strap. Null disables the fallback. Its sensor
 	/// lifecycle is owned by the composition root, not the pipeline.
 	/// </param>
+	/// <param name="watchMetrics">
+	/// Optional Apple Watch metric source (the phone↔watch <c>WCSession</c> link on iOS). When present
+	/// and <see cref="MobileSettings.EnableWatchCorroboration"/> is on, its heart-rate readings
+	/// cross-check the strap and a sustained disagreement defers escalation. Null — every host without
+	/// a paired watch, including Android — leaves detection byte-identical. Distinct from the beat
+	/// source: the watch metrics arrive over the watch link, not the strap's BLE connection.
+	/// </param>
 	public Pipeline(MobileSettings settings, MeltdownRepository repository, IBeatSource source,
-		IMotionSource? motionFallback = null)
+		IMotionSource? motionFallback = null, IWatchMetricSource? watchMetrics = null)
 	{
 		_settings = settings;
 		_repository = repository;
@@ -188,6 +205,13 @@ public sealed class Pipeline : IDisposable
 			{
 				motionFallback.MotionSampleReceived += _movement.Add;
 			}
+		}
+
+		// Apple Watch corroboration: the watch relays its own heart rate over the phone↔watch link; the
+		// monitor cross-checks it against the strap to flag a suspect strap signal. Off by default.
+		if (settings.EnableWatchCorroboration && watchMetrics is not null)
+		{
+			watchMetrics.WatchMetricReceived += _watchCorroboration.Add;
 		}
 
 		// Surface the raw ECG trace when the Polar ECG interval source is selected.
@@ -434,7 +458,12 @@ public sealed class Pipeline : IDisposable
 				_baseline.Update(sample, LatestContact, movement);
 			}
 
-			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact, movement);
+			// Cross-check the strap's HR against the watch (if one is feeding) for this sample, so a
+			// strap signal the wrist contradicts can't drive the detector. Unknown when no watch feeds.
+			WatchCorroboration watch = _watchCorroboration.Evaluate(sample.MeanHr, sample.Timestamp);
+			WatchCorroborationUpdated?.Invoke(_watchCorroboration.Snapshot);
+
+			var state = _detector.Process(sample, _baseline.IsWarm, LatestContact, movement, watch);
 			_hypoDetector.Process(sample, _baseline.IsWarm, LatestContact);
 
 			var finalSample = sample with

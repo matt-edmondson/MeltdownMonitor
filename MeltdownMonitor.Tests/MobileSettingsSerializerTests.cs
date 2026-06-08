@@ -18,6 +18,7 @@ public class MobileSettingsSerializerTests
 			EnableChime = false,
 			EnableNotifications = false,
 			EnableMotionCorroboration = true,
+			EnableWatchCorroboration = true,
 			PreferredIntervalSource = IntervalSource.PolarEcg,
 			AlertSuggestion = "Breathe. You've got this.",
 			WriteEpisodesToHealthKit = true,
@@ -44,6 +45,7 @@ public class MobileSettingsSerializerTests
 		Assert.AreEqual(original.EnableChime, restored.EnableChime);
 		Assert.AreEqual(original.EnableNotifications, restored.EnableNotifications);
 		Assert.AreEqual(original.EnableMotionCorroboration, restored.EnableMotionCorroboration);
+		Assert.AreEqual(original.EnableWatchCorroboration, restored.EnableWatchCorroboration);
 		Assert.AreEqual(original.PreferredIntervalSource, restored.PreferredIntervalSource);
 		Assert.AreEqual(original.AlertSuggestion, restored.AlertSuggestion);
 		Assert.AreEqual(original.WriteEpisodesToHealthKit, restored.WriteEpisodesToHealthKit);
@@ -243,6 +245,12 @@ public class MobileSettingsSerializerTests
 		Assert.AreEqual(WatchHapticMode.Both, s.WatchHapticMode);
 		Assert.AreEqual(WatchHapticIntensity.Low, s.WatchHapticIntensity);
 		Assert.AreEqual(6.0, s.WatchPacedBreathRate, 1e-9);
+	}
+
+	[TestMethod]
+	public void Default_WatchCorroboration_IsOff()
+	{
+		Assert.IsFalse(new MobileSettings().EnableWatchCorroboration);
 	}
 
 	[TestMethod]

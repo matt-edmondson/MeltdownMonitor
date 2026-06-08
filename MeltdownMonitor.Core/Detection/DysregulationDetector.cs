@@ -79,21 +79,33 @@ public class DysregulationDetector
 	/// count as recovery. The default (<see cref="MovementLevel.Unknown"/>) never gates, so a build
 	/// with no accelerometer is unaffected.
 	/// </param>
+	/// <param name="watch">
+	/// The Apple Watch corroboration verdict. When <see cref="WatchCorroboration.Conflicted"/> (the
+	/// watch and strap disagree on heart rate) and <see cref="DetectionThresholds.UseWatchCorroboration"/>
+	/// is on, the sample is treated like an off-body reading: the strap signal is suspect, so the state
+	/// is held and streaks cleared. The default (<see cref="WatchCorroboration.Unknown"/>) never gates,
+	/// so a build with no paired watch is unaffected.
+	/// </param>
 	public DetectorState Process(
 		HrvSample sample,
 		bool baselineIsWarm,
 		SensorContactStatus contact = SensorContactStatus.NotSupported,
-		MovementLevel movement = MovementLevel.Unknown)
+		MovementLevel movement = MovementLevel.Unknown,
+		WatchCorroboration watch = WatchCorroboration.Unknown)
 	{
-		// Sensor off-body, or the body is moving enough to confound HRV: RR data is unreliable for
-		// the state machine, so don't let this sample drive it. Hold the current state and clear any
-		// in-progress warning or recovery streak, so a blip neither triggers an alert nor counts as
-		// recovery — the streak must re-accumulate from clean data once the gate clears.
+		// Sensor off-body, the body is moving enough to confound HRV, or the wrist watch contradicts
+		// the strap's heart rate: RR data is unreliable for the state machine, so don't let this sample
+		// drive it. Hold the current state and clear any in-progress warning or recovery streak, so a
+		// blip neither triggers an alert nor counts as recovery — the streak must re-accumulate from
+		// clean data once the gate clears.
 		bool movementGated = _thresholds.UseMovementGating
 			&& movement != MovementLevel.Unknown
 			&& movement >= _thresholds.MovementGateLevel;
 
-		if (contact == SensorContactStatus.NotDetected || movementGated)
+		bool watchGated = _thresholds.UseWatchCorroboration
+			&& watch == WatchCorroboration.Conflicted;
+
+		if (contact == SensorContactStatus.NotDetected || movementGated || watchGated)
 		{
 			ResetTransientStreaks();
 			return _state;
