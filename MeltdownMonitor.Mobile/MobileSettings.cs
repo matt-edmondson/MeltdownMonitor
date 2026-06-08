@@ -15,6 +15,13 @@ public sealed class MobileSettings
 {
 	public DetectionThresholds Thresholds { get; set; } = new();
 
+	/// <summary>
+	/// When true, the app surfaces a Debug tab with live diagnostics — the ECG-vs-HRS RR A/B,
+	/// per-stream artifact rates, the full HRV/baseline/movement/ECG dump, and connection details.
+	/// Off by default; purely diagnostic, it changes no detection behaviour.
+	/// </summary>
+	public bool EnableDebugMode { get; set; }
+
 	public HeartRateDeviceType DeviceType { get; set; } = HeartRateDeviceType.Auto;
 
 	/// <summary>

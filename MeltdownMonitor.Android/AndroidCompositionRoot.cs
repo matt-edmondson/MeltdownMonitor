@@ -39,6 +39,7 @@ public static class AndroidCompositionRoot
 	private static HistoryViewModel? _history;
 	private static MetricsViewModel? _metrics;
 	private static EcgViewModel? _ecg;
+	private static DebugViewModel? _debug;
 	private static AndroidBleSource? _source;
 	private static ImuMotionSource? _motionFallback;
 	private static Pipeline? _pipeline;
@@ -149,7 +150,8 @@ public static class AndroidCompositionRoot
 			onChanged: () => _store.Save(settings));
 
 		_ecg = new EcgViewModel();
-		var root = new RootViewModel(settings, _now, _history, settingsTab, _metrics, _ecg, _store, healthPrompt);
+		_debug = new DebugViewModel();
+		var root = new RootViewModel(settings, _now, _history, settingsTab, _metrics, _ecg, _debug, _store, healthPrompt);
 
 		// Bridge the disclaimer acknowledgement out to the head so it can sequence
 		// the runtime permission asks behind it (design doc §5.2). Fires once, on
@@ -228,6 +230,7 @@ public static class AndroidCompositionRoot
 		{
 			_now?.AttachPipeline(pipeline);
 			_ecg?.AttachPipeline(pipeline);
+			_debug?.AttachPipeline(pipeline);
 			_history?.UseDatabase(dbPath);
 		});
 	}

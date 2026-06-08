@@ -15,7 +15,7 @@ namespace MeltdownMonitor.Ble.Windows;
 /// set <see cref="HeartRateDeviceType.Auto"/> to connect to whichever is found first.
 /// Reconnects automatically with exponential backoff on disconnect.
 /// </summary>
-public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IEcgSource, IDisposable
+public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IEcgSource, IBeatDiagnosticsSource, IDisposable
 {
 	private static readonly Guid HeartRateServiceUuid = new("0000180d-0000-1000-8000-00805f9b34fb");
 	private static readonly Guid HrMeasurementCharUuid = new("00002a37-0000-1000-8000-00805f9b34fb");
@@ -48,6 +48,9 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 	/// <inheritdoc />
 	public event Action<EcgSamples>? EcgSamplesReceived;
 
+	/// <inheritdoc />
+	public event Action<BeatDiagnostic>? BeatDiagnosticReceived;
+
 	private const double EcgSampleRateHz = 130.0;
 
 	private readonly HeartRateDeviceType _deviceType;
@@ -55,6 +58,10 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 	private readonly IntervalSource _intervalSource;
 	private readonly EcgRPeakDetector _rpeak = new();
 	private readonly RrArtifactFilter _artifactFilter = new();
+
+	// HRS RR is also reported as debug diagnostics through this private filter, kept separate from
+	// the pipeline's _artifactFilter so reporting HRS while a Polar stream drives HRV never perturbs it.
+	private readonly RrArtifactFilter _hrsDiagFilter = new();
 
 	// Once the preferred Polar interval stream (PPI/ECG) is actually producing intervals, HRS beats
 	// are suppressed so the two sources can't double-count. Until then HRS keeps the pipeline fed.
@@ -169,6 +176,7 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 		// from before a disconnect can't mis-flag the first beats after a reconnect
 		// (matches the Apple source, which resets on every connect).
 		_artifactFilter.Reset();
+		_hrsDiagFilter.Reset();
 		_rpeak.Reset();
 		_polarIntervalsActive = false;
 
@@ -213,6 +221,14 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 			// Surface contact on every notification — it's the only signal that
 			// survives contact loss, when RR intervals (and beats) dry up.
 			SensorContactChanged?.Invoke(measurement.SensorContact);
+
+			// Report every HRS RR for the debug A/B (even while suppressed below), via a private filter
+			// so it never perturbs the pipeline's _artifactFilter that a live Polar stream may be driving.
+			foreach (double diagRr in measurement.RrIntervals)
+			{
+				BeatDiagnosticReceived?.Invoke(new BeatDiagnostic(
+					now, IntervalSource.HeartRateService, diagRr, measurement.HeartRateBpm, _hrsDiagFilter.IsArtifact(diagRr)));
+			}
 
 			// Once a preferred Polar interval stream is live, HRS RR is the redundant source — drop it.
 			if (_polarIntervalsActive)
@@ -358,7 +374,10 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 				{
 					bool timingArtifact = _artifactFilter.IsArtifact(ppi.PpiMs);
 					_polarIntervalsActive = true;
-					_beatWriter?.TryWrite(PolarPpi.ToBeat(ppi, now, timingArtifact));
+					var ppiBeat = PolarPpi.ToBeat(ppi, now, timingArtifact);
+					BeatDiagnosticReceived?.Invoke(new BeatDiagnostic(
+						now, IntervalSource.PolarPpi, ppiBeat.RrMs, ppiBeat.HeartRateBpm, ppiBeat.IsArtifact));
+					_beatWriter?.TryWrite(ppiBeat);
 				}
 
 				break;
@@ -387,7 +406,9 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 					{
 						bool isArtifact = _artifactFilter.IsArtifact(rr);
 						_polarIntervalsActive = true;
-						_beatWriter?.TryWrite(new Beat(now, rr, (int)Math.Round(60000.0 / rr), isArtifact));
+						int bpm = (int)Math.Round(60000.0 / rr);
+						BeatDiagnosticReceived?.Invoke(new BeatDiagnostic(now, IntervalSource.PolarEcg, rr, bpm, isArtifact));
+						_beatWriter?.TryWrite(new Beat(now, rr, bpm, isArtifact));
 					}
 				}
 
