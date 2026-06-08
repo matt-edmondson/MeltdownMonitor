@@ -8,8 +8,9 @@ namespace MeltdownMonitor.Core.Hrv;
 ///
 /// <list type="bullet">
 /// <item><b>Sub-sample fiducial.</b> The integration envelope only says <i>which</i> beat fired; the RR
-/// timing is taken from the raw R-wave apex, located to a fraction of a sample by fitting a parabola to
-/// the apex and its two neighbours. Without this, every R-peak snaps to the 130 Hz grid (~7.7 ms steps),
+/// timing is taken from the raw R-wave apex, located to a fraction of a sample by interpolating the
+/// samples around it (a Catmull-Rom cubic that tracks the asymmetric R-wave, with a parabola fallback).
+/// Without this, every R-peak snaps to the 130 Hz grid (~7.7 ms steps),
 /// which inflates SDNN/RMSSD/pNN50 with quantisation jitter even though the mean RR is right — a real
 /// hazard here, since spurious variability can mask the genuine low-HRV states the app is built to catch.
 /// Interpolation pulls beat-to-beat timing down to sub-millisecond, close to the sensor's own RR.</item>
@@ -271,9 +272,10 @@ public sealed class EcgRPeakDetector
 
 	// Refines the integration-envelope peak (which only localises the beat to ±a few samples) to the
 	// true R-wave apex with sub-sample precision: find the largest-magnitude raw sample within one
-	// integration window back from the envelope peak, then fit a parabola to it and its two neighbours.
-	// Returns the device time of the interpolated apex. Falls back to the nearest sample time when the
-	// ring doesn't yet hold the neighbours (start-up).
+	// integration window back from the envelope peak, then interpolate the continuous apex from the
+	// samples around it — a Catmull-Rom cubic over five points (which tracks the asymmetric R-wave better
+	// than a parabola), falling back to a 3-point parabola, then to the raw apex, as the ring allows.
+	// Returns the device time of the interpolated apex.
 	private double RefineFiducial(long envIndex)
 	{
 		long oldest = Math.Max(0, _absIndex - _ringSize + 1);
@@ -297,24 +299,72 @@ public sealed class EcgRPeakDetector
 		}
 
 		double apexTime = TimeAt(apex);
-		if (apex - 1 < oldest || apex + 1 > _absIndex)
+
+		// Prefer the 5-point cubic when the full neighbourhood is in the ring.
+		if (apex - 2 >= oldest && apex + 2 <= _absIndex)
 		{
-			return apexTime;
+			double off = CubicPeakOffset(
+				Math.Abs(ValAt(apex - 2)), Math.Abs(ValAt(apex - 1)), Math.Abs(ValAt(apex)),
+				Math.Abs(ValAt(apex + 1)), Math.Abs(ValAt(apex + 2)));
+			return apexTime + (off * _sampleIntervalSeconds);
 		}
 
 		// Parabolic interpolation on the rectified apex: the sub-sample offset of the vertex.
-		double ym1 = Math.Abs(ValAt(apex - 1));
-		double y0 = Math.Abs(ValAt(apex));
-		double yp1 = Math.Abs(ValAt(apex + 1));
-		double denom = ym1 - (2 * y0) + yp1;
-		if (Math.Abs(denom) < 1e-9)
+		if (apex - 1 >= oldest && apex + 1 <= _absIndex)
 		{
-			return apexTime;
+			double ym1 = Math.Abs(ValAt(apex - 1));
+			double y0 = Math.Abs(ValAt(apex));
+			double yp1 = Math.Abs(ValAt(apex + 1));
+			double denom = ym1 - (2 * y0) + yp1;
+			if (Math.Abs(denom) >= 1e-9)
+			{
+				double delta = Math.Clamp(0.5 * (ym1 - yp1) / denom, -1.0, 1.0);
+				return apexTime + (delta * _sampleIntervalSeconds);
+			}
 		}
 
-		double delta = Math.Clamp(0.5 * (ym1 - yp1) / denom, -1.0, 1.0);
-		return apexTime + (delta * _sampleIntervalSeconds);
+		return apexTime;
 	}
+
+	// Sub-sample offset (in samples, within [-1, 1] of the centre point p2) of the continuous maximum of
+	// a Catmull-Rom cubic through five equally spaced rectified samples p0..p4. The discrete apex is p2,
+	// so the true peak lies on one of the two adjacent segments; both are scanned at fine resolution.
+	private static double CubicPeakOffset(double p0, double p1, double p2, double p3, double p4)
+	{
+		const int Steps = 64;
+		double bestVal = p2;
+		double bestOff = 0.0;
+
+		// Left segment p1→p2 (offset −1→0), Catmull-Rom control points p0,p1,p2,p3.
+		// Right segment p2→p3 (offset 0→1), control points p1,p2,p3,p4.
+		for (int s = 0; s <= Steps; s++)
+		{
+			double u = (double)s / Steps;
+			double left = CatmullRom(p0, p1, p2, p3, u);
+			if (left > bestVal)
+			{
+				bestVal = left;
+				bestOff = -1.0 + u;
+			}
+
+			double right = CatmullRom(p1, p2, p3, p4, u);
+			if (right > bestVal)
+			{
+				bestVal = right;
+				bestOff = u;
+			}
+		}
+
+		return Math.Clamp(bestOff, -1.0, 1.0);
+	}
+
+	// Catmull-Rom interpolation of the segment between p1 and p2 (t in [0,1]).
+	private static double CatmullRom(double p0, double p1, double p2, double p3, double t) =>
+		0.5 * ((2 * p1)
+			+ ((-p0 + p2) * t)
+			+ (((2 * p0) - (5 * p1) + (4 * p2) - p3) * t * t)
+			+ ((-p0 + (3 * p1) - (3 * p2) + p3) * t * t * t));
+
 
 	private double ValAt(long absIndex) => _ringVal[(int)(((absIndex % _ringSize) + _ringSize) % _ringSize)];
 

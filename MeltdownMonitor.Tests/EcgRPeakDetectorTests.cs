@@ -351,4 +351,45 @@ public class EcgRPeakDetectorTests
 		Assert.AreEqual(expected, mean, 1.0, $"Mean RR should track the fractional period; got {mean:0.00} ms.");
 		Assert.IsTrue(sd < 2.0, $"Sub-sample interpolation should keep RR jitter well under the 7.7 ms grid; SD was {sd:0.00} ms.");
 	}
+
+	[TestMethod]
+	public void SubSamplePeak_AsymmetricBeats_StillLowJitter()
+	{
+		// Asymmetric R-wave (steep upstroke, gentler decay) at a fractional period — the case where a
+		// symmetric parabola is biased and the cubic earns its keep. RR jitter must stay well under the grid.
+		const double periodSamples = 100.4;
+		double dt = 1.0 / Fs;
+		double expected = periodSamples / Fs * 1000.0;
+
+		double Sample(int index)
+		{
+			double phase = (index - 30) / periodSamples;
+			double centre = 30 + (Math.Round(phase) * periodSamples);
+			double d = index - centre;
+			// Steeper rising flank than falling: an asymmetric apex.
+			double w = d < 0 ? 3.0 : 6.0;
+			if (Math.Abs(d) > w)
+			{
+				return 0.0;
+			}
+
+			return 1000.0 * Math.Max(0.0, 1.0 - ((d / w) * (d / w)));
+		}
+
+		var detector = new EcgRPeakDetector(Fs);
+		var rrs = new List<double>();
+		for (int i = 0; i < 5000; i++)
+		{
+			if (detector.AddSample(Sample(i), i * dt) is { } rr)
+			{
+				rrs.Add(rr);
+			}
+		}
+
+		var tail = rrs.Skip(5).ToList();
+		double mean = tail.Average();
+		double sd = Math.Sqrt(tail.Select(r => (r - mean) * (r - mean)).Average());
+		Assert.AreEqual(expected, mean, 2.0, $"Mean RR should track the fractional period; got {mean:0.00} ms.");
+		Assert.IsTrue(sd < 3.0, $"Asymmetric-beat RR jitter should stay under the 7.7 ms grid; SD was {sd:0.00} ms.");
+	}
 }
