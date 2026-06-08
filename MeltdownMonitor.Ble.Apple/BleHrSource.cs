@@ -85,8 +85,13 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 	// suppressed so the two sources can't double-count. Until then HRS keeps the pipeline fed.
 	private bool _polarIntervalsActive;
 	private readonly RrArtifactFilter _artifactFilter = new();
+
+	// Not single-writer: the HRS notification (OnMeasurementBytes) and the PMD data callback (OnPmdData,
+	// for PPI/ECG) can both write briefly around the handover to a Polar interval source. CoreBluetooth
+	// serialises delegate callbacks on the central's queue today, but the channel must not rely on that —
+	// matches the Windows head, which documents the same dual-writer handover.
 	private readonly Channel<Beat> _channel = Channel.CreateUnbounded<Beat>(
-		new UnboundedChannelOptions { SingleWriter = true });
+		new UnboundedChannelOptions { SingleWriter = false });
 	private readonly CBCentralManager _central;
 
 	private PeripheralObserver? _peripheralObserver;
@@ -325,12 +330,18 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 			case PmdMeasurementType.Ecg:
 			{
 				var ecgSamples = PmdFrameParser.ParseEcg(bytes);
-				var microVolts = new int[ecgSamples.Count];
+				int count = ecgSamples.Count;
+				// The frame header carries the device time (since the PMD epoch) of the LAST sample;
+				// samples are evenly spaced at the ECG rate. Feeding each sample's true device time lets
+				// the detector treat a dropped frame as real elapsed time rather than miscounting RR.
+				double frameEndSeconds = (PmdFrameParser.ParseHeader(bytes).Timestamp - PmdConstants.Epoch).TotalSeconds;
+				var microVolts = new int[count];
 				var peaks = new List<int>();
-				for (int i = 0; i < ecgSamples.Count; i++)
+				for (int i = 0; i < count; i++)
 				{
 					microVolts[i] = ecgSamples[i].MicroVolts;
-					double? rrMs = _rpeak.AddSample(microVolts[i]);
+					double sampleSeconds = frameEndSeconds - ((count - 1 - i) / EcgSampleRateHz);
+					double? rrMs = _rpeak.AddSample(microVolts[i], sampleSeconds);
 					if (_rpeak.LastSampleWasRPeak)
 					{
 						peaks.Add(i);
