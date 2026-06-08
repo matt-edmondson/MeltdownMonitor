@@ -162,6 +162,24 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	/// <summary>
+	/// On the Polar ECG source, drop beats whose RR contradicts the sensor's own Heart Rate Service
+	/// rhythm — an independent witness that catches our R-peak detector's errors. Applies live.
+	/// </summary>
+	public bool UseCrossSourceArtifactRejection
+	{
+		get => _settings.Thresholds.UseCrossSourceArtifactRejection;
+		set
+		{
+			if (_settings.Thresholds.UseCrossSourceArtifactRejection != value)
+			{
+				_settings.Thresholds = _settings.Thresholds with { UseCrossSourceArtifactRejection = value };
+				Raise();
+				Persist();
+			}
+		}
+	}
+
 	/// <summary>Raised when <see cref="EnableDebugMode"/> toggles, so the shell can show or hide the Debug tab.</summary>
 	public event Action? DebugModeChanged;
 

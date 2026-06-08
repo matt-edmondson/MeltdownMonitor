@@ -111,6 +111,20 @@ public record DetectionThresholds
 	/// </summary>
 	public bool RejectMotionArtifacts { get; init; }
 
+	// ── Cross-source RR validation (only active on the Polar ECG interval source) ──
+
+	/// <summary>
+	/// When true, an ECG-derived beat whose RR contradicts the concurrent Heart Rate Service rhythm —
+	/// Polar's own validated on-device detection — is marked an artifact and kept out of HRV. The HRS RR
+	/// is an independent witness to the same heart, so it catches our R-peak detector's own errors (a
+	/// missed beat read as a doubled interval, a T-wave read as a halved one) with a confidence the
+	/// self-median filter can't, since that filter eventually adapts to a sustained miscount. Only applied
+	/// on the <see cref="MeltdownMonitor.Core.Beats.IntervalSource.PolarEcg"/> source and only when a fresh
+	/// HRS reference exists, so every other configuration is unaffected. Default off — opt-in, since it
+	/// discards data and leans on a second stream being present.
+	/// </summary>
+	public bool UseCrossSourceArtifactRejection { get; init; }
+
 	// ── Apple Watch corroboration (only active when a watch metric source feeds a verdict) ──
 
 	/// <summary>

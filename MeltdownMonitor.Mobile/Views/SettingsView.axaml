@@ -31,6 +31,10 @@
                           IsChecked="{Binding RejectMotionArtifacts, Mode=TwoWay}" />
                 <TextBlock Text="Keeps beats that arrive while you're moving out of the HRV metrics entirely (cleaner read), not just deferring alerts. Needs motion corroboration on."
                            FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+                <CheckBox Content="Cross-check ECG beats against HRS"
+                          IsChecked="{Binding UseCrossSourceArtifactRejection, Mode=TwoWay}" />
+                <TextBlock Text="On the Polar ECG source, drops beats whose RR disagrees with the sensor's own heart-rate-service rhythm — an independent check that catches R-peak detection errors. No effect on other sources."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
             </StackPanel>
 
             <StackPanel Spacing="6">

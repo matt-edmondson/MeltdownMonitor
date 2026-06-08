@@ -25,6 +25,7 @@ public sealed class Pipeline : IDisposable
 	private readonly RegulationVelocityTracker _hypoVelocity = new();
 	private readonly MovementMonitor _movement = new();
 	private readonly EcgWaveformBuffer _ecg = new();
+	private readonly RrConsensus _consensus = new();
 
 	private CancellationTokenSource _cts = new();
 	private Task? _pipelineTask;
@@ -367,7 +368,7 @@ public sealed class Pipeline : IDisposable
 		// Side-channel diagnostics for the Debug tab (live ECG-vs-HRS A/B). Never feeds HRV.
 		if (source is IBeatDiagnosticsSource diagnosticsSource)
 		{
-			diagnosticsSource.BeatDiagnosticReceived += d => BeatDiagnosticReceived?.Invoke(d);
+			diagnosticsSource.BeatDiagnosticReceived += OnSourceDiagnostic;
 		}
 
 		await foreach (var beat in source.GetBeatsAsync(cancellationToken))
@@ -393,6 +394,17 @@ public sealed class Pipeline : IDisposable
 				&& MotionArtifactGate.IsArtifact(_movement.Level, _settings.Thresholds.MovementGateLevel)
 				? beat with { IsArtifact = true }
 				: beat;
+
+			// Cross-validate our ECG RR against Polar's independent HRS rhythm; drop beats it contradicts
+			// (opt-in). Checked whenever the ECG source is active so the Debug A/B sees the conflict rate.
+			if (_settings.PreferredIntervalSource == IntervalSource.PolarEcg && !beatToProcess.IsArtifact)
+			{
+				var verdict = _consensus.Check(beatToProcess.RrMs, beatToProcess.Timestamp);
+				if (verdict == ConsensusVerdict.Conflicted && _settings.Thresholds.UseCrossSourceArtifactRejection)
+				{
+					beatToProcess = beatToProcess with { IsArtifact = true };
+				}
+			}
 
 			_repository.InsertBeat(beatToProcess);
 			BeatReceived?.Invoke(beatToProcess);
@@ -454,6 +466,24 @@ public sealed class Pipeline : IDisposable
 			LatestHypoarousalDynamics = _hypoVelocity.Latest;
 		}
 	}
+
+	// Feed clean HRS RR into the cross-source consensus as the independent reference, and fan the
+	// diagnostic out to the Debug tab. HRS keeps flowing even while the ECG source drives HRV.
+	private void OnSourceDiagnostic(BeatDiagnostic d)
+	{
+		if (d.Source == IntervalSource.HeartRateService && !d.IsArtifact)
+		{
+			_consensus.AddReference(d.RrMs, d.Timestamp);
+		}
+
+		BeatDiagnosticReceived?.Invoke(d);
+	}
+
+	/// <summary>Latest cross-source (ECG-vs-HRS) verdict, for the Debug tab.</summary>
+	public ConsensusVerdict LatestConsensus => _consensus.Latest;
+
+	/// <summary>Fraction of recent ECG beats the HRS reference contradicted (0–1), for the Debug tab.</summary>
+	public double ConsensusConflictRate => _consensus.ConflictRate;
 
 	private bool IsPaused()
 	{
