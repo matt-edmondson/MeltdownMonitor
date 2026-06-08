@@ -42,6 +42,12 @@ public sealed class Pipeline : IDisposable
 	/// the UI surfaces this so a possibly-activated baseline isn't presented as confident calm.</summary>
 	public bool IsColdCalibrated => _baseline.IsColdCalibrated;
 
+	/// <summary>Baseline warm-up progress (0–1); 1 once the detector is armed. For the Debug tab.</summary>
+	public double BaselineWarmUpProgress => _baseline.WarmUpProgress;
+
+	/// <summary>Whether the baseline is warm enough to gate detection. For the Debug tab.</summary>
+	public bool IsBaselineWarm => _baseline.IsWarm;
+
 	public HrvSample? LatestSample { get; private set; }
 
 	/// <summary>Latest sensor battery level (0–100), or null until the source reports one.</summary>
@@ -132,6 +138,11 @@ public sealed class Pipeline : IDisposable
 	/// filter <see cref="Beat.IsArtifact"/> themselves, as the desktop consumers do.</summary>
 	public event Action<Beat>? BeatReceived;
 
+	/// <summary>Side channel for the Debug tab: every raw interval from every stream (HRS, PPI,
+	/// ECG), tagged with its source, even the HRS RR suppressed from HRV once a Polar stream is live.
+	/// Only raised when the injected source implements <see cref="IBeatDiagnosticsSource"/>.</summary>
+	public event Action<BeatDiagnostic>? BeatDiagnosticReceived;
+
 	/// <summary>Fires after <see cref="SampleUpdated"/> with the Regulation Field
 	/// reading derived from the same sample, so the Now screen can drive the
 	/// field without recomputing the calculator inputs itself.</summary>
@@ -218,6 +229,12 @@ public sealed class Pipeline : IDisposable
 		if (source is IEcgSource ecgSource)
 		{
 			ecgSource.EcgSamplesReceived += OnEcgSamples;
+		}
+
+		// Side-channel diagnostics for the Debug tab (live ECG-vs-HRS A/B). Never feeds HRV.
+		if (source is IBeatDiagnosticsSource diagnosticsSource)
+		{
+			diagnosticsSource.BeatDiagnosticReceived += d => BeatDiagnosticReceived?.Invoke(d);
 		}
 	}
 

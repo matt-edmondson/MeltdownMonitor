@@ -57,6 +57,9 @@
                 <TabItem Header="Settings">
                     <views:SettingsView DataContext="{Binding Settings}" />
                 </TabItem>
+                <TabItem Header="Debug" IsVisible="{Binding IsDebugVisible}">
+                    <views:DebugView DataContext="{Binding Debug}" />
+                </TabItem>
             </TabControl>
         </DockPanel>
     </Grid>

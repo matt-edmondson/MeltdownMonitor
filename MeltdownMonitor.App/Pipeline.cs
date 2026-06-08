@@ -163,6 +163,10 @@ public sealed class Pipeline : IDisposable
 	public event Action<HrvSample>? SampleUpdated;
 	public event Action<Beat>? BeatReceived;
 
+	/// <summary>Side channel for the Debug tab: every raw interval from every stream (HRS, PPI,
+	/// ECG), tagged with its source, even the HRS RR suppressed from HRV once a Polar stream is live.</summary>
+	public event Action<BeatDiagnostic>? BeatDiagnosticReceived;
+
 	/// <summary>Fires per sample with the current movement snapshot (level + intensity), so the UI can
 	/// show when motion gating is active. Carries <see cref="MovementLevel.Unknown"/> when no motion
 	/// source is feeding.</summary>
@@ -358,6 +362,12 @@ public sealed class Pipeline : IDisposable
 		if (source is IEcgSource ecgSource)
 		{
 			ecgSource.EcgSamplesReceived += _ecg.Append;
+		}
+
+		// Side-channel diagnostics for the Debug tab (live ECG-vs-HRS A/B). Never feeds HRV.
+		if (source is IBeatDiagnosticsSource diagnosticsSource)
+		{
+			diagnosticsSource.BeatDiagnosticReceived += d => BeatDiagnosticReceived?.Invoke(d);
 		}
 
 		await foreach (var beat in source.GetBeatsAsync(cancellationToken))

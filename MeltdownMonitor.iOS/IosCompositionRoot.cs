@@ -33,6 +33,7 @@ public static class IosCompositionRoot
 	private static HistoryViewModel? _history;
 	private static MetricsViewModel? _metrics;
 	private static EcgViewModel? _ecg;
+	private static DebugViewModel? _debug;
 	private static BleHrSource? _source;
 	private static ImuMotionSource? _motionFallback;
 	private static Pipeline? _pipeline;
@@ -168,7 +169,8 @@ public static class IosCompositionRoot
 			onChanged: () => _store.Save(settings));
 
 		_ecg = new EcgViewModel();
-		return new RootViewModel(settings, _now, _history, settingsTab, _metrics, _ecg, _store, healthPrompt);
+		_debug = new DebugViewModel();
+		return new RootViewModel(settings, _now, _history, settingsTab, _metrics, _ecg, _debug, _store, healthPrompt);
 	}
 
 	/// <summary>
@@ -272,6 +274,7 @@ public static class IosCompositionRoot
 		{
 			_now?.AttachPipeline(pipeline);
 			_ecg?.AttachPipeline(pipeline);
+			_debug?.AttachPipeline(pipeline);
 			_history?.UseDatabase(dbPath);
 		});
 	}

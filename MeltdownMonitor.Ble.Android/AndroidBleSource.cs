@@ -28,7 +28,7 @@ namespace MeltdownMonitor.Ble.Android;
 /// carries more ceremony than the CoreBluetooth one, which hides the queue
 /// internally — see design doc §7.
 /// </summary>
-public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IEcgSource, IDisposable
+public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IEcgSource, IBeatDiagnosticsSource, IDisposable
 {
 	// Standard 16-bit GATT UUIDs, expanded against the Bluetooth base UUID.
 	private static readonly UUID HeartRateServiceUuid = ShortUuid(0x180D);
@@ -74,6 +74,9 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 	/// <inheritdoc />
 	public event Action<EcgSamples>? EcgSamplesReceived;
 
+	/// <inheritdoc />
+	public event Action<BeatDiagnostic>? BeatDiagnosticReceived;
+
 	private const double EcgSampleRateHz = 130.0;
 
 	private readonly Context _context;
@@ -88,6 +91,10 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 	private bool _polarIntervalsActive;
 	private bool PmdEnabled => _enableMotion || _intervalSource != IntervalSource.HeartRateService;
 	private readonly RrArtifactFilter _artifactFilter = new();
+
+	// HRS RR is also reported as debug diagnostics through this private filter, kept separate from
+	// the pipeline's _artifactFilter so reporting HRS while a Polar stream drives HRV never perturbs it.
+	private readonly RrArtifactFilter _hrsDiagFilter = new();
 
 	// Not single-writer: the HRS notification (OnMeasurementBytes) and the PMD data callback (OnPmdData,
 	// for PPI/ECG) can both write briefly around the handover to a Polar interval source. A single GATT's
@@ -218,6 +225,7 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 	{
 		StopScan();
 		_artifactFilter.Reset();
+		_hrsDiagFilter.Reset();
 		_rpeak.Reset();
 		_polarIntervalsActive = false;
 		_gattCallback = new GattCallbackImpl(this);
@@ -318,6 +326,7 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 		}
 
 		_artifactFilter.Reset();
+		_hrsDiagFilter.Reset();
 		_rpeak.Reset();
 		_polarIntervalsActive = false;
 		EnqueueGattOp(() => gatt.DiscoverServices());
@@ -465,7 +474,10 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 				{
 					bool timingArtifact = _artifactFilter.IsArtifact(ppi.PpiMs);
 					_polarIntervalsActive = true;
-					_channel.Writer.TryWrite(PolarPpi.ToBeat(ppi, now, timingArtifact));
+					var ppiBeat = PolarPpi.ToBeat(ppi, now, timingArtifact);
+					BeatDiagnosticReceived?.Invoke(new BeatDiagnostic(
+						now, IntervalSource.PolarPpi, ppiBeat.RrMs, ppiBeat.HeartRateBpm, ppiBeat.IsArtifact));
+					_channel.Writer.TryWrite(ppiBeat);
 				}
 
 				break;
@@ -494,7 +506,9 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 					{
 						bool isArtifact = _artifactFilter.IsArtifact(rr);
 						_polarIntervalsActive = true;
-						_channel.Writer.TryWrite(new Beat(now, rr, (int)Math.Round(60000.0 / rr), isArtifact));
+						int bpm = (int)Math.Round(60000.0 / rr);
+						BeatDiagnosticReceived?.Invoke(new BeatDiagnostic(now, IntervalSource.PolarEcg, rr, bpm, isArtifact));
+						_channel.Writer.TryWrite(new Beat(now, rr, bpm, isArtifact));
 					}
 				}
 
@@ -532,6 +546,14 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 		// Surface contact on every notification — the only signal that survives
 		// contact loss, when RR intervals (and beats) dry up.
 		SensorContactChanged?.Invoke(measurement.SensorContact);
+
+		// Report every HRS RR for the debug A/B (even while suppressed below), via a private filter
+		// so it never perturbs the pipeline's _artifactFilter that a live Polar stream may be driving.
+		foreach (double diagRr in measurement.RrIntervals)
+		{
+			BeatDiagnosticReceived?.Invoke(new BeatDiagnostic(
+				now, IntervalSource.HeartRateService, diagRr, measurement.HeartRateBpm, _hrsDiagFilter.IsArtifact(diagRr)));
+		}
 
 		// Once a preferred Polar interval stream is live, HRS RR is the redundant source — drop it.
 		if (_polarIntervalsActive)

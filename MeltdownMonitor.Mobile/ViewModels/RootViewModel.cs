@@ -20,6 +20,7 @@ public sealed class RootViewModel : ViewModelBase
 		SettingsViewModel settings_tab,
 		MetricsViewModel metrics,
 		EcgViewModel ecg,
+		DebugViewModel debug,
 		IMobileSettingsStore? store = null,
 		HealthPromptViewModel? healthPrompt = null)
 	{
@@ -30,9 +31,13 @@ public sealed class RootViewModel : ViewModelBase
 		Settings = settings_tab;
 		Metrics = metrics;
 		Ecg = ecg;
+		Debug = debug;
 		// A null prompt (design-time / desktop hosts) collapses to a never-shown banner.
 		HealthPrompt = healthPrompt ?? new HealthPromptViewModel(settings, isAvailable: () => false);
 		Disclaimer = new DisclaimerViewModel(AcceptDisclaimer);
+
+		// The Debug tab is gated on the setting; re-evaluate its visibility when the toggle flips.
+		settings_tab.DebugModeChanged += () => Raise(nameof(IsDebugVisible));
 	}
 
 	public NowViewModel Now { get; }
@@ -40,7 +45,14 @@ public sealed class RootViewModel : ViewModelBase
 	public SettingsViewModel Settings { get; }
 	public MetricsViewModel Metrics { get; }
 	public EcgViewModel Ecg { get; }
+
+	/// <summary>The opt-in Debug tab (live PMD diagnostics). Always constructed; the tab is shown only
+	/// when <see cref="IsDebugVisible"/>.</summary>
+	public DebugViewModel Debug { get; }
 	public DisclaimerViewModel Disclaimer { get; }
+
+	/// <summary>Whether the Debug tab is shown — driven by the <c>EnableDebugMode</c> setting.</summary>
+	public bool IsDebugVisible => _settings.EnableDebugMode;
 
 	/// <summary>The one-shot, dismissible "record to Apple Health / Health Connect" prompt.</summary>
 	public HealthPromptViewModel HealthPrompt { get; }
@@ -72,7 +84,8 @@ public sealed class RootViewModel : ViewModelBase
 			new HistoryViewModel(),
 			new SettingsViewModel(settings),
 			new MetricsViewModel(),
-			new EcgViewModel());
+			new EcgViewModel(),
+			new DebugViewModel());
 	}
 
 	private void AcceptDisclaimer()

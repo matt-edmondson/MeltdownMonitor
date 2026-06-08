@@ -143,6 +143,29 @@ public sealed class SettingsViewModel : ViewModelBase
 		}
 	}
 
+	/// <summary>Raised when <see cref="EnableDebugMode"/> toggles, so the shell can show or hide the Debug tab.</summary>
+	public event Action? DebugModeChanged;
+
+	/// <summary>
+	/// Show the Debug tab with live PMD diagnostics — the ECG-vs-HRS RR A/B, per-stream artifact rates,
+	/// the full HRV/baseline dump, ECG signal stats, and connection details. Diagnostic only; it changes
+	/// no detection behaviour.
+	/// </summary>
+	public bool EnableDebugMode
+	{
+		get => _settings.EnableDebugMode;
+		set
+		{
+			if (_settings.EnableDebugMode != value)
+			{
+				_settings.EnableDebugMode = value;
+				Raise();
+				Persist();
+				DebugModeChanged?.Invoke();
+			}
+		}
+	}
+
 	public bool EnableLiveActivity
 	{
 		get => _settings.EnableLiveActivity;

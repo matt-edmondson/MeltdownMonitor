@@ -46,6 +46,13 @@ public class AppSettings : AppData<AppSettings>
 	/// </summary>
 	public IntervalSource PreferredIntervalSource { get; set; } = IntervalSource.HeartRateService;
 
+	/// <summary>
+	/// When true, the status window shows a Debug tab with live diagnostics — the ECG-vs-HRS RR A/B,
+	/// per-stream artifact rates, the full HRV/baseline/movement/ECG dump, and connection details.
+	/// Off by default; purely diagnostic, it changes no detection behaviour.
+	/// </summary>
+	public bool EnableDebugMode { get; set; }
+
 	public bool EnableChime { get; set; } = true;
 	public string? ChimeWavPath { get; set; }
 

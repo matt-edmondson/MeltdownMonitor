@@ -23,7 +23,7 @@ namespace MeltdownMonitor.Ble.Apple;
 /// <see cref="WillRestoreState"/> rehydrates the connected peripheral after
 /// iOS relaunches the app.
 /// </summary>
-public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IEcgSource
+public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatterySource, IContactSource, IDeviceInfoSource, IMotionSource, IEcgSource, IBeatDiagnosticsSource
 {
 	public const string DefaultRestoreIdentifier = "com.matthewedmondson.meltdownmonitor.central";
 
@@ -72,6 +72,9 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 	/// <inheritdoc />
 	public event Action<EcgSamples>? EcgSamplesReceived;
 
+	/// <inheritdoc />
+	public event Action<BeatDiagnostic>? BeatDiagnosticReceived;
+
 	private const double EcgSampleRateHz = 130.0;
 
 	private readonly HeartRateDeviceType _deviceType;
@@ -85,6 +88,10 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 	// suppressed so the two sources can't double-count. Until then HRS keeps the pipeline fed.
 	private bool _polarIntervalsActive;
 	private readonly RrArtifactFilter _artifactFilter = new();
+
+	// HRS RR is also reported as debug diagnostics through this private filter, kept separate from
+	// the pipeline's _artifactFilter so reporting HRS while a Polar stream drives HRV never perturbs it.
+	private readonly RrArtifactFilter _hrsDiagFilter = new();
 
 	// Not single-writer: the HRS notification (OnMeasurementBytes) and the PMD data callback (OnPmdData,
 	// for PPI/ECG) can both write briefly around the handover to a Polar interval source. CoreBluetooth
@@ -199,6 +206,7 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 		}
 
 		_artifactFilter.Reset();
+		_hrsDiagFilter.Reset();
 		_rpeak.Reset();
 		_polarIntervalsActive = false;
 		peripheral.DiscoverServices(_servicesToDiscover);
@@ -265,6 +273,14 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 		// survives contact loss, when RR intervals (and beats) dry up.
 		SensorContactChanged?.Invoke(measurement.SensorContact);
 
+		// Report every HRS RR for the debug A/B (even while suppressed below), via a private filter
+		// so it never perturbs the pipeline's _artifactFilter that a live Polar stream may be driving.
+		foreach (double diagRr in measurement.RrIntervals)
+		{
+			BeatDiagnosticReceived?.Invoke(new BeatDiagnostic(
+				now, IntervalSource.HeartRateService, diagRr, measurement.HeartRateBpm, _hrsDiagFilter.IsArtifact(diagRr)));
+		}
+
 		// Once a preferred Polar interval stream is live, HRS RR is the redundant source — drop it.
 		if (_polarIntervalsActive)
 		{
@@ -322,7 +338,10 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 				{
 					bool timingArtifact = _artifactFilter.IsArtifact(ppi.PpiMs);
 					_polarIntervalsActive = true;
-					_channel.Writer.TryWrite(PolarPpi.ToBeat(ppi, now, timingArtifact));
+					var ppiBeat = PolarPpi.ToBeat(ppi, now, timingArtifact);
+					BeatDiagnosticReceived?.Invoke(new BeatDiagnostic(
+						now, IntervalSource.PolarPpi, ppiBeat.RrMs, ppiBeat.HeartRateBpm, ppiBeat.IsArtifact));
+					_channel.Writer.TryWrite(ppiBeat);
 				}
 
 				break;
@@ -351,7 +370,9 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 					{
 						bool isArtifact = _artifactFilter.IsArtifact(rr);
 						_polarIntervalsActive = true;
-						_channel.Writer.TryWrite(new Beat(now, rr, (int)Math.Round(60000.0 / rr), isArtifact));
+						int bpm = (int)Math.Round(60000.0 / rr);
+						BeatDiagnosticReceived?.Invoke(new BeatDiagnostic(now, IntervalSource.PolarEcg, rr, bpm, isArtifact));
+						_channel.Writer.TryWrite(new Beat(now, rr, bpm, isArtifact));
 					}
 				}
 

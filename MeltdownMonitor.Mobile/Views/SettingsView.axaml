@@ -30,6 +30,14 @@
             </StackPanel>
 
             <StackPanel Spacing="6">
+                <TextBlock Text="Diagnostics" FontWeight="SemiBold" />
+                <CheckBox Content="Enable debug mode"
+                          IsChecked="{Binding EnableDebugMode, Mode=TwoWay}" />
+                <TextBlock Text="Adds a Debug tab with live diagnostics — the ECG-vs-HRS RR comparison, per-stream artifact rates, the full HRV/baseline dump, ECG signal stats, and connection details. Diagnostic only; it changes nothing about detection."
+                           FontSize="12" Foreground="#8A8F98" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
                 <TextBlock Text="Alerts" FontWeight="SemiBold" />
                 <CheckBox Content="Sound chime when alerting"
                           IsChecked="{Binding EnableChime, Mode=TwoWay}" />

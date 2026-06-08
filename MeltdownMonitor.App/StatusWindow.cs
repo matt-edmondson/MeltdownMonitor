@@ -33,6 +33,7 @@ public sealed class StatusWindow : IDisposable
 
 	private readonly object _historyLock = new();
 	private readonly Pipeline _pipeline;
+	private readonly BeatDiagnosticsAggregator _diagnostics = new(60);
 	private readonly MeltdownRepository _repository;
 	private readonly AppSettings _settings;
 	private readonly IntervalAction _historyRefreshAction;
@@ -96,6 +97,7 @@ public sealed class StatusWindow : IDisposable
 		_pipeline.SampleUpdated += OnSampleUpdated;
 		_pipeline.BeatReceived += OnBeatReceived;
 		_pipeline.BatteryUpdated += OnBatteryUpdated;
+		_pipeline.BeatDiagnosticReceived += OnBeatDiagnostic;
 
 		_regulationField = new Regulation.RegulationFieldView(_pipeline);
 
@@ -112,6 +114,13 @@ public sealed class StatusWindow : IDisposable
 		_tabs.AddTab("Poincaré", () => DrawScrollableTab("poincare", DrawPoincareTab));
 		_tabs.AddTab("Annotations", () => DrawScrollableTab("annotations", DrawAnnotationsTab));
 		_tabs.AddTab("Settings", () => DrawScrollableTab("settings", DrawSettingsTab));
+
+		// Opt-in Debug tab (live PMD diagnostics). The tab list is built once here, so the toggle
+		// takes effect on the next launch.
+		if (_settings.EnableDebugMode)
+		{
+			_tabs.AddTab("Debug", () => DrawScrollableTab("debug", DrawDebugTab));
+		}
 
 		// Fires immediately on first poll, then periodically — backfills sparklines
 		// with persisted history so they aren't empty when the window opens.
@@ -1368,6 +1377,17 @@ public sealed class StatusWindow : IDisposable
 			HelpMarker("How much LF/HF must rise to corroborate a Warning. Lower = easier to corroborate; higher = stricter.");
 		}
 
+		// ── Diagnostics ─────────────────────────────────────────────────
+		ImGui.SeparatorText("Diagnostics");
+		bool enableDebug = _settings.EnableDebugMode;
+		if (ImGui.Checkbox("Enable debug mode (adds a Debug tab — restart to apply)", ref enableDebug))
+		{
+			_settings.EnableDebugMode = enableDebug;
+			_settingsDirty = true;
+		}
+		ImGui.SameLine();
+		HelpMarker("Adds a Debug tab with live diagnostics: the ECG-vs-HRS RR A/B, per-stream artifact rates, the full HRV/baseline dump, and connection details. Diagnostic only. The tab list is built at startup, so toggling applies on the next launch.");
+
 		// ── Motion corroboration ────────────────────────────────────────
 		ImGui.SeparatorText("Motion corroboration (optional)");
 
@@ -1999,6 +2019,69 @@ public sealed class StatusWindow : IDisposable
 
 	private static uint Col(Vector4 c) => ImGui.ColorConvertFloat4ToU32(c);
 
+	private void OnBeatDiagnostic(BeatDiagnostic diagnostic) => _diagnostics.Add(diagnostic);
+
+	private void DrawDebugTab()
+	{
+		BeatDiagnosticsSnapshot snap = _diagnostics.Snapshot();
+
+		ImGui.SeparatorText("ECG vs HRS RR (A/B)");
+		ImGui.Text(snap.HrsVsEcgRrBiasMs is { } bias
+			? $"HRS \u2212 ECG mean-RR bias: {bias:+0.0;-0.0;0.0} ms"
+			: "HRS \u2212 ECG mean-RR bias: \u2014 (need both streams clean)");
+		DrawDiagnosticSource("HRS", snap, IntervalSource.HeartRateService);
+		DrawDiagnosticSource("ECG", snap, IntervalSource.PolarEcg);
+		DrawDiagnosticSource("PPI", snap, IntervalSource.PolarPpi);
+
+		ImGui.SeparatorText("HRV / baseline");
+		var sample = _pipeline.LatestSample;
+		if (sample is null)
+		{
+			ImGui.TextDisabled("No sample yet.");
+		}
+		else
+		{
+			ImGui.Text($"RMSSD {sample.Rmssd:0.0} ms   pNN50 {sample.Pnn50:0.0}%   mean HR {sample.MeanHr:0.0} bpm");
+			if (sample.Extended is { } e)
+			{
+				ImGui.Text($"SDNN {e.Sdnn:0.0} ms   LF/HF {e.LfHfRatio:0.00} (LF {e.LfPowerMs2:0} \u00b7 HF {e.HfPowerMs2:0} ms\u00b2)");
+				ImGui.Text($"Poincar\u00e9 SD1 {e.SD1:0.0} \u00b7 SD2 {e.SD2:0.0} \u00b7 SD1/SD2 {e.SD1SD2Ratio:0.00}");
+			}
+
+			ImGui.Text($"Baseline RMSSD {sample.BaselineRmssd:0.0} \u00b7 HR {sample.BaselineHr:0.0} \u00b7 LF/HF {sample.BaselineLfHfRatio:0.00}");
+		}
+
+		ImGui.Text($"Warm-up {_pipeline.Baseline.WarmUpProgress:P0} \u00b7 {(_pipeline.Baseline.IsWarm ? "warm" : "calibrating")}");
+		ImGui.Text($"State {_pipeline.CurrentState} \u00b7 hypo {_pipeline.CurrentHypoarousalState}");
+
+		ImGui.SeparatorText("Signals / connection");
+		ImGui.Text($"Movement {_pipeline.CurrentMovement} \u00b7 {_pipeline.CurrentMovementIntensity:0.000} g");
+		EcgWaveformSnapshot ecg = _pipeline.EcgWaveform;
+		ImGui.Text(ecg.MicroVolts.Count == 0
+			? "ECG: not streaming"
+			: $"ECG: {EcgQualityText(ecg.Quality)} \u00b7 {ecg.SampleRateHz:0} Hz \u00b7 {ecg.MicroVolts.Count} samples \u00b7 {ecg.RPeakIndices.Count} peaks");
+		ImGui.Text($"Contact: {_pipeline.LatestContact}");
+		ImGui.Text(_pipeline.LatestBatteryPercent is { } pct ? $"Battery: {pct}%" : "Battery: \u2014");
+		if (_pipeline.LatestDeviceInfo is { } dev)
+		{
+			ImGui.Text($"Device: {dev.ManufacturerName} {dev.ModelNumber} \u00b7 fw {dev.FirmwareRevision}");
+		}
+
+		ImGui.TextDisabled("Diagnostics only \u2014 nothing here changes detection.");
+	}
+
+	private static void DrawDiagnosticSource(string label, BeatDiagnosticsSnapshot snap, IntervalSource source)
+	{
+		var d = snap.Sources.FirstOrDefault(x => x.Source == source);
+		if (d is null)
+		{
+			ImGui.TextDisabled($"{label}: \u2014");
+			return;
+		}
+
+		ImGui.Text($"{label}: {d.LatestRrMs:0} ms \u00b7 {d.LatestBpm} bpm \u00b7 mean {d.MeanRrMs:0} \u00b7 med {d.MedianRrMs:0} \u00b7 sdnn {d.SdnnMs:0} \u00b7 n {d.Count} \u00b7 art {d.ArtifactRate:P1}");
+	}
+
 	private static string EcgQualityText(EcgSignalQuality quality) => quality switch
 	{
 		EcgSignalQuality.Good => "Signal: good",
@@ -2128,6 +2211,7 @@ public sealed class StatusWindow : IDisposable
 		_pipeline.SampleUpdated -= OnSampleUpdated;
 		_pipeline.BeatReceived -= OnBeatReceived;
 		_pipeline.BatteryUpdated -= OnBatteryUpdated;
+		_pipeline.BeatDiagnosticReceived -= OnBeatDiagnostic;
 		_historyRefreshAction.Stop();
 	}
 

@@ -1,0 +1,78 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:MeltdownMonitor.Mobile.ViewModels"
+             x:Class="MeltdownMonitor.Mobile.Views.DebugView"
+             x:DataType="vm:DebugViewModel">
+    <UserControl.Styles>
+        <Style Selector="TextBlock.section">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#7FB0FF" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+        </Style>
+        <Style Selector="TextBlock.value">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#D6DBE2" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,1,0,1" />
+        </Style>
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="#11141A" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="Margin" Value="0,0,0,10" />
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer>
+        <StackPanel Margin="16">
+
+            <TextBlock Text="Debug" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,10" />
+
+            <!-- ECG vs HRS A/B — the headline comparison. -->
+            <Border Classes="card">
+                <StackPanel>
+                    <TextBlock Classes="section" Text="ECG vs HRS RR (A/B)" />
+                    <TextBlock Classes="value" Text="{Binding AbBiasText}" Foreground="#3DD68C" FontWeight="SemiBold" />
+                    <TextBlock Classes="value" Text="{Binding SourceText}" />
+                    <TextBlock Classes="value" Text="{Binding HrsSummary}" />
+                    <TextBlock Classes="value" Text="{Binding EcgSummary}" />
+                    <TextBlock Classes="value" Text="{Binding PpiSummary}" IsVisible="{Binding HasPpi}" />
+                    <TextBlock Classes="value" Text="{Binding HrsRecentRr}" Foreground="#8A8F98" FontSize="12" />
+                    <TextBlock Classes="value" Text="{Binding EcgRecentRr}" Foreground="#8A8F98" FontSize="12" />
+                </StackPanel>
+            </Border>
+
+            <!-- Full HRV / baseline dump. -->
+            <Border Classes="card">
+                <StackPanel>
+                    <TextBlock Classes="section" Text="HRV / baseline" />
+                    <TextBlock Classes="value" Text="{Binding RmssdText}" />
+                    <TextBlock Classes="value" Text="{Binding Pnn50Text}" />
+                    <TextBlock Classes="value" Text="{Binding MeanHrText}" />
+                    <TextBlock Classes="value" Text="{Binding SdnnText}" />
+                    <TextBlock Classes="value" Text="{Binding LfHfText}" />
+                    <TextBlock Classes="value" Text="{Binding PoincareText}" />
+                    <TextBlock Classes="value" Text="{Binding BaselineText}" />
+                    <TextBlock Classes="value" Text="{Binding WarmupText}" />
+                    <TextBlock Classes="value" Text="{Binding StateText}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Movement, ECG signal, connection. -->
+            <Border Classes="card">
+                <StackPanel>
+                    <TextBlock Classes="section" Text="Signals / connection" />
+                    <TextBlock Classes="value" Text="{Binding MovementText}" />
+                    <TextBlock Classes="value" Text="{Binding EcgText}" />
+                    <TextBlock Classes="value" Text="{Binding ContactText}" />
+                    <TextBlock Classes="value" Text="{Binding BatteryText}" />
+                    <TextBlock Classes="value" Text="{Binding DeviceText}" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="Diagnostics only — nothing here changes detection."
+                       Foreground="#6B7280" FontSize="11" HorizontalAlignment="Center" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
