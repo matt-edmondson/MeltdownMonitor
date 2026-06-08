@@ -1031,6 +1031,8 @@ public sealed class StatusWindow : IDisposable
 		ImGui.Spacing();
 
 		DrawRestoreDefaultsButton();
+		ImGui.SameLine();
+		DrawClearDataButton();
 		ImGui.Spacing();
 
 		// ── Refresh ──────────────────────────────────────────────────────
@@ -1757,6 +1759,35 @@ public sealed class StatusWindow : IDisposable
 				_settings.HistogramAdditive = true;
 				_settings.Save();
 				_pipeline.ReseedBaseline();
+				ImGui.CloseCurrentPopup();
+			}
+
+			ImGui.SameLine();
+			if (ImGui.Button("Cancel"))
+			{
+				ImGui.CloseCurrentPopup();
+			}
+
+			ImGui.EndPopup();
+		}
+	}
+
+	// "Clear my data" — permanently deletes all stored physiological data behind a confirmation.
+	private void DrawClearDataButton()
+	{
+		if (ImGui.Button("Clear my data"))
+		{
+			ImGui.OpenPopup("clear-data");
+		}
+		ImGui.SameLine();
+		HelpMarker("Permanently deletes all recorded beats, HRV, episodes, annotations, and battery history from the database, and resets the live baseline. This can't be undone. Your settings are untouched.");
+
+		if (ImGui.BeginPopup("clear-data"))
+		{
+			ImGui.Text("Delete all recorded data? This can't be undone.");
+			if (ImGui.Button("Yes, delete everything"))
+			{
+				_pipeline.ClearStoredData();
 				ImGui.CloseCurrentPopup();
 			}
 

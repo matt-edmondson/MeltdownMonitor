@@ -137,7 +137,8 @@ public static class AndroidCompositionRoot
 			requestHealthKit: () => _healthStore.RequestAuthorizationAsync(),
 			exportDatabase: () => exporter.ExportAsync(DatabasePath()),
 			onChanged: () => _store.Save(settings),
-			revokeHealthAccess: RevokeHealthAsync);
+			revokeHealthAccess: RevokeHealthAsync,
+			clearData: ClearStoredDataAsync);
 
 		// Unintrusive one-shot prompt to enable Health Connect recording. Enabling asks for
 		// the same Health Connect grants as the Settings button, then flips the opt-ins on.
@@ -256,6 +257,10 @@ public static class AndroidCompositionRoot
 			// Opening the settings screen is best-effort; the revoke above has taken effect.
 		}
 	}
+
+	// Wipe all stored physiological data (the Settings "clear my data" action). Runs off the UI
+	// thread because it touches SQLite; a no-op if the pipeline hasn't started yet.
+	private static Task ClearStoredDataAsync() => Task.Run(() => _pipeline?.ClearStoredData());
 
 	/// <summary>Keeps the alert dispatcher alive for the process lifetime.</summary>
 	public static void AttachAlertDispatcher(Pipeline pipeline, MobileSettings settings, IChimePlayer chime)

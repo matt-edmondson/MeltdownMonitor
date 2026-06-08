@@ -252,6 +252,16 @@ public sealed class Pipeline : IDisposable
 	private void OnSensorContactChanged(SensorContactStatus status)
 	{
 		LatestContact = status;
+
+		// On dropout, clear any building streaks now — collection is gated off while off-body, so the
+		// beat loop won't be driving the detectors to clear them, and a stale streak must not fire on
+		// reconnect.
+		if (status == SensorContactStatus.NotDetected)
+		{
+			_detector.ResetTransientStreaks();
+			_hypoDetector.ResetTransientStreaks();
+		}
+
 		ContactChanged?.Invoke(status);
 	}
 
@@ -337,6 +347,19 @@ public sealed class Pipeline : IDisposable
 		}
 	}
 
+	/// <summary>
+	/// Deletes all stored physiological data and resets the live baseline + ECG trace, for the
+	/// user's "clear my data" action. The repository write is serialised against the beat loop; the
+	/// baseline goes cold (it was built from the now-deleted history), so the detector re-warms from
+	/// fresh data. Safe to call while monitoring is running.
+	/// </summary>
+	public void ClearStoredData()
+	{
+		_repository.ClearAllData();
+		_baseline.Reset();
+		_ecg.Reset();
+	}
+
 	public async Task StopAsync()
 	{
 		_cts.Cancel();
@@ -371,6 +394,15 @@ public sealed class Pipeline : IDisposable
 		await foreach (var beat in _source.GetBeatsAsync(cancellationToken).ConfigureAwait(false))
 		{
 			if (IsPaused())
+			{
+				continue;
+			}
+
+			// Don't collect anything while the sensor is off-body: RR from a lost-contact strap is
+			// unreliable, so persisting it (and feeding it into the HRV window) would poison the
+			// history and baseline. Contact is tracked separately via ContactChanged, so the UI still
+			// shows the dropout; collection resumes the moment contact returns.
+			if (LatestContact == SensorContactStatus.NotDetected)
 			{
 				continue;
 			}

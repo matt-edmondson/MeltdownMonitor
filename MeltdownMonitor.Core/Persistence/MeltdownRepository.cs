@@ -557,6 +557,41 @@ public class MeltdownRepository : IDisposable
 		return results;
 	}
 
+	/// <summary>
+	/// Deletes all stored physiological data — beats, HRV samples, alerts, annotations, and battery
+	/// readings — for the user's "clear my data" action. Serialised against the write path so it's safe
+	/// while monitoring is live. The schema is left in place (the app keeps working); the database file
+	/// is compacted with VACUUM where the journal mode allows it.
+	/// </summary>
+	public void ClearAllData()
+	{
+		lock (_writeLock)
+		{
+			using (var cmd = _connection.CreateCommand())
+			{
+				cmd.CommandText = """
+					DELETE FROM beats;
+					DELETE FROM hrv_samples;
+					DELETE FROM alerts;
+					DELETE FROM annotations;
+					DELETE FROM battery;
+					""";
+				cmd.ExecuteNonQuery();
+			}
+
+			try
+			{
+				using var vacuum = _connection.CreateCommand();
+				vacuum.CommandText = "VACUUM";
+				vacuum.ExecuteNonQuery();
+			}
+			catch (Microsoft.Data.Sqlite.SqliteException)
+			{
+				// Reclaiming space is best-effort; the rows are gone regardless.
+			}
+		}
+	}
+
 	public void Dispose()
 	{
 		_connection.Dispose();

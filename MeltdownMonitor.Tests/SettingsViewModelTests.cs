@@ -23,6 +23,41 @@ public class SettingsViewModelTests
 	}
 
 	[TestMethod]
+	public void ClearData_RequiresConfirmationBeforeWiping()
+	{
+		int cleared = 0;
+		var vm = new SettingsViewModel(new MobileSettings(), clearData: () =>
+		{
+			cleared++;
+			return Task.CompletedTask;
+		});
+
+		// Arming shows the confirm panel but does not wipe.
+		vm.ClearDataCommand.Execute(null);
+		Assert.IsTrue(vm.IsClearDataConfirmPending);
+		Assert.AreEqual(0, cleared);
+
+		// Cancelling dismisses without wiping.
+		vm.CancelClearDataCommand.Execute(null);
+		Assert.IsFalse(vm.IsClearDataConfirmPending);
+		Assert.AreEqual(0, cleared);
+
+		// Confirming wipes and reports.
+		vm.ClearDataCommand.Execute(null);
+		vm.ConfirmClearDataCommand.Execute(null);
+		Assert.IsFalse(vm.IsClearDataConfirmPending);
+		Assert.AreEqual(1, cleared);
+		Assert.IsTrue(vm.HasClearDataStatus);
+	}
+
+	[TestMethod]
+	public void ClearDataCommand_DisabledWithoutDelegate()
+	{
+		var vm = new SettingsViewModel(new MobileSettings());
+		Assert.IsFalse(vm.ClearDataCommand.CanExecute(null), "No clear delegate ⇒ command disabled.");
+	}
+
+	[TestMethod]
 	public void PreferredIntervalSource_RoundTripsAndPersistsOnlyOnChange()
 	{
 		var settings = new MobileSettings { PreferredIntervalSource = IntervalSource.HeartRateService };
