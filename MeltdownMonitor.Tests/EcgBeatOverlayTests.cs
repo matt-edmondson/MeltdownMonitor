@@ -102,6 +102,48 @@ public class EcgBeatOverlayTests
 	}
 
 	[TestMethod]
+	public void Build_CarriesEachBeatsIntervalAndAReferenceCadence()
+	{
+		// Intervals: 130 then 160 samples — the last beat arrived late. The renderer turns these into
+		// horizontal offsets so the stack shows how early/late each beat was.
+		EcgBeatOverlay overlay = EcgBeatOverlay.Build(Snapshot(560, [130, 260, 420]));
+
+		Assert.IsNotNull(overlay.Live);
+		// Live beat's RR = (420-260)/130 s; the newest completed beat's RR = (260-130)/130 = 1.0 s.
+		Assert.AreEqual((420 - 260) / 130.0, overlay.Live!.IntervalSeconds, 1e-9);
+		Assert.AreEqual(1.0, overlay.Beats[^1].IntervalSeconds, 1e-9);
+
+		// Reference cadence is the median RR (median of {130,160} samples = 145).
+		Assert.AreEqual(145 / 130.0, overlay.ReferenceRrSeconds, 1e-9);
+	}
+
+	[TestMethod]
+	public void Build_FirstBeatWithoutAPriorPeakHasNoInterval()
+	{
+		EcgBeatOverlay overlay = EcgBeatOverlay.Build(Snapshot(520, [130, 260, 390]));
+		// The oldest retained beat (peak 130) has no peak before it in the window ⇒ interval 0 (not offset).
+		Assert.AreEqual(0.0, overlay.Beats[0].IntervalSeconds, 1e-9);
+	}
+
+	[TestMethod]
+	public void Build_VerticalScaleIsRobustToAnAmplitudeSpike()
+	{
+		var samples = new int[520]; // mostly flat baseline
+		foreach (int p in new[] { 130, 260, 390 })
+		{
+			samples[p] = 100; // clean R-peaks ≈ 100 µV
+		}
+
+		samples[390] = 5000; // one beat carries a big artifact spike
+
+		EcgBeatOverlay overlay = EcgBeatOverlay.Build(
+			new EcgWaveformSnapshot(samples, [130, 260, 390], 0, 5000, 130.0, EcgSignalQuality.Good));
+
+		// The 5000 µV spike must not drive the scale — the median beat amplitude (~100) wins.
+		Assert.IsTrue(overlay.MaxMicroVolts < 1000, $"max was {overlay.MaxMicroVolts}");
+	}
+
+	[TestMethod]
 	public void Build_CarriesSampleRateAndQuality()
 	{
 		EcgBeatOverlay overlay = EcgBeatOverlay.Build(Snapshot(520, [130, 260, 390]));

@@ -44,13 +44,13 @@ public sealed class StatusWindow : IDisposable
 	private int _appliedCapacity = InitialSparklineCapacity;
 	private int _subscriptionsReleased;
 
-	// Eased state for the stacked-beats ECG view: vertical scale and a horizontal centre anchor that
-	// settles a new beat into place rather than snapping. Reset when the trace goes idle.
+	// Eased state for the stacked-beats ECG view: the (robust) vertical scale and the reference cadence
+	// settle gradually. Easing the cadence holds the centre steady so each beat's early/late horizontal
+	// shift reads against a calm baseline. Reset when the trace goes idle.
 	private double _ecgEasedMin;
 	private double _ecgEasedMax;
-	private bool _ecgScaleInit;
-	private double _ecgAnchorSeconds;
-	private int _ecgLastLiveLength = -1;
+	private double _ecgEasedReferenceRr;
+	private bool _ecgEaseInit;
 
 	// Auto-fitted height (px) of the compact HUD, measured each frame and applied on the
 	// next so the overlay grows/shrinks vertically with the selected metrics.
@@ -1697,13 +1697,13 @@ public sealed class StatusWindow : IDisposable
 		ImGui.SeparatorText("ECG view");
 
 		float ecgEase = (float)_settings.EcgCenteringEaseRate;
-		if (ImGuiWidgets.Knob("Beat centering", ref ecgEase, 0.5f, 12f, format: "%.1f", flags: ImGuiKnobOptions.ValueTooltip))
+		if (ImGuiWidgets.Knob("Cadence steadiness", ref ecgEase, 0.5f, 12f, format: "%.1f", flags: ImGuiKnobOptions.ValueTooltip))
 		{
 			_settings.EcgCenteringEaseRate = ecgEase;
 			_settingsDirty = true;
 		}
 		ImGui.SameLine();
-		HelpMarker("How quickly the stacked-beats ECG settles a new beat to centre. Lower is slower and smoother; 3.0 is the default.");
+		HelpMarker("How fast the ECG centre line (the reference cadence each beat is drawn early/late against) follows your heart rate. Lower holds a steadier centre, so timing differences between beats are easier to compare; 3.0 is the default.");
 
 		// Apply on every frame (live), but defer the disk write until no widget is
 		// being dragged — otherwise we'd rewrite the settings file 30+ times a second.
@@ -1916,47 +1916,32 @@ public sealed class StatusWindow : IDisposable
 		ImGui.TextDisabled("Signal view only — not a diagnostic ECG.");
 	}
 
-	// Exponential-ease rates (per second) and the fading-stack alpha schedule, mirroring the mobile
-	// EcgStrip so both heads read the same. The centre-anchor rate is user-tunable (Settings tab).
-	private const float EcgScaleEaseRate = 4.0f;
-	private float EcgAnchorEaseRate => (float)_settings.EcgCenteringEaseRate;
+	// The fading-stack alpha schedule, mirroring the mobile EcgStrip so both heads read the same. The
+	// settle rate is user-tunable (Settings tab) and governs the vertical scale + window-width easing.
+	private float EcgEaseRate => Math.Max(0.1f, (float)_settings.EcgCenteringEaseRate);
 	private const float EcgNewestBeatAlpha = 0.70f;
 	private const float EcgBeatAlphaFalloff = 0.72f;
 	private const float EcgMinBeatAlpha = 0.06f;
 
-	private void ResetEcgEasing()
-	{
-		_ecgScaleInit = false;
-		_ecgAnchorSeconds = 0;
-		_ecgLastLiveLength = -1;
-	}
+	private void ResetEcgEasing() => _ecgEaseInit = false;
 
-	// Eases the vertical scale toward the window amplitude and the centre anchor back to zero, bumping
-	// the anchor off-centre whenever a fresh R-peak resets the live beat (so it slides in, never jumps).
+	// Eases the (robust) vertical scale and the reference cadence toward the overlay's values. Easing the
+	// cadence holds the centre steady; each beat's horizontal offset from it is the real early/late signal.
 	private void AdvanceEcgEasing(EcgBeatOverlay overlay, float dt)
 	{
-		int liveLength = overlay.Live?.Samples.Count ?? 0;
-		if (_ecgLastLiveLength >= 0 && liveLength < _ecgLastLiveLength)
-		{
-			_ecgAnchorSeconds = overlay.HalfWindowSeconds * 0.22;
-		}
-
-		_ecgLastLiveLength = liveLength;
-
-		if (!_ecgScaleInit)
+		if (!_ecgEaseInit)
 		{
 			_ecgEasedMin = overlay.MinMicroVolts;
 			_ecgEasedMax = overlay.MaxMicroVolts;
-			_ecgScaleInit = true;
-		}
-		else
-		{
-			double scaleK = 1.0 - Math.Exp(-dt * EcgScaleEaseRate);
-			_ecgEasedMin += (overlay.MinMicroVolts - _ecgEasedMin) * scaleK;
-			_ecgEasedMax += (overlay.MaxMicroVolts - _ecgEasedMax) * scaleK;
+			_ecgEasedReferenceRr = overlay.ReferenceRrSeconds;
+			_ecgEaseInit = true;
+			return;
 		}
 
-		_ecgAnchorSeconds *= Math.Exp(-dt * EcgAnchorEaseRate);
+		double k = 1.0 - Math.Exp(-dt * EcgEaseRate);
+		_ecgEasedMin += (overlay.MinMicroVolts - _ecgEasedMin) * k;
+		_ecgEasedMax += (overlay.MaxMicroVolts - _ecgEasedMax) * k;
+		_ecgEasedReferenceRr += (overlay.ReferenceRrSeconds - _ecgEasedReferenceRr) * k;
 	}
 
 	private void DrawBeatStack(EcgBeatOverlay overlay)
@@ -1975,9 +1960,13 @@ public sealed class StatusWindow : IDisposable
 		float margin = height * 0.08f;
 		float plotHeight = height - (2 * margin);
 		float centreX = origin.X + (width / 2f);
-		double pxPerSecond = (width / 2.0) * 0.94 / overlay.HalfWindowSeconds;
+		double referenceRr = _ecgEasedReferenceRr > 0 ? _ecgEasedReferenceRr : overlay.ReferenceRrSeconds;
+		if (referenceRr <= 0)
+		{
+			return;
+		}
 
-		float XAt(double offsetSeconds) => centreX + (float)((offsetSeconds + _ecgAnchorSeconds) * pxPerSecond);
+		double pxPerSecond = (width / 2.0) * 0.94 / (referenceRr / 2.0);
 		float YAt(double v) => origin.Y + margin + (float)(plotHeight * (1.0 - ((v - _ecgEasedMin) / range)));
 
 		ImDrawListPtr draw = ImGui.GetWindowDrawList();
@@ -1991,28 +1980,29 @@ public sealed class StatusWindow : IDisposable
 		foreach (EcgOverlayBeat beat in overlay.Beats)
 		{
 			float alpha = Math.Max(EcgMinBeatAlpha, EcgNewestBeatAlpha * (float)Math.Pow(EcgBeatAlphaFalloff, beat.Age));
-			DrawBeatTrace(draw, beat, lineHue with { W = alpha }, 1.5f, XAt, YAt);
+			DrawBeatTrace(draw, beat, lineHue with { W = alpha }, 1.5f, centreX, pxPerSecond, referenceRr, YAt);
 		}
 
 		if (overlay.Live is { } live)
 		{
-			DrawBeatTrace(draw, live, lineHue, 2f, XAt, YAt);
+			DrawBeatTrace(draw, live, lineHue, 2f, centreX, pxPerSecond, referenceRr, YAt);
 		}
 
-		// Centre R-peak guide (dashed).
-		float guideX = XAt(0);
+		// Centre guide (dashed): the reference cadence — a beat exactly on cadence sits here.
 		uint guideCol = Col(new Vector4(0.90f, 0.75f, 0.48f, 0.55f));
 		for (float y = origin.Y + margin; y < origin.Y + height - margin; y += 5f)
 		{
-			draw.AddLine(new Vector2(guideX, y), new Vector2(guideX, Math.Min(y + 2f, origin.Y + height - margin)), guideCol, 1f);
+			draw.AddLine(new Vector2(centreX, y), new Vector2(centreX, Math.Min(y + 2f, origin.Y + height - margin)), guideCol, 1f);
 		}
 
 		draw.PopClipRect();
 	}
 
+	// Strokes one beat, translated horizontally by (its RR − reference cadence) so an early beat sits left
+	// of centre and a late beat right of it — the spread of the fading stack is the timing variability.
 	private static void DrawBeatTrace(
 		ImDrawListPtr draw, EcgOverlayBeat beat, Vector4 colour, float thickness,
-		Func<double, float> xAt, Func<double, float> yAt)
+		float centreX, double pxPerSecond, double referenceRr, Func<double, float> yAt)
 	{
 		IReadOnlyList<EcgBeatSample> samples = beat.Samples;
 		if (samples.Count < 2)
@@ -2020,11 +2010,14 @@ public sealed class StatusWindow : IDisposable
 			return;
 		}
 
+		double shift = beat.IntervalSeconds > 0 ? beat.IntervalSeconds - referenceRr : 0.0;
+		float XAt(double offsetSeconds) => centreX + (float)((offsetSeconds + shift) * pxPerSecond);
+
 		uint col = Col(colour);
-		var prev = new Vector2(xAt(samples[0].OffsetSeconds), yAt(samples[0].MicroVolts));
+		var prev = new Vector2(XAt(samples[0].OffsetSeconds), yAt(samples[0].MicroVolts));
 		for (int i = 1; i < samples.Count; i++)
 		{
-			var next = new Vector2(xAt(samples[i].OffsetSeconds), yAt(samples[i].MicroVolts));
+			var next = new Vector2(XAt(samples[i].OffsetSeconds), yAt(samples[i].MicroVolts));
 			draw.AddLine(prev, next, col, thickness);
 			prev = next;
 		}
