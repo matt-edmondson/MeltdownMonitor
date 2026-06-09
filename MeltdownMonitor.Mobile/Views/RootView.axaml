@@ -41,7 +41,24 @@
                 </Grid>
             </Border>
 
+            <!-- Bottom nav: lay the tab strip out as one equal-width row (UniformGrid)
+                 with compact items so all six tabs fit on a single line instead of
+                 wrapping to two rows on a phone. The UniformGrid drops a column when
+                 the Debug tab is hidden, so the visible tabs always span the width. -->
             <TabControl TabStripPlacement="Bottom">
+                <TabControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Rows="1" />
+                    </ItemsPanelTemplate>
+                </TabControl.ItemsPanel>
+                <TabControl.Styles>
+                    <Style Selector="TabItem">
+                        <Setter Property="FontSize" Value="14" />
+                        <Setter Property="Padding" Value="4,8" />
+                        <Setter Property="MinHeight" Value="0" />
+                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                    </Style>
+                </TabControl.Styles>
                 <TabItem Header="Now">
                     <views:NowView DataContext="{Binding Now}" />
                 </TabItem>
