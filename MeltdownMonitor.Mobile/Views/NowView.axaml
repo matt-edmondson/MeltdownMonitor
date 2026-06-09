@@ -6,14 +6,25 @@
              x:Class="MeltdownMonitor.Mobile.Views.NowView"
              x:DataType="vm:NowViewModel">
     <Grid>
-        <!-- Card / pill / metrics group sits at the top; a flexible spacer
-             absorbs the remaining height so the field card sizes to its
-             content (no ballooning + dead band) and the action buttons settle
-             at the bottom of the screen regardless of phone height. -->
-        <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" Margin="20">
+        <!-- The two action buttons dock to the bottom so they're always reachable
+             (they used to be clipped off-screen on shorter phones); everything
+             above them scrolls when the field card + metrics exceed the viewport. -->
+        <DockPanel Margin="20">
 
-            <Border Grid.Row="0"
-                    CornerRadius="12"
+            <!-- Connecting/disconnecting the sensor lives in Settings (Device section);
+                 the Now screen keeps just the primary self check-in action. -->
+            <Button DockPanel.Dock="Bottom"
+                    Margin="0,16,0,0"
+                    HorizontalAlignment="Stretch"
+                    HorizontalContentAlignment="Center"
+                    Padding="16,12"
+                    Content="How are you feeling?"
+                    Command="{Binding OpenAnnotationCommand}" />
+
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+
+            <Border CornerRadius="12"
                     Background="#101418"
                     Padding="12">
                 <Grid RowDefinitions="Auto,Auto,Auto">
@@ -72,8 +83,7 @@
                 </Grid>
             </Border>
 
-            <Border Grid.Row="1"
-                    Margin="0,20,0,0"
+            <Border Margin="0,20,0,0"
                     CornerRadius="20"
                     Padding="16,10"
                     HorizontalAlignment="Center"
@@ -84,8 +94,7 @@
                            FontWeight="SemiBold" />
             </Border>
 
-            <StackPanel Grid.Row="2"
-                        Margin="0,16,0,0"
+            <StackPanel Margin="0,16,0,0"
                         Orientation="Vertical"
                         HorizontalAlignment="Center"
                         Spacing="4">
@@ -182,22 +191,9 @@
                            HorizontalAlignment="Center" />
             </StackPanel>
 
-            <Button Grid.Row="4"
-                    Margin="0,16,0,0"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Center"
-                    Padding="16,12"
-                    Content="How are you feeling?"
-                    Command="{Binding OpenAnnotationCommand}" />
-
-            <Button Grid.Row="5"
-                    Margin="0,8,0,0"
-                    HorizontalAlignment="Stretch"
-                    HorizontalContentAlignment="Center"
-                    Padding="16,12"
-                    Content="{Binding ConnectionLabel}"
-                    Command="{Binding ToggleConnectionCommand}" />
-        </Grid>
+            </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
 
         <!-- Self check-in sheet (design doc §5): a dimmed backdrop with the
              same four labels the desktop annotation dialog offers, plus an
