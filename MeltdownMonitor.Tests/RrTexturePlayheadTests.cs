@@ -153,6 +153,40 @@ public class RrTexturePlayheadTests
 		Assert.IsTrue(double.IsFinite(p.Position), $"position must stay finite, was {p.Position}");
 	}
 
+	[TestMethod]
+	public void Reset_SnapsToLiveEdgeInsteadOfFastForwardingAfterAHiddenGap()
+	{
+		// The field is on-screen and locked to the data at sample 50.
+		var p = new RrTexturePlayhead();
+		p.Advance(Frame, samplesPerSecond: 1.0, newestSampleIndex: 50.0); // seed
+		for (int frame = 0; frame < 120; frame++)
+		{
+			p.Advance(Frame, samplesPerSecond: 1.0, newestSampleIndex: 50.0);
+		}
+
+		// The Now tab is hidden: the render loop stops (no Advance calls) while ~4 minutes of beats
+		// arrive in the background, so the newest sample races far ahead of the frozen playhead.
+		const double newestAfterGap = 300.0;
+		double frozen = p.Position;
+		Assert.IsTrue(frozen <= 51.0, $"playhead should still be parked near 50 while hidden, was {frozen}");
+
+		// Without a reset, the first frame back would barely move (gentle catch-up) and then crawl
+		// forward across the whole 250-sample gap — the visible "fast-forward through buffered jitter".
+		var noReset = p;
+		noReset.Advance(Frame, samplesPerSecond: 1.0, newestSampleIndex: newestAfterGap);
+		Assert.IsTrue(noReset.Position < 60.0,
+			$"sanity: un-reset playhead crawls from the stale position, was {noReset.Position}");
+
+		// Re-seeding on the way back snaps it straight to just behind the live edge, so the texture
+		// reads as having advanced continuously rather than fast-forwarding to catch up.
+		p.Reset();
+		p.Advance(Frame, samplesPerSecond: 1.0, newestSampleIndex: newestAfterGap);
+		Assert.IsTrue(p.Position <= newestAfterGap + 1e-9,
+			$"playhead must not start past the newest sample, was {p.Position}");
+		Assert.IsTrue(p.Position >= newestAfterGap - 4.0,
+			$"playhead should snap close behind the live edge after reset, was {p.Position}");
+	}
+
 	// Cumulative newest-sample index over time: ~1 beat/s, but delivered in batches of two with
 	// gaps, starting from an existing history of 100 samples.
 	private static double NewestAt(double t)

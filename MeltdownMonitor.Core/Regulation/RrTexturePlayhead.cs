@@ -75,4 +75,20 @@ public struct RrTexturePlayhead
 		// Never scroll past the newest real sample; during a dropout the dead-reckon parks here.
 		Position = Math.Min(next, newestSampleIndex);
 	}
+
+	/// <summary>
+	/// Clears the playhead so the next <see cref="Advance"/> re-seeds just behind the newest sample
+	/// rather than easing up from the last (now stale) position.
+	///
+	/// Call this when the view resumes after being hidden. The render loop stops while the field is
+	/// off-screen, freezing <see cref="Position"/>, but beats keep arriving — so the newest sample
+	/// index races far ahead. Without a reset the gentle catch-up would visibly "fast-forward" the
+	/// playhead through every buffered beat to close that gap; re-seeding instead snaps it straight
+	/// to the live edge, so the texture reads as having advanced continuously in the background.
+	/// </summary>
+	public void Reset()
+	{
+		_seeded = false;
+		Position = 0.0;
+	}
 }
