@@ -442,6 +442,13 @@ public sealed class RegulationField : Control
 		base.OnAttachedToVisualTree(e);
 		_clock.Restart();
 		_lastFrame = _clock.Elapsed;
+
+		// While the Now tab was hidden the render loop was stopped but beats kept arriving, so the
+		// absolute beat timeline (RrBeatsAppended) raced ahead of the frozen playhead. Re-seed it so
+		// the RR texture snaps to the live edge on the first frame instead of fast-forwarding through
+		// every buffered beat to catch up.
+		_playhead.Reset();
+
 		_timer = new DispatcherTimer(FrameInterval, DispatcherPriority.Render, OnFrame);
 		_timer.Start();
 	}
