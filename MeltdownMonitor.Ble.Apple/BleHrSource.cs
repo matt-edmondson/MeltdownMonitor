@@ -104,6 +104,11 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 	private PeripheralObserver? _peripheralObserver;
 	private CBPeripheral? _peripheral;
 
+	// Set when WillRestoreState attaches a peripheral on a state-restoration launch, so the
+	// UpdatedState(PoweredOn) that iOS delivers immediately afterwards does not retrieve a second
+	// CBPeripheral instance and reconnect over the restored one. Cleared once consumed.
+	private bool _restoredThisLaunch;
+
 	public BleHrSource(
 		HeartRateDeviceType deviceType = HeartRateDeviceType.Auto,
 		BleStateRestoration? restoration = null,
@@ -155,6 +160,17 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 	{
 		if (central.State != CBManagerState.PoweredOn)
 		{
+			return;
+		}
+
+		// If state restoration already attached and (re)connected the peripheral for this launch,
+		// leave it alone. iOS delivers WillRestoreState before this callback, so retrieving a fresh
+		// CBPeripheral instance here would re-attach the observer (detaching it from the restored
+		// peripheral) and reconnect — which can leave us connected but never subscribed to
+		// notifications. Consume the flag so a later genuine power-cycle still reconnects normally.
+		if (_restoredThisLaunch)
+		{
+			_restoredThisLaunch = false;
 			return;
 		}
 
@@ -245,6 +261,9 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 
 		var peripheral = restored.GetItem<CBPeripheral>(0);
 		AttachPeripheral(peripheral);
+
+		// Restoration owns the peripheral for this launch (see UpdatedState).
+		_restoredThisLaunch = true;
 
 		if (peripheral.State == CBPeripheralState.Connected)
 		{

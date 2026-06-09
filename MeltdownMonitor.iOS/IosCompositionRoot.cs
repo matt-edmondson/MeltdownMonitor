@@ -105,11 +105,49 @@ public static class IosCompositionRoot
 		}
 	}
 
+	/// <summary>
+	/// Loads user settings once and caches them (with the backing store) for the app's lifetime.
+	/// Idempotent so the early restoration hook (<see cref="PrepareBleRestoration"/>) and the
+	/// view-model factory share a single settings instance regardless of which runs first.
+	/// </summary>
+	private static MobileSettings EnsureSettings()
+	{
+		if (_settings is null)
+		{
+			_store = new NSUserDefaultsSettingsStore();
+			_settings = _store.Load();
+		}
+
+		return _settings;
+	}
+
+	/// <summary>
+	/// Creates the BLE central manager as early as possible in the launch sequence so iOS reliably
+	/// delivers CoreBluetooth state restoration (<see cref="BleHrSource.WillRestoreState"/>) to it on
+	/// a background relaunch. Apple requires the restoring central to be re-instantiated synchronously
+	/// during app launch; deferring it to the async pipeline build risks iOS dropping the restoration
+	/// and leaving the app dead in the background until the user reopens it (design doc §4.1).
+	/// Idempotent — <see cref="BuildAndStartPipelineAsync"/> reuses this instance. Early beats buffer
+	/// harmlessly in the source's unbounded channel until the pipeline starts reading.
+	/// </summary>
+	public static void PrepareBleRestoration()
+	{
+		if (_source is not null)
+		{
+			return;
+		}
+
+		var settings = EnsureSettings();
+		_source = new BleHrSource(
+			settings.DeviceType,
+			enableMotion: settings.EnableMotionCorroboration,
+			intervalSource: settings.PreferredIntervalSource);
+	}
+
 	public static RootViewModel BuildRootViewModel()
 	{
-		_store = new NSUserDefaultsSettingsStore();
-		var settings = _store.Load();
-		_settings = settings;
+		var settings = EnsureSettings();
+		var store = _store!; // EnsureSettings always assigns the backing store alongside the settings.
 
 		// Normally a no-op here: Program.Main already brought crash reporting up
 		// before launch so the early startup window is covered. Kept as a safety
@@ -156,7 +194,7 @@ public static class IosCompositionRoot
 			requestNotifications: () => _notifications.RequestAuthorizationAsync(),
 			requestHealthKit: () => _healthStore.RequestAuthorizationAsync(),
 			exportDatabase: () => exporter.ExportAsync(DatabasePath()),
-			onChanged: () => _store.Save(settings),
+			onChanged: () => store.Save(settings),
 			revokeHealthAccess: RevokeHealthAsync,
 			clearData: ClearStoredDataAsync);
 
@@ -166,11 +204,11 @@ public static class IosCompositionRoot
 			settings,
 			requestAuthorization: () => _healthStore.RequestAuthorizationAsync(),
 			isAvailable: () => HKHealthStore.IsHealthDataAvailable,
-			onChanged: () => _store.Save(settings));
+			onChanged: () => store.Save(settings));
 
 		_ecg = new EcgViewModel(centeringEaseRateProvider: () => settings.EcgCenteringEaseRate);
 		_debug = new DebugViewModel();
-		return new RootViewModel(settings, _now, _history, settingsTab, _metrics, _ecg, _debug, _store, healthPrompt);
+		return new RootViewModel(settings, _now, _history, settingsTab, _metrics, _ecg, _debug, store, healthPrompt);
 	}
 
 	/// <summary>
@@ -221,12 +259,14 @@ public static class IosCompositionRoot
 		var repository = new MeltdownRepository(dbPath, MeltdownRepositoryOptions.IosSandbox);
 		ProtectDatabaseFile(dbPath);
 
-		// Motion corroboration: stream the Polar strap accelerometer (PMD) when available, and run the
-		// device IMU as a fallback for non-Polar straps. The movement monitor prefers the strap.
+		// Reuse the BLE source created at the top of the launch path so the restoring central manager
+		// has existed since launch (PrepareBleRestoration); recreate it here only if some path reached
+		// the pipeline build without the early hook. Motion corroboration also runs the device IMU as a
+		// fallback for non-Polar straps; the movement monitor prefers the strap.
+		PrepareBleRestoration();
 		bool motionEnabled = settings.EnableMotionCorroboration;
-		_source = new BleHrSource(settings.DeviceType, enableMotion: motionEnabled, intervalSource: settings.PreferredIntervalSource);
 		_motionFallback = motionEnabled ? new ImuMotionSource() : null;
-		var pipeline = new Pipeline(settings, repository, _source, _motionFallback);
+		var pipeline = new Pipeline(settings, repository, _source!, _motionFallback);
 
 		// Warm-start must precede Start (the existing contract). Best-effort —
 		// no HealthKit auth just means a cold baseline, not a failure. Reading is gated on

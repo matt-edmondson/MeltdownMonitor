@@ -18,6 +18,13 @@ public partial class AppDelegate : AvaloniaAppDelegate<MeltdownMonitor.Mobile.Ap
 
 	protected override AppBuilder CustomizeAppBuilder(AppBuilder builder)
 	{
+		// Create the BLE central manager synchronously, as early in the launch path as possible, so
+		// iOS reliably delivers CoreBluetooth state restoration (WillRestoreState) on a background
+		// relaunch. Deferring this to the async pipeline build (App.Started, below) risks iOS dropping
+		// the restoration and leaving the app dead in the background (design doc §4.1). The pipeline
+		// build reuses this instance.
+		IosCompositionRoot.PrepareBleRestoration();
+
 		// Install the iOS-specific factory so Avalonia's
 		// OnFrameworkInitializationCompleted picks up a fully composed VM
 		// instead of the stub used for design-time previews.
