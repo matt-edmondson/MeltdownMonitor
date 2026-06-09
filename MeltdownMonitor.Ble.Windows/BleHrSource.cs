@@ -33,6 +33,11 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 	private static readonly Guid HardwareRevisionCharUuid = new("00002a27-0000-1000-8000-00805f9b34fb");
 	private static readonly Guid SoftwareRevisionCharUuid = new("00002a28-0000-1000-8000-00805f9b34fb");
 
+	// Latch the most recent one-shot reads so a subscriber that wires up after they fired
+	// still converges (the pipeline replays these on wiring). Null until the first read.
+	private BatteryReading? _latestBattery;
+	private DeviceInformation? _latestDeviceInfo;
+
 	/// <inheritdoc />
 	public event Action<BatteryReading>? BatteryLevelChanged;
 
@@ -41,6 +46,12 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 
 	/// <inheritdoc />
 	public event Action<DeviceInformation>? DeviceInformationChanged;
+
+	/// <inheritdoc />
+	public BatteryReading? LatestBattery => _latestBattery;
+
+	/// <inheritdoc />
+	public DeviceInformation? LatestDeviceInfo => _latestDeviceInfo;
 
 	/// <inheritdoc />
 	public event Action<MotionSample>? MotionSampleReceived;
@@ -495,7 +506,9 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 
 		// Battery Level is a single uint8 percentage (0–100).
 		int percent = Math.Clamp(bytes[0], (byte)0, (byte)100);
-		BatteryLevelChanged?.Invoke(new BatteryReading(DateTimeOffset.UtcNow, percent));
+		var reading = new BatteryReading(DateTimeOffset.UtcNow, percent);
+		_latestBattery = reading;
+		BatteryLevelChanged?.Invoke(reading);
 	}
 
 	// Reads the Device Information Service once on connect. Every characteristic is
@@ -521,6 +534,7 @@ public sealed class BleHrSource : IBeatSource, IBatterySource, IContactSource, I
 				HardwareRevision: await ReadStringAsync(service, HardwareRevisionCharUuid),
 				SoftwareRevision: await ReadStringAsync(service, SoftwareRevisionCharUuid));
 
+			_latestDeviceInfo = info;
 			DeviceInformationChanged?.Invoke(info);
 		}
 		catch

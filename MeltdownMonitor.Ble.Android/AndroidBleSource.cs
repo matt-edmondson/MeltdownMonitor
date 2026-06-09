@@ -77,6 +77,12 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 	/// <inheritdoc />
 	public event Action<BeatDiagnostic>? BeatDiagnosticReceived;
 
+	/// <inheritdoc />
+	public BatteryReading? LatestBattery => _latestBattery;
+
+	/// <inheritdoc />
+	public DeviceInformation? LatestDeviceInfo => _deviceInfoRead ? _deviceInfo : null;
+
 	private const double EcgSampleRateHz = 130.0;
 
 	private readonly Context _context;
@@ -111,6 +117,11 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 	private bool _opInFlight;
 
 	private DeviceInformation _deviceInfo = new();
+
+	// Latch the most recent one-shot reads so a subscriber that wires up after they fired
+	// still converges (the pipeline replays these on wiring). Null/false until the first read.
+	private BatteryReading? _latestBattery;
+	private bool _deviceInfoRead;
 	private ScanCallbackImpl? _scanCallback;
 	private GattCallbackImpl? _gattCallback;
 	private BluetoothGatt? _gatt;
@@ -568,8 +579,12 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 		}
 	}
 
-	private void OnBatteryByte(byte percent) =>
-		BatteryLevelChanged?.Invoke(new BatteryReading(DateTimeOffset.UtcNow, Math.Clamp((int)percent, 0, 100)));
+	private void OnBatteryByte(byte percent)
+	{
+		var reading = new BatteryReading(DateTimeOffset.UtcNow, Math.Clamp((int)percent, 0, 100));
+		_latestBattery = reading;
+		BatteryLevelChanged?.Invoke(reading);
+	}
 
 	private void OnDeviceInfoCharacteristic(UUID uuid, byte[] bytes)
 	{
@@ -589,6 +604,7 @@ public sealed class AndroidBleSource : IBeatSource, IBatterySource, IContactSour
 			uuid.Equals(SoftwareRevisionCharUuid) ? _deviceInfo with { SoftwareRevision = value } :
 			_deviceInfo;
 
+		_deviceInfoRead = true;
 		DeviceInformationChanged?.Invoke(_deviceInfo);
 	}
 
