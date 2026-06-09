@@ -113,6 +113,20 @@ public sealed class DebugViewModel : ViewModelBase
 		pipeline.ContactChanged += OnContactChanged;
 		pipeline.BatteryUpdated += OnBatteryUpdated;
 		pipeline.DeviceInfoUpdated += OnDeviceInfoUpdated;
+
+		// Battery and device info are one-shot reads that may have already landed on the pipeline
+		// before this view model attached (the iOS central manager connects early, before the UI
+		// exists). Seed from the pipeline's latched values so the Debug tab doesn't show a stale
+		// "—" for a sensor that already reported them — the same convergence NowViewModel does.
+		if (pipeline.LatestBatteryPercent is { } percent)
+		{
+			OnBatteryUpdated(new BatteryReading(DateTimeOffset.UtcNow, percent));
+		}
+
+		if (pipeline.LatestDeviceInfo is { } info)
+		{
+			OnDeviceInfoUpdated(info);
+		}
 	}
 
 	public void OnBeatDiagnostic(BeatDiagnostic diagnostic) => RunOnUi(() =>

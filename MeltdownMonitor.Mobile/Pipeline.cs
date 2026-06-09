@@ -189,9 +189,16 @@ public sealed class Pipeline : IDisposable
 		_hypoDetector.StateChanged += s => HypoarousalStateChanged?.Invoke(s);
 
 		// Battery and contact are optional source capabilities — wire each only when supported.
+		// Battery and device info are one-shot reads on connect; if the source already read them
+		// before we wired up (e.g. the iOS central manager is created early for state restoration,
+		// before this pipeline is built), replay the latched value so they aren't lost forever.
 		if (source is IBatterySource batterySource)
 		{
 			batterySource.BatteryLevelChanged += OnBatteryLevelChanged;
+			if (batterySource.LatestBattery is { } battery)
+			{
+				OnBatteryLevelChanged(battery);
+			}
 		}
 
 		if (source is IContactSource contactSource)
@@ -202,6 +209,10 @@ public sealed class Pipeline : IDisposable
 		if (source is IDeviceInfoSource deviceInfoSource)
 		{
 			deviceInfoSource.DeviceInformationChanged += OnDeviceInfoChanged;
+			if (deviceInfoSource.LatestDeviceInfo is { } info)
+			{
+				OnDeviceInfoChanged(info);
+			}
 		}
 
 		// Motion corroboration: the strap accelerometer (if the source exposes PMD motion) and the

@@ -57,6 +57,12 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 	// Accumulated as the individual DIS characteristics are read back one by one.
 	private DeviceInformation _deviceInfo = new();
 
+	// Latch the most recent one-shot reads so a subscriber that wires up after they fired
+	// (the central manager is created early for state restoration, before the pipeline) still
+	// converges. Null until the first read; _deviceInfoRead tracks whether any DIS field arrived.
+	private BatteryReading? _latestBattery;
+	private bool _deviceInfoRead;
+
 	/// <inheritdoc />
 	public event Action<BatteryReading>? BatteryLevelChanged;
 
@@ -74,6 +80,12 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 
 	/// <inheritdoc />
 	public event Action<BeatDiagnostic>? BeatDiagnosticReceived;
+
+	/// <inheritdoc />
+	public BatteryReading? LatestBattery => _latestBattery;
+
+	/// <inheritdoc />
+	public DeviceInformation? LatestDeviceInfo => _deviceInfoRead ? _deviceInfo : null;
 
 	private const double EcgSampleRateHz = 130.0;
 
@@ -403,7 +415,11 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 
 	// Battery Level is a single uint8 percentage (0–100).
 	internal void OnBatteryByte(byte percent)
-		=> BatteryLevelChanged?.Invoke(new BatteryReading(DateTimeOffset.UtcNow, Math.Clamp((int)percent, 0, 100)));
+	{
+		var reading = new BatteryReading(DateTimeOffset.UtcNow, Math.Clamp((int)percent, 0, 100));
+		_latestBattery = reading;
+		BatteryLevelChanged?.Invoke(reading);
+	}
 
 	// DIS characteristics are read back one at a time; fold each into the record
 	// and re-emit so subscribers converge on the full identity as fields arrive.
@@ -425,6 +441,7 @@ public sealed class BleHrSource : CBCentralManagerDelegate, IBeatSource, IBatter
 			uuid.Equals(SoftwareRevisionCharUuid) ? _deviceInfo with { SoftwareRevision = value } :
 			_deviceInfo;
 
+		_deviceInfoRead = true;
 		DeviceInformationChanged?.Invoke(_deviceInfo);
 	}
 

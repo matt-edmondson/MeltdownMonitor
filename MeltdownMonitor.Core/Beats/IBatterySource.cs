@@ -16,4 +16,15 @@ public interface IBatterySource
 	/// background BLE thread, so subscribers must marshal to their UI thread.
 	/// </summary>
 	event Action<BatteryReading>? BatteryLevelChanged;
+
+	/// <summary>
+	/// The most recent battery reading already observed, or <c>null</c> until the
+	/// first read. The initial read is one-shot (unlike the continuous notify
+	/// stream), so a subscriber that wires up <see cref="BatteryLevelChanged"/>
+	/// after it has already fired — e.g. on iOS the restoring central manager is
+	/// created early in launch, before the pipeline is built — would otherwise
+	/// miss it entirely. The pipeline replays this on wiring so a late subscriber
+	/// still converges. Default <c>null</c> for sources that don't latch it.
+	/// </summary>
+	BatteryReading? LatestBattery => null;
 }

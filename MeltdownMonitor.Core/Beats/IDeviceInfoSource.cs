@@ -16,4 +16,13 @@ public interface IDeviceInfoSource
 	/// thread.
 	/// </summary>
 	event Action<DeviceInformation>? DeviceInformationChanged;
+
+	/// <summary>
+	/// The device information accumulated so far, or <c>null</c> until at least one
+	/// field has been read. Like <see cref="IBatterySource.LatestBattery"/>, the DIS
+	/// characteristics are read once on connect, so a subscriber that wires up
+	/// <see cref="DeviceInformationChanged"/> after the read would miss it; the
+	/// pipeline replays this on wiring. Default <c>null</c> for sources that don't latch it.
+	/// </summary>
+	DeviceInformation? LatestDeviceInfo => null;
 }
