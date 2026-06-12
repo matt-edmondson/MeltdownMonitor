@@ -1,5 +1,6 @@
 using Foundation;
 using HealthKit;
+using MeltdownMonitor.Core.Motion;
 using MeltdownMonitor.Mobile.Services;
 
 namespace MeltdownMonitor.iOS.Services;
@@ -8,7 +9,8 @@ namespace MeltdownMonitor.iOS.Services;
 /// <see cref="IHealthStore"/> backed by HealthKit. Reads recent heart-rate
 /// samples for the baseline warm-start (design doc §8) and writes back the live
 /// streams so the user owns their data in Apple Health: downsampled heart-rate
-/// samples, HRV as <c>HeartRateVariabilitySDNN</c>, the raw beat-to-beat
+/// samples (tagged with Apple's resting/active heart-rate motion context when the
+/// movement stream can vouch for one), HRV as <c>HeartRateVariabilitySDNN</c>, the raw beat-to-beat
 /// <c>HKHeartbeatSeries</c>, and episode workouts. SDNN is the HealthKit-native
 /// HRV metric (what Apple Watch writes), so it is recorded as SDNN rather than
 /// mislabelling the pipeline's RMSSD.
@@ -100,12 +102,30 @@ public sealed class HealthKitStore : IHealthStore
 
 		var quantity = HKQuantity.FromQuantity(_bpmUnit, sample.HeartRateBpm);
 		var date = (NSDate)sample.Timestamp.UtcDateTime;
-		var hkSample = HKQuantitySample.FromType(_heartRateType, quantity, date, date);
+
+		// Apple's heart-rate motion context says whether this was a resting or an
+		// in-motion reading (what the Watch tags its own samples with). Unknown means
+		// "don't claim anything" — omit the key entirely rather than write NotSet, so
+		// a build without motion data records exactly what it did before.
+		var metadata = sample.MotionContext switch
+		{
+			HrMotionContext.Sedentary => MotionContextMetadata(HKHeartRateMotionContext.Sedentary),
+			HrMotionContext.Active => MotionContextMetadata(HKHeartRateMotionContext.Active),
+			_ => null,
+		};
+
+		var hkSample = metadata is null
+			? HKQuantitySample.FromType(_heartRateType, quantity, date, date)
+			: HKQuantitySample.FromType(_heartRateType, quantity, date, date, metadata);
 
 		var tcs = new TaskCompletionSource<bool>();
 		_store.SaveObject(hkSample, (_, _) => tcs.TrySetResult(true));
 		return tcs.Task;
 	}
+
+	private static NSDictionary MotionContextMetadata(HKHeartRateMotionContext context) =>
+		NSDictionary.FromObjectAndKey(
+			NSNumber.FromInt64((long)context), HKMetadataKey.HeartRateMotionContext);
 
 	public Task WriteHrvSampleAsync(HealthHrvSample sample)
 	{

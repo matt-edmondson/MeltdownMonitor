@@ -1,5 +1,6 @@
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Motion;
 
 namespace MeltdownMonitor.Mobile.Services;
 
@@ -9,7 +10,9 @@ namespace MeltdownMonitor.Mobile.Services;
 /// <see cref="MobileSettings.RecordToHealth"/> flag. Three streams:
 /// <list type="bullet">
 /// <item>heart rate — one downsampled <see cref="IHealthStore.WriteHrSampleAsync"/>
-/// per <see cref="HrWriteInterval"/>;</item>
+/// per <see cref="HrWriteInterval"/>, tagged with the <see cref="HrMotionContext"/>
+/// (resting / active / unknown) the movement stream supports at that moment, so the
+/// health store knows whether it was a resting or an in-motion reading;</item>
 /// <item>HRV (RMSSD + SDNN) — one <see cref="IHealthStore.WriteHrvSampleAsync"/>
 /// per <see cref="HrvWriteInterval"/>, only once the 5-minute extended window is warm;</item>
 /// <item>raw beat-to-beat RR — buffered and flushed as a heartbeat series via
@@ -56,9 +59,11 @@ public sealed class HealthDataRecorder : IDisposable
 
 	private readonly object _bufferLock = new();
 	private readonly List<RrIntervalSample> _rrBuffer = [];
+	private readonly HrMotionContextClassifier _motionContext = new();
 
 	private DateTimeOffset _lastHrWrite = DateTimeOffset.MinValue;
 	private DateTimeOffset _lastHrvWrite = DateTimeOffset.MinValue;
+	private MovementLevel _latestMovement = MovementLevel.Unknown;
 
 	public HealthDataRecorder(
 		Pipeline pipeline,
@@ -79,10 +84,19 @@ public sealed class HealthDataRecorder : IDisposable
 
 		_pipeline.SampleUpdated += OnSampleUpdated;
 		_pipeline.BeatReceived += OnBeatReceived;
+		_pipeline.MovementUpdated += OnMovementUpdated;
 	}
+
+	// MovementUpdated carries no timestamp; the pipeline raises it in the same beat-loop
+	// turn as the sample that follows, so the sample's timestamp is the clock (replay-safe).
+	private void OnMovementUpdated(MovementSnapshot snapshot) => _latestMovement = snapshot.Level;
 
 	private void OnSampleUpdated(HrvSample sample)
 	{
+		// Fed even while opted out so the sedentary run is already warm if the user
+		// enables recording mid-session.
+		_motionContext.Update(sample.Timestamp, _latestMovement);
+
 		if (!_settings.RecordToHealth)
 		{
 			return;
@@ -91,7 +105,8 @@ public sealed class HealthDataRecorder : IDisposable
 		if (sample.MeanHr > 0 && sample.Timestamp - _lastHrWrite >= _hrWriteInterval)
 		{
 			_lastHrWrite = sample.Timestamp;
-			FireAndForget(() => _healthStore.WriteHrSampleAsync(new HrSample(sample.Timestamp, sample.MeanHr)));
+			FireAndForget(() => _healthStore.WriteHrSampleAsync(new HrSample(
+				sample.Timestamp, sample.MeanHr, _motionContext.ContextAt(sample.Timestamp))));
 		}
 
 		// SDNN only exists once the 5-minute extended window is warm; never fabricate it.
@@ -153,6 +168,7 @@ public sealed class HealthDataRecorder : IDisposable
 	{
 		_pipeline.SampleUpdated -= OnSampleUpdated;
 		_pipeline.BeatReceived -= OnBeatReceived;
+		_pipeline.MovementUpdated -= OnMovementUpdated;
 
 		List<RrIntervalSample>? remaining = null;
 		lock (_bufferLock)

@@ -1,6 +1,19 @@
+using MeltdownMonitor.Core.Motion;
+
 namespace MeltdownMonitor.Mobile.Services;
 
-public record HrSample(DateTimeOffset Timestamp, double HeartRateBpm);
+/// <summary>
+/// One heart-rate reading bound for (or read from) the platform health store.
+/// <paramref name="MotionContext"/> says whether it was a resting or an in-motion
+/// reading: iOS writes it as HealthKit's heart-rate motion context metadata, Android
+/// expresses a sedentary reading as a <c>RestingHeartRateRecord</c> (Health Connect's
+/// <c>HeartRateRecord</c> has no context field). <see cref="HrMotionContext.Unknown"/>
+/// (the default, and what warm-start reads carry) writes no claim at all.
+/// </summary>
+public record HrSample(
+	DateTimeOffset Timestamp,
+	double HeartRateBpm,
+	HrMotionContext MotionContext = HrMotionContext.Unknown);
 
 /// <summary>
 /// A heart-rate-variability reading destined for the platform health store.
