@@ -9,6 +9,7 @@ using Java.Time;
 using Kotlin.Coroutines;
 using Kotlin.Coroutines.Intrinsics;
 using Kotlin.Jvm;
+using MeltdownMonitor.Core.Motion;
 using MeltdownMonitor.Mobile.Services;
 using AndroidContext = Android.Content.Context;
 
@@ -56,7 +57,10 @@ namespace MeltdownMonitor.Android.Services;
 /// When the user opts into continuous recording (<c>RecordToHealth</c>, driven through
 /// <c>HealthDataRecorder</c>), <see cref="WriteHrSampleAsync"/> and
 /// <see cref="WriteHrvSampleAsync"/> persist downsampled heart rate and RMSSD as
-/// <c>HeartRateRecord</c> / <c>HeartRateVariabilityRmssdRecord</c>. Health Connect has no
+/// <c>HeartRateRecord</c> / <c>HeartRateVariabilityRmssdRecord</c>; a reading the motion
+/// stream vouches was taken at rest additionally lands as a rate-limited
+/// <c>RestingHeartRateRecord</c> (Health Connect's heart-rate record has no
+/// motion-context field, unlike the iOS sample metadata). Health Connect has no
 /// beat-to-beat record type, so <see cref="WriteHeartbeatSeriesAsync"/> stays a no-op
 /// (the iOS <c>HKHeartbeatSeries</c> has no analog here).
 /// <see cref="RevokeAuthorizationAsync"/> revokes the app's grants — something Health
@@ -84,7 +88,14 @@ public sealed class HealthConnectStore : IHealthStore
 	private const double MinRmssdMs = 1.0;
 	private const double MaxRmssdMs = 200.0;
 
+	// Resting heart rate is a slow-moving, daily-scale metric; cap how often a sedentary
+	// reading becomes a RestingHeartRateRecord so an hour on the sofa doesn't become sixty
+	// resting-HR entries at the 1/min continuous-HR cadence. Keyed off sample timestamps,
+	// like the upstream downsampling.
+	private static readonly TimeSpan RestingWriteInterval = TimeSpan.FromMinutes(15);
+
 	private readonly AndroidContext _context;
+	private DateTimeOffset _lastRestingWrite = DateTimeOffset.MinValue;
 
 	public HealthConnectStore(AndroidContext context) =>
 		_context = context ?? throw new ArgumentNullException(nameof(context));
@@ -269,6 +280,22 @@ public sealed class HealthConnectStore : IHealthStore
 			// An instantaneous sample spans a single instant; null zone offsets are "unknown".
 			var record = new HeartRateRecord(time, null, time, null, samples, Metadata.ManualEntry());
 			var records = new List<IRecord> { record.JavaCast<IRecord>()! };
+
+			// Health Connect's HeartRateRecord has no motion-context field (the iOS sample
+			// metadata has no analog here), so "this was a resting reading" is expressed
+			// through the dedicated RestingHeartRateRecord instead — added to the same
+			// insert when the classifier vouches the user has been still, and rate-limited
+			// by RestingWriteInterval. An Active or Unknown context writes nothing extra.
+			if (sample.MotionContext == HrMotionContext.Sedentary
+				&& sample.Timestamp - _lastRestingWrite >= RestingWriteInterval)
+			{
+				_lastRestingWrite = sample.Timestamp;
+				// Positional: (time, zoneOffset, beatsPerMinute, metadata).
+				var resting = new RestingHeartRateRecord(
+					time, null, (long)Math.Round(sample.HeartRateBpm), Metadata.ManualEntry());
+				records.Add(resting.JavaCast<IRecord>()!);
+			}
+
 			_ = await AwaitSuspendAsync(c => client!.InsertRecords(records, c)).ConfigureAwait(false);
 		}
 		catch (Java.Lang.Exception)

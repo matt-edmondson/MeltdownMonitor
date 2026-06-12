@@ -2,6 +2,7 @@ using System.Reflection;
 using MeltdownMonitor.Core.Beats;
 using MeltdownMonitor.Core.Detection;
 using MeltdownMonitor.Core.Hrv;
+using MeltdownMonitor.Core.Motion;
 using MeltdownMonitor.Core.Persistence;
 using MeltdownMonitor.Mobile;
 using MeltdownMonitor.Mobile.Services;
@@ -113,6 +114,44 @@ public class HealthDataRecorderTests
 	}
 
 	[TestMethod]
+	public void HrWrites_CarryTheMotionContext()
+	{
+		var (pipeline, repo) = NewPipeline(out var settings);
+		settings.RecordToHealth = true;
+		using (repo)
+		using (pipeline)
+		{
+			var store = new RecordingHealthStore();
+			using var _ = new HealthDataRecorder(
+				pipeline, settings, store, hrWriteInterval: TimeSpan.FromMinutes(1));
+
+			// No movement source feeding → the first write claims nothing.
+			RaiseSample(pipeline, Sample(T0));
+
+			// Walking when the next write lands → Active.
+			RaiseMovement(pipeline, MovementLevel.Moderate);
+			RaiseSample(pipeline, Sample(T0.AddMinutes(1)));
+
+			// Then continuously still: samples every 10 s keep the classifier's clock
+			// running, and writes land each minute. Stillness only matures into a
+			// resting reading once it has held for the 5-minute sedentary threshold.
+			RaiseMovement(pipeline, MovementLevel.Still);
+			for (int t = 70; t <= 420; t += 10)
+			{
+				RaiseSample(pipeline, Sample(T0.AddSeconds(t)));
+			}
+
+			Assert.AreEqual(8, store.HrSamples.Count);
+			Assert.AreEqual(HrMotionContext.Unknown, store.HrSamples[0].MotionContext);
+			Assert.AreEqual(HrMotionContext.Active, store.HrSamples[1].MotionContext);
+			Assert.AreEqual(HrMotionContext.Unknown, store.HrSamples[6].MotionContext,
+				"Still since 1:10, so at 6:00 the run is 4:50 — not yet rest.");
+			Assert.AreEqual(HrMotionContext.Sedentary, store.HrSamples[7].MotionContext,
+				"By 7:00 the run is 5:50 — a resting reading.");
+		}
+	}
+
+	[TestMethod]
 	public void NothingWritten_WhenOptedOut()
 	{
 		var (pipeline, repo) = NewPipeline(out var settings);
@@ -177,6 +216,10 @@ public class HealthDataRecorderTests
 
 	private static void RaiseBeat(Pipeline pipeline, Beat beat) =>
 		Invoke<Action<Beat>>(pipeline, "BeatReceived", h => h(beat));
+
+	private static void RaiseMovement(Pipeline pipeline, MovementLevel level) =>
+		Invoke<Action<MovementSnapshot>>(pipeline, "MovementUpdated",
+			h => h(new MovementSnapshot(level, 0, null)));
 
 	private static void Invoke<T>(Pipeline pipeline, string eventName, Action<T> invoke)
 		where T : class
