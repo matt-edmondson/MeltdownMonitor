@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.0.4" />
+    <PackageReference Include="Avalonia" Version="12.0.5" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.0.4" />
     <!--
       Managed SkiaSharp + the Avalonia Skia integration are needed by the Regulation Field's
